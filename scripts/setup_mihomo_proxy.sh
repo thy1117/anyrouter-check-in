@@ -6,6 +6,7 @@
 #   PROXY_TEST_URL          探测目标，默认 https://www.google.com/generate_204
 #   PROXY_REQUIRED          true 时探测失败则退出 1
 #   PROXY_PORT              本地 mixed-port，默认 7890
+#   PROXY_NODE_NAME         可选；固定使用指定节点，避免 url-test 自动选到被目标站拦截的出口
 
 set -euo pipefail
 
@@ -19,6 +20,8 @@ PROXY_PORT="${PROXY_PORT:-7890}"
 PROXY_TEST_URL="${PROXY_TEST_URL:-https://www.google.com/generate_204}"
 MIHOMO_VERSION="${MIHOMO_VERSION:-v1.19.0}"
 PROXY_REQUIRED="${PROXY_REQUIRED:-false}"
+PROXY_NODE_NAME="${PROXY_NODE_NAME:-}"
+CONTROLLER_PORT="${PROXY_CONTROLLER_PORT:-9090}"
 
 mkdir -p "${PROXY_DIR}"
 cd "${PROXY_DIR}"
@@ -153,6 +156,7 @@ fi
 
 cat > config.yaml <<EOF
 mixed-port: ${PROXY_PORT}
+external-controller: 127.0.0.1:${CONTROLLER_PORT}
 allow-lan: false
 ipv6: false
 mode: rule
@@ -169,11 +173,7 @@ proxy-providers:
 
 proxy-groups:
   - name: CHECKIN
-    type: url-test
-    url: "${PROXY_TEST_URL}"
-    interval: 300
-    tolerance: 150
-    lazy: false
+    type: select
     use:
       - subscription
 
@@ -184,6 +184,34 @@ EOF
 echo "[INFO] Starting mihomo on 127.0.0.1:${PROXY_PORT}..."
 nohup "${MIHOMO_BIN}" -d "${PROXY_DIR}" -f config.yaml > mihomo.log 2>&1 &
 echo $! > mihomo.pid
+
+if [[ -n "${PROXY_NODE_NAME}" ]]; then
+	echo "[INFO] Pinning proxy group CHECKIN to node: ${PROXY_NODE_NAME}"
+	SELECT_PAYLOAD="$(PROXY_NODE_NAME="${PROXY_NODE_NAME}" python3 - <<'PY_SELECT'
+import json
+import os
+print(json.dumps({'name': os.environ['PROXY_NODE_NAME']}))
+PY_SELECT
+)"
+	SELECTED=false
+	for attempt in $(seq 1 30); do
+		if curl -fsS -X PUT \
+			-H 'Content-Type: application/json' \
+			-d "${SELECT_PAYLOAD}" \
+			"http://127.0.0.1:${CONTROLLER_PORT}/proxies/CHECKIN" -o /dev/null 2>/dev/null; then
+			SELECTED=true
+			break
+		fi
+		sleep 1
+	done
+	if [[ "${SELECTED}" != "true" ]]; then
+		echo "[FAILED] Unable to select proxy node: ${PROXY_NODE_NAME}"
+		tail -n 30 mihomo.log || true
+		if [[ "${PROXY_REQUIRED}" == "true" ]]; then
+			exit 1
+		fi
+	fi
+fi
 
 PROXY_URL="http://127.0.0.1:${PROXY_PORT}"
 READY=false
