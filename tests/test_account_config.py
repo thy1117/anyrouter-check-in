@@ -55,3 +55,21 @@ def test_access_token_account_is_valid_without_cookies(monkeypatch):
 	assert accounts is not None
 	assert accounts[0].access_token == 'new-api-token'
 	assert accounts[0].has_access_token() is True
+
+
+def test_extra_account_with_same_name_overrides_main_account(monkeypatch):
+	monkeypatch.setenv(
+		'ANYROUTER_ACCOUNTS',
+		json.dumps([{'name': '小鸡毛-thy1117', 'cookies': {'session': 'expired'}, 'api_user': 'old'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS',
+		json.dumps([{'name': '小鸡毛-thy1117', 'access_token': 'fresh-token'}]),
+	)
+
+	accounts = load_accounts_config()
+
+	assert accounts is not None
+	assert len(accounts) == 1
+	assert accounts[0].access_token == 'fresh-token'
+	assert accounts[0].cookies is None

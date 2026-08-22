@@ -227,12 +227,24 @@ def load_accounts_config() -> list[AccountConfig] | None:
 		return None
 
 	try:
-		accounts = []
-		for i, account_dict in enumerate(account_sources):
+		merged_account_sources = []
+		account_indexes_by_name = {}
+		for account_dict in account_sources:
 			if not isinstance(account_dict, dict):
-				print(f'ERROR: Account {i + 1} configuration format is incorrect')
+				print('ERROR: Account configuration format is incorrect')
 				return None
 
+			name = account_dict.get('name')
+			if name and name in account_indexes_by_name:
+				merged_account_sources[account_indexes_by_name[name]] = account_dict
+				continue
+
+			if name:
+				account_indexes_by_name[name] = len(merged_account_sources)
+			merged_account_sources.append(account_dict)
+
+		accounts = []
+		for i, account_dict in enumerate(merged_account_sources):
 			has_access_token = bool(
 				account_dict.get('access_token') or account_dict.get('accessToken') or account_dict.get('token')
 			)
