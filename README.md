@@ -82,6 +82,7 @@
 
 - `email` + `password`：推荐的浏览器登录方式，登录成功后会自动获取 cookies 与用户标识
 - `cookies`：兼容旧版的 session cookies 登录方式
+- `access_token`：新版 NewAPI/Ark717 等站点使用的 Bearer token；可单独使用，不需要 cookies 或 `api_user`
 - `api_user`：session cookies 登录时用于请求头的 new-api-user 参数；邮箱密码登录可省略
 - `provider` (可选)：指定使用的服务商，默认为 `anyrouter`
 - `name` (可选)：自定义账号显示名称，用于通知和日志中标识账号
@@ -101,6 +102,18 @@
 通过 F12 工具，切到 Network 面板，可以过滤下，只要 Fetch/XHR，找到带 `New-Api-User`，这个值正常是 5 位数，如果是负数或者个位数，正常是未登录。
 
 ![获取 api_user](./assets/request-api-user.png)
+
+部分站点已切换到新版 Bearer token 认证。如果出现 `401 Unauthorized, invalid access token`，请登录对应站点后在 F12 → Application → Local Storage 中找到 `new-api:auth-session`，复制 JSON 里的 `access_token`，然后把账号改成：
+
+```json
+{
+  "name": "小鸡毛-thy1117",
+  "provider": "xiaojimao",
+  "access_token": "替换成最新 access_token"
+}
+```
+
+不要把 token 发到聊天或提交到仓库，只更新 GitHub Actions 的 `ANYROUTER_ACCOUNTS` Secret。
 
 ### 5. 启用 GitHub Actions
 
@@ -129,7 +142,7 @@
 - 请确保每个账号的 cookies 和 API User 都是正确的
 - 可以在 Actions 页面查看详细的运行日志
 - 支持部分账号失败，只要有账号成功签到，整个任务就不会失败
-- 报 401 错误，请重新获取 cookies，理论 1 个月失效，但有 Bug，详见 [#6](https://github.com/millylee/anyrouter-check-in/issues/6)
+- 报 401 错误，请先确认站点仍使用 session cookies；若返回 `invalid access token`，改用新版 `access_token` 配置。旧版 cookies 理论 1 个月失效，但有 Bug，详见 [#6](https://github.com/millylee/anyrouter-check-in/issues/6)
 - 请求 200，但出现 Error 1040（08004）：Too many connections，官方数据库问题，目前已修复，但遇到几次了，详见 [#7](https://github.com/millylee/anyrouter-check-in/issues/7)
 
 ## 配置示例
