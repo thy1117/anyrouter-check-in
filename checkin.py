@@ -417,7 +417,9 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 			print(f'[FAILED] {account_name}: Invalid configuration format')
 			return False, None, None
 		all_cookies = (
-			await prepare_cookies(account_name, provider_config, user_cookies) if user_cookies else {}
+			await prepare_cookies(account_name, provider_config, user_cookies)
+			if user_cookies or provider_config.needs_waf_cookies()
+			else {}
 		)
 		auth_method = 'session cookies'
 
