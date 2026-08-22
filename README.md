@@ -91,7 +91,7 @@
 
 - 如果未提供 `provider` 字段，默认使用 `anyrouter`（向后兼容）
 - 如果未提供 `name` 字段，会使用 `Account 1`、`Account 2` 等默认名称
-- `anyrouter` 与 `agentrouter` 配置已内置，无需填写
+- `anyrouter`、`agentrouter` 与 `futureppo` 配置已内置，无需填写 Provider
 
 如果使用 session cookies 登录，接下来获取 cookies 与 api_user 的值。
 
@@ -193,9 +193,24 @@
 ]
 ```
 
+### FuturePPO 配置
+
+FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。推荐使用邮箱密码，让脚本通过浏览器登录并自动处理 Cloudflare：
+
+```json
+{
+  "name": "FuturePPO-thy1117",
+  "provider": "futureppo",
+  "email": "你的 FuturePPO 登录邮箱",
+  "password": "你的 FuturePPO 登录密码"
+}
+```
+
+如果站点使用新版 Bearer 认证，也可以配置 `access_token`。请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
+
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 

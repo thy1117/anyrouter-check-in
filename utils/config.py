@@ -106,6 +106,18 @@ class AppConfig:
 				use_proxy=True,
 				persist_profile=False,
 			),
+			'futureppo': ProviderConfig(
+				name='futureppo',
+				domain='https://api.futureppo.top',
+				login_path='/login',
+				sign_in_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				api_user_key='new-api-user',
+				bypass_method='waf_cookies',
+				waf_cookie_names=['cf_clearance'],
+				use_proxy=True,
+				persist_profile=False,
+			),
 		}
 
 		# 依次加载主配置和追加配置。EXTRA_PROVIDERS 用于在无法读取原 Secret 时安全追加站点。

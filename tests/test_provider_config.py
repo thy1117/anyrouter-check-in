@@ -12,6 +12,18 @@ def test_builtin_provider_profile_persistence_defaults(monkeypatch):
 	assert config.providers['agentrouter'].persist_profile is False
 
 
+def test_futureppo_provider_is_builtin():
+	config = AppConfig.load_from_env()
+
+	provider = config.providers['futureppo']
+
+	assert provider.domain == 'https://api.futureppo.top'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.waf_cookie_names == ['cf_clearance']
+	assert provider.use_proxy is True
+
+
 def test_provider_profile_persistence_can_override_builtin(monkeypatch):
 	monkeypatch.setenv(
 		'PROVIDERS',
