@@ -47,3 +47,28 @@ def test_provider_from_dict_inherits_profile_persistence_from_defaults():
 	)
 
 	assert provider.persist_profile is True
+
+
+def test_extra_providers_are_merged_after_main_providers(monkeypatch):
+	monkeypatch.setenv(
+		'PROVIDERS',
+		json.dumps({'custom': {'domain': 'https://old.example.com', 'use_proxy': True}}),
+	)
+	monkeypatch.setenv(
+		'EXTRA_PROVIDERS',
+		json.dumps(
+			{
+				'custom': {'domain': 'https://new.example.com'},
+				'futureppo': {
+					'domain': 'https://api.futureppo.top',
+					'sign_in_path': '/api/user/checkin',
+				},
+			}
+		),
+	)
+
+	config = AppConfig.load_from_env()
+
+	assert config.providers['custom'].domain == 'https://new.example.com'
+	assert config.providers['custom'].use_proxy is True
+	assert config.providers['futureppo'].sign_in_path == '/api/user/checkin'
