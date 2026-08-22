@@ -28,10 +28,11 @@ from utils.browser import (
 	login_with_email_form,
 	navigate_login_page,
 	prepare_browser_page,
-	read_access_token,
+	read_auth_session,
 	save_login_screenshot,
 	take_pending_screenshots,
 	verify_browser_login,
+	wait_for_cookies,
 	wait_for_waf_ready,
 )
 from utils.config import AccountConfig, AppConfig, load_accounts_config
@@ -114,6 +115,10 @@ async def get_waf_cookies_with_browser(
 
 		await page.goto(login_url, wait_until='domcontentloaded')
 		await wait_for_waf_ready(page)
+
+		# Cloudflare 的 cf_clearance 在挑战通过后才下发，比 DOM 就绪晚 1-2 秒，
+		# 直接读会拿到空集合，所以先轮询等待。
+		await wait_for_cookies(page, required_cookies)
 
 		cookies = await page.context.cookies()
 
@@ -222,7 +227,7 @@ async def login_with_credentials(
 			cookie.get('name'): cookie.get('value') for cookie in cookies if cookie.get('name') and cookie.get('value')
 		}
 		api_user = str(user_profile['id']) if user_profile.get('id') is not None else None
-		access_token = await read_access_token(page)
+		access_token, session_id = await read_auth_session(page)
 
 		success_msg = f'[SUCCESS] {account_name}: Login successful, got {len(all_cookies)} cookies'
 		if access_token:
@@ -231,7 +236,12 @@ async def login_with_credentials(
 			success_msg += f', api_user={api_user}'
 		print(success_msg)
 		await context.close()
-		return BrowserLoginResult(cookies=all_cookies, api_user=api_user, access_token=access_token)
+		return BrowserLoginResult(
+			cookies=all_cookies,
+			api_user=api_user,
+			access_token=access_token,
+			session_id=session_id,
+		)
 
 	except Exception as e:
 		print(f'[FAILED] {account_name}: Error during login: {e}')
@@ -241,12 +251,22 @@ async def login_with_credentials(
 		return None
 
 
-def refresh_access_token(client, headers: dict, provider_config, account_name: str) -> str | None:
+def refresh_access_token(
+	client,
+	headers: dict,
+	provider_config,
+	account_name: str,
+	*,
+	session_id: str | None = None,
+) -> str | None:
 	"""用 HttpOnly 的 refresh cookie 换一枚新的 access_token。
 
 	新版 NewAPI 的 access_token 只有分钟级有效期，靠 ``new_api_refresh``
 	cookie 轮换。截图或 localStorage 里复制出来的 token 很快就过期，所以
 	401 之后先尝试轮换，再判定账号失效。
+
+	前端轮换时会带上 ``X-Auth-Session``（会话 sid）；服务端用它校验轮换请求
+	与当前会话是否匹配，所以拿得到 sid 就一并送出。
 	"""
 	if not provider_config.auth_refresh_path:
 		return None
@@ -254,6 +274,8 @@ def refresh_access_token(client, headers: dict, provider_config, account_name: s
 	refresh_url = f'{provider_config.domain}{provider_config.auth_refresh_path}'
 	refresh_headers = {k: v for k, v in headers.items() if k != 'Authorization'}
 	refresh_headers['X-Requested-With'] = 'XMLHttpRequest'
+	if session_id:
+		refresh_headers['X-Auth-Session'] = session_id
 
 	try:
 		response = client.post(refresh_url, headers=refresh_headers, timeout=30)
@@ -442,6 +464,7 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 	all_cookies = None
 	resolved_api_user: str | None = None
 	resolved_access_token: str | None = None
+	resolved_session_id: str | None = None
 	auth_method = None
 	if account.has_login_credentials():
 		print(f'[INFO] {account_name}: Attempting email/password login (priority)...')
@@ -457,6 +480,7 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 			all_cookies = login_result.cookies
 			resolved_api_user = login_result.api_user
 			resolved_access_token = login_result.access_token
+			resolved_session_id = login_result.session_id
 			auth_method = 'email/password'
 			if resolved_access_token:
 				auth_method = 'email/password + bearer token'
@@ -487,6 +511,7 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 		provider_config,
 		api_user_override=resolved_api_user,
 		access_token_override=resolved_access_token,
+		session_id_override=resolved_session_id,
 		use_proxy=provider_config.use_proxy,
 	)
 
@@ -499,11 +524,14 @@ def run_check_in_requests(
 	*,
 	api_user_override: str | None = None,
 	access_token_override: str | None = None,
+	session_id_override: str | None = None,
 	use_proxy: bool = False,
 ) -> tuple[bool, dict | None, dict | None]:
 	"""执行 HTTP 签到请求（同步，避免在 async 上下文中使用阻塞 httpx）。"""
 	try:
-		client_kwargs: dict = {'http2': True, 'timeout': 30.0}
+		client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0}
+		if not provider_config.http2:
+			debug_print(f'[INFO] {account_name}: HTTP/2 disabled for this provider (Cloudflare h2 fingerprinting)')
 		proxy_url = get_proxy_server(use_proxy=use_proxy)
 		if proxy_url:
 			client_kwargs['proxy'] = proxy_url
@@ -548,7 +576,13 @@ def run_check_in_requests(
 			# access_token 是分钟级短效凭据：认证失败时先用 refresh cookie 轮换一次，
 			# 再决定是否真的判账号失效。
 			if user_info_before and not user_info_before.get('success'):
-				refreshed = refresh_access_token(client, headers, provider_config, account_name)
+				refreshed = refresh_access_token(
+					client,
+					headers,
+					provider_config,
+					account_name,
+					session_id=session_id_override or account.session_id,
+				)
 				if refreshed:
 					headers['Authorization'] = f'Bearer {refreshed}'
 					user_info_before = get_user_info(

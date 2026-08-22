@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from utils.browser import read_access_token
+from utils.browser import read_access_token, read_auth_session
 
 
 class FakePage:
@@ -35,3 +35,25 @@ def test_returns_none_on_invalid_json():
 
 def test_returns_none_when_storage_empty():
 	assert run(None) is None
+
+
+def test_read_auth_session_returns_token_and_sid():
+	payload = {
+		'access_token': 'tok',
+		'token_type': 'Bearer',
+		'session': {'sid': 'sid-123', 'current': True},
+	}
+	assert asyncio.run(read_auth_session(FakePage(json.dumps(payload)))) == ('tok', 'sid-123')
+
+
+def test_read_auth_session_finds_sid_in_zustand_shape():
+	payload = {'state': {'auth': {'accessToken': 'tok2', 'session': {'sid': 'sid-456'}}}}
+	assert asyncio.run(read_auth_session(FakePage(json.dumps(payload)))) == ('tok2', 'sid-456')
+
+
+def test_read_auth_session_handles_missing_sid():
+	assert asyncio.run(read_auth_session(FakePage(json.dumps({'access_token': 'tok3'})))) == ('tok3', None)
+
+
+def test_read_auth_session_empty_storage():
+	assert asyncio.run(read_auth_session(FakePage(None))) == (None, None)

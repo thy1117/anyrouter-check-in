@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Literal
 
@@ -24,6 +25,7 @@ class ProviderConfig:
 	waf_cookie_names: List[str] | None = None
 	use_proxy: bool = False
 	persist_profile: bool = False
+	http2: bool = True
 
 	def __post_init__(self):
 		required_waf_cookies = set()
@@ -51,6 +53,7 @@ class ProviderConfig:
 		"""
 		default_use_proxy = defaults.use_proxy if defaults else False
 		default_persist_profile = defaults.persist_profile if defaults else False
+		default_http2 = defaults.http2 if defaults else True
 		return cls(
 			name=name,
 			domain=data['domain'],
@@ -66,6 +69,7 @@ class ProviderConfig:
 			waf_cookie_names=data.get('waf_cookie_names', defaults.waf_cookie_names if defaults else None),
 			use_proxy=data.get('use_proxy', default_use_proxy),
 			persist_profile=data.get('persist_profile', default_persist_profile),
+			http2=data.get('http2', default_http2),
 		)
 
 	def needs_waf_cookies(self) -> bool:
@@ -122,6 +126,10 @@ class AppConfig:
 				waf_cookie_names=['cf_clearance'],
 				use_proxy=True,
 				persist_profile=False,
+				# Cloudflare 会对 HTTP/2 指纹（SETTINGS 帧、伪头顺序）做校验，httpx 的
+				# h2 指纹和 Chrome 不一致，即便持有有效 cf_clearance 也一律 403。
+				# 走 HTTP/1.1 时只看 UA + cf_clearance，能正常通过。
+				http2=False,
 			),
 		}
 
@@ -171,6 +179,7 @@ class AccountConfig:
 	cookies: dict | str | None
 	api_user: str | None = None
 	access_token: str | None = None
+	session_id: str | None = None
 	provider: str = 'anyrouter'
 	name: str | None = None
 	email: str | None = None
@@ -186,6 +195,7 @@ class AccountConfig:
 			cookies=data.get('cookies'),
 			api_user=data.get('api_user'),
 			access_token=data.get('access_token') or data.get('accessToken') or data.get('token'),
+			session_id=data.get('session_id') or data.get('sid'),
 			provider=provider,
 			name=name if name else None,
 			email=data.get('email'),
@@ -205,10 +215,24 @@ class AccountConfig:
 		return self.name if self.name else f'Account {index + 1}'
 
 
+def _account_env_names() -> list[str]:
+	"""按加载顺序列出账号配置的环境变量名。
+
+	``EXTRA_ACCOUNTS_2``、``EXTRA_ACCOUNTS_3``…… 让新站点可以单独占一个
+	Secret：GitHub Secret 写入后无法再读出，追加新账号时若复用同一个 Secret
+	就只能整体覆盖，会把别的账号覆写没了。
+	"""
+	numbered = sorted(
+		(name for name in os.environ if re.fullmatch(r'EXTRA_ACCOUNTS_(\d+)', name)),
+		key=lambda name: int(name.rsplit('_', 1)[1]),
+	)
+	return ['ANYROUTER_ACCOUNTS', 'EXTRA_ACCOUNTS', *numbered]
+
+
 def load_accounts_config() -> list[AccountConfig] | None:
 	"""从环境变量加载账号配置"""
 	account_sources = []
-	for env_name in ('ANYROUTER_ACCOUNTS', 'EXTRA_ACCOUNTS'):
+	for env_name in _account_env_names():
 		accounts_str = os.getenv(env_name)
 		if not accounts_str:
 			continue

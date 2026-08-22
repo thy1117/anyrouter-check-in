@@ -54,6 +54,7 @@ _pending_notify_screenshots: list[Path] = []
 FORM_ACTION_TIMEOUT_MS = 15_000
 EMAIL_TAB_TIMEOUT_MS = 8_000
 WAF_READY_TIMEOUT_MS = 30_000
+WAF_COOKIE_TIMEOUT_MS = 20_000
 SESSION_WAIT_TIMEOUT_MS = 45_000
 
 _VISIBLE_CHECK_JS = """
@@ -146,6 +147,7 @@ class BrowserLoginResult:
 	cookies: dict[str, str]
 	api_user: str | None = None
 	access_token: str | None = None
+	session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -482,13 +484,8 @@ async def verify_browser_login(page: Page, console_url: str, timeout_ms: int) ->
 AUTH_SESSION_STORAGE_KEY = 'new-api:auth-session'
 
 
-async def read_access_token(page: Page) -> str | None:
-	"""从 localStorage 的 ``new-api:auth-session`` 读出 Bearer access_token。
-
-	新版 NewAPI（v1.0.0-rc 起）不再用 ``session`` cookie 认证接口，而是把
-	短效 access_token 放在 localStorage，靠 HttpOnly 的 ``new_api_refresh``
-	cookie 轮换。这类站点必须带 ``Authorization: Bearer``，否则一律 401。
-	"""
+async def _read_auth_session_payload(page: Page) -> dict | None:
+	"""读取并解析 localStorage 里的 ``new-api:auth-session``。"""
 	try:
 		raw = await page.evaluate(
 			'key => window.localStorage.getItem(key)',
@@ -507,33 +504,101 @@ async def read_access_token(page: Page) -> str | None:
 		debug_print(f'[WARN] {AUTH_SESSION_STORAGE_KEY} is not valid JSON')
 		return None
 
-	# 兼容 {access_token: ...} 与 zustand 的 {state: {auth: {accessToken: ...}}}
-	candidates = [payload]
-	if isinstance(payload, dict):
-		state = payload.get('state')
-		if isinstance(state, dict):
-			candidates.append(state)
-			auth = state.get('auth')
-			if isinstance(auth, dict):
-				candidates.append(auth)
-		auth = payload.get('auth')
-		if isinstance(auth, dict):
-			candidates.append(auth)
+	return payload if isinstance(payload, dict) else None
 
-	for candidate in candidates:
-		if not isinstance(candidate, dict):
-			continue
+
+def _auth_session_scopes(payload: dict) -> list[dict]:
+	"""兼容扁平结构与 zustand 的 ``{state:{auth:{...}}}`` 包装。"""
+	scopes = [payload]
+	state = payload.get('state')
+	if isinstance(state, dict):
+		scopes.append(state)
+		auth = state.get('auth')
+		if isinstance(auth, dict):
+			scopes.append(auth)
+	auth = payload.get('auth')
+	if isinstance(auth, dict):
+		scopes.append(auth)
+	return scopes
+
+
+def _pick_access_token(payload: dict) -> str | None:
+	for scope in _auth_session_scopes(payload):
 		for key in ('access_token', 'accessToken'):
-			token = candidate.get(key)
+			token = scope.get(key)
 			if isinstance(token, str) and token:
 				return token
-
-	debug_print(f'[WARN] No access_token found in {AUTH_SESSION_STORAGE_KEY}')
 	return None
+
+
+def _pick_session_id(payload: dict) -> str | None:
+	for scope in _auth_session_scopes(payload):
+		session = scope.get('session')
+		if isinstance(session, dict):
+			sid = session.get('sid')
+			if isinstance(sid, str) and sid:
+				return sid
+		for key in ('sid', 'session_id'):
+			sid = scope.get(key)
+			if isinstance(sid, str) and sid:
+				return sid
+	return None
+
+
+async def read_auth_session(page: Page) -> tuple[str | None, str | None]:
+	"""读出 ``(access_token, session sid)``，两者都可能为 None。
+
+	新版 NewAPI（v1.0.0-rc 起）不再用 ``session`` cookie 认证接口，而是把
+	短效 access_token 放在 localStorage，靠 HttpOnly 的 ``new_api_refresh``
+	cookie 轮换；轮换时前端会带上会话 sid（``X-Auth-Session``）。
+	"""
+	payload = await _read_auth_session_payload(page)
+	if payload is None:
+		return None, None
+
+	token = _pick_access_token(payload)
+	if token is None:
+		debug_print(f'[WARN] No access_token found in {AUTH_SESSION_STORAGE_KEY}')
+	return token, _pick_session_id(payload)
+
+
+async def read_access_token(page: Page) -> str | None:
+	"""只取 access_token 的便捷包装。"""
+	token, _ = await read_auth_session(page)
+	return token
 
 
 async def wait_for_waf_ready(page: Page, timeout_ms: int = WAF_READY_TIMEOUT_MS) -> None:
 	await wait_for_site_ready(page, timeout_ms)
+
+
+async def wait_for_cookies(
+	page: Page,
+	cookie_names: list[str],
+	timeout_ms: int = WAF_COOKIE_TIMEOUT_MS,
+) -> set[str]:
+	"""轮询等待指定 cookie 落地，返回已拿到的名字集合。
+
+	Cloudflare 的 ``cf_clearance`` 是挑战通过后才下发的，比页面渲染完成要晚
+	一两秒。仅凭 DOM 就绪就去读 cookie 会拿到空集合，所以这里显式轮询。
+	"""
+	pending = set(cookie_names)
+	if not pending:
+		return set()
+
+	deadline = time.monotonic() + timeout_ms / 1000
+	found: set[str] = set()
+	while True:
+		cookies = await page.context.cookies()
+		found = {c.get('name') for c in cookies if c.get('name') and c.get('value')} & pending
+		if found == pending or time.monotonic() >= deadline:
+			break
+		await asyncio.sleep(0.5)
+
+	missing = sorted(pending - found)
+	if missing:
+		debug_print(f'[WARN] Cookies not present after {timeout_ms}ms: {missing}')
+	return found
 
 
 async def _first_visible_locator(page: Page, selectors: tuple[str, ...]) -> Locator | None:

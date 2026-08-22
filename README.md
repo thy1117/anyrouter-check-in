@@ -58,6 +58,16 @@
    - Name: `ANYROUTER_ACCOUNTS`
    - Value: 你的多账号配置数据
 
+#### 追加账号用的备用 Secret
+
+除了 `ANYROUTER_ACCOUNTS`，还可以用 `EXTRA_ACCOUNTS`、`EXTRA_ACCOUNTS_2`、`EXTRA_ACCOUNTS_3` 存放额外账号，格式完全一样，加载顺序为
+`ANYROUTER_ACCOUNTS` → `EXTRA_ACCOUNTS` → `EXTRA_ACCOUNTS_2` → `EXTRA_ACCOUNTS_3`，最终合并成一份账号列表。
+
+之所以分多个 Secret：GitHub Secret 写入后无法再读出，如果所有账号都挤在一个 Secret 里，之后想加一个新站点就得把整份 JSON 重新写一遍，
+很容易把已有账号漏掉、覆盖没了。新站点单独占一个编号 Secret 就不会互相影响。
+
+同名账号（`name` 相同）后加载的会覆盖先加载的，可以用这个特性单独更新某个账号的凭据，而不用动原来的 Secret。
+
 ### 4. 多账号配置格式
 
 支持单个与多个账号配置，可选 `name` 和 `provider` 字段：
@@ -216,18 +226,25 @@
 
 ### FuturePPO 配置
 
-FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。推荐使用邮箱密码，让脚本通过浏览器登录并自动处理 Cloudflare：
+FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支持 GitHub / LinuxDO / Passkey 等第三方登录，没有邮箱密码表单，所以要用 session cookie：
 
 ```json
 {
-  "name": "FuturePPO-thy1117",
+  "name": "FuturePPO-Dodo",
   "provider": "futureppo",
-  "email": "你的 FuturePPO 登录邮箱",
-  "password": "你的 FuturePPO 登录密码"
+  "cookies": { "session": "浏览器里的 session cookie" },
+  "api_user": "你的用户 id"
 }
 ```
 
-如果站点使用新版 Bearer 认证，也可以配置 `access_token`。请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
+`session` 与 `api_user` 的取法：登录后打开开发者工具，`Application → Cookies` 里复制 `session` 的值，`api_user` 就是 `/api/user/self` 返回的 `data.id`。
+
+站点挂在 Cloudflare 后面，有两点需要注意：
+
+- `cf_clearance` 由脚本内置的浏览器自动获取，**不需要**手动填。它绑定出口 IP，手动复制到 CI 也用不了。
+- 该 provider 固定走 HTTP/1.1（`http2: false`）。Cloudflare 会校验 HTTP/2 指纹，httpx 的 h2 握手和 Chrome 不一致，即便带着有效的 `cf_clearance` 也会被判定为机器人返回 403。
+
+请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
 
 ## 自定义 Provider 配置（可选）
 
