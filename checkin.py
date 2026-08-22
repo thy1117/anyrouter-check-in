@@ -234,24 +234,43 @@ async def login_with_credentials(
 		return None
 
 
-def get_user_info(client, headers, user_info_url: str):
-	"""获取用户信息"""
-	try:
-		response = client.get(user_info_url, headers=headers, timeout=30)
+def get_user_info(client, headers, user_info_url: str, *, api_user_key: str | None = None):
+	"""获取用户信息。
 
-		if response.status_code == 200:
-			data = response.json()
-			if data.get('success'):
-				user_data = data.get('data', {})
-				quota = round(user_data.get('quota', 0) / 500000, 2)
-				used_quota = round(user_data.get('used_quota', 0) / 500000, 2)
-				return {
-					'success': True,
-					'quota': quota,
-					'used_quota': used_quota,
-					'display': f':money: Current balance: ${quota}, Used: ${used_quota}',
-				}
-		return {'success': False, 'error': f'Failed to get user info: HTTP {response.status_code}'}
+	AnyRouter 的 ``/api/user/self`` 偶尔会因为 ``new-api-user`` 过期或 WAF
+	刚刷新而返回 401，但同一组 session 仍然可以正常签到。先按浏览器请求
+	补上 XHR 标记；遇到 401 时再用 session-only 请求重试，避免把有效签到误报
+	为账号失效。
+	"""
+	request_headers = {**headers, 'X-Requested-With': 'XMLHttpRequest'}
+	header_variants = [request_headers]
+	if api_user_key and api_user_key in request_headers:
+		header_variants.append({k: v for k, v in request_headers.items() if k != api_user_key})
+
+	last_status = None
+	try:
+		for attempt, variant in enumerate(header_variants):
+			response = client.get(user_info_url, headers=variant, timeout=30)
+			last_status = response.status_code
+
+			if response.status_code == 200:
+				data = response.json()
+				if data.get('success'):
+					user_data = data.get('data', {})
+					quota = round(user_data.get('quota', 0) / 500000, 2)
+					used_quota = round(user_data.get('used_quota', 0) / 500000, 2)
+					return {
+						'success': True,
+						'quota': quota,
+						'used_quota': used_quota,
+						'display': f':money: Current balance: ${quota}, Used: ${used_quota}',
+					}
+
+			# 401/403 时继续尝试 session-only 头；其它错误没有必要重复请求。
+			if response.status_code not in (401, 403) or attempt == len(header_variants) - 1:
+				break
+
+		return {'success': False, 'error': f'Failed to get user info: HTTP {last_status}'}
 	except Exception as e:
 		return {'success': False, 'error': f'Failed to get user info: {str(e)[:50]}...'}
 
@@ -283,36 +302,45 @@ def execute_check_in(client, account_name: str, provider_config, headers: dict):
 
 	checkin_headers = headers.copy()
 	checkin_headers.update({'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'})
+	header_variants = [checkin_headers]
+	if provider_config.api_user_key in checkin_headers:
+		header_variants.append({k: v for k, v in checkin_headers.items() if k != provider_config.api_user_key})
 
 	sign_in_url = f'{provider_config.domain}{provider_config.sign_in_path}'
-	response = client.post(sign_in_url, headers=checkin_headers, timeout=30)
+	for attempt, variant in enumerate(header_variants):
+		response = client.post(sign_in_url, headers=variant, timeout=30)
 
-	print(f'[RESPONSE] {account_name}: Response status code {response.status_code}')
+		print(f'[RESPONSE] {account_name}: Response status code {response.status_code}')
 
-	if response.status_code == 200:
-		try:
-			result = response.json()
-			if result.get('ret') == 1 or result.get('code') == 0 or result.get('success'):
-				print(f'[SUCCESS] {account_name}: Check-in successful!')
-				return True
-			else:
-				error_msg = result.get('msg', result.get('message', 'Unknown error'))
-				already_checked_keywords = ['已经签到', '已签到', '重复签到', 'already checked', 'already signed']
-				if any(keyword in error_msg.lower() for keyword in already_checked_keywords):
-					print(f'[SUCCESS] {account_name}: Already checked in today')
+		# 与用户信息接口保持一致：new-api-user 失效时，退回到 session-only 请求。
+		if response.status_code in (401, 403) and attempt < len(header_variants) - 1:
+			continue
+
+		if response.status_code == 200:
+			try:
+				result = response.json()
+				if result.get('ret') == 1 or result.get('code') == 0 or result.get('success'):
+					print(f'[SUCCESS] {account_name}: Check-in successful!')
 					return True
-				print(f'[FAILED] {account_name}: Check-in failed - {error_msg}')
-				return False
-		except json.JSONDecodeError:
-			if 'success' in response.text.lower():
-				print(f'[SUCCESS] {account_name}: Check-in successful!')
-				return True
-			else:
+				else:
+					error_msg = result.get('msg', result.get('message', 'Unknown error'))
+					already_checked_keywords = ['已经签到', '已签到', '重复签到', 'already checked', 'already signed']
+					if any(keyword in error_msg.lower() for keyword in already_checked_keywords):
+						print(f'[SUCCESS] {account_name}: Already checked in today')
+						return True
+					print(f'[FAILED] {account_name}: Check-in failed - {error_msg}')
+					return False
+			except json.JSONDecodeError:
+				if 'success' in response.text.lower():
+					print(f'[SUCCESS] {account_name}: Check-in successful!')
+					return True
 				print(f'[FAILED] {account_name}: Check-in failed - Invalid response format')
 				return False
-	else:
+
 		print(f'[FAILED] {account_name}: Check-in failed - HTTP {response.status_code}')
 		return False
+
+	return False
 
 
 def format_check_in_notification(detail: dict) -> str:
@@ -449,7 +477,12 @@ def run_check_in_requests(
 				headers[provider_config.api_user_key] = api_user
 
 			user_info_url = f'{provider_config.domain}{provider_config.user_info_path}'
-			user_info_before = get_user_info(client, headers, user_info_url)
+			user_info_before = get_user_info(
+				client,
+				headers,
+				user_info_url,
+				api_user_key=provider_config.api_user_key,
+			)
 			if user_info_before and user_info_before.get('success'):
 				print(user_info_before['display'])
 			elif user_info_before:
@@ -457,10 +490,20 @@ def run_check_in_requests(
 
 			if provider_config.needs_manual_check_in():
 				success = execute_check_in(client, account_name, provider_config, headers)
-				user_info_after = get_user_info(client, headers, user_info_url)
+				user_info_after = get_user_info(
+					client,
+					headers,
+					user_info_url,
+					api_user_key=provider_config.api_user_key,
+				)
 				return success, user_info_before, user_info_after
 
-			user_info_after = get_user_info(client, headers, user_info_url)
+			user_info_after = get_user_info(
+				client,
+				headers,
+				user_info_url,
+				api_user_key=provider_config.api_user_key,
+			)
 			if user_info_after and user_info_after.get('success'):
 				print(f'[INFO] {account_name}: Check-in completed automatically (triggered by user info request)')
 				return True, user_info_before, user_info_after
