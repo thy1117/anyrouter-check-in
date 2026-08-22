@@ -73,3 +73,17 @@ def test_extra_account_with_same_name_overrides_main_account(monkeypatch):
 	assert len(accounts) == 1
 	assert accounts[0].access_token == 'fresh-token'
 	assert accounts[0].cookies is None
+
+
+def test_cookie_account_can_omit_api_user(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS',
+		json.dumps([{'name': 'Cookie only', 'provider': 'xiaojimao', 'cookies': {'session': 'fresh'}}]),
+	)
+
+	accounts = load_accounts_config()
+
+	assert accounts is not None
+	assert accounts[0].api_user is None
+	assert accounts[0].cookies == {'session': 'fresh'}

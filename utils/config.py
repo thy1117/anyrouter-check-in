@@ -248,17 +248,15 @@ def load_accounts_config() -> list[AccountConfig] | None:
 			has_access_token = bool(
 				account_dict.get('access_token') or account_dict.get('accessToken') or account_dict.get('token')
 			)
-
-			if 'api_user' not in account_dict:
-				has_login = account_dict.get('email') and account_dict.get('password')
-				if not has_login and not has_access_token:
-					print(
-						f'ERROR: Account {i + 1} missing required field (api_user) - only email+password login can omit it'
-					)
-					return None
-
 			has_cookies = 'cookies' in account_dict and account_dict['cookies']
 			has_login = account_dict.get('email') and account_dict.get('password')
+
+			if 'api_user' not in account_dict:
+				if not has_cookies and not has_login and not has_access_token:
+					print(
+						f'ERROR: Account {i + 1} must have cookies, access_token, or email+password'
+					)
+					return None
 
 			if not has_cookies and not has_login and not has_access_token:
 				print(f'ERROR: Account {i + 1} must have cookies, access_token, or email+password')
