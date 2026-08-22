@@ -572,6 +572,33 @@ async def wait_for_waf_ready(page: Page, timeout_ms: int = WAF_READY_TIMEOUT_MS)
 	await wait_for_site_ready(page, timeout_ms)
 
 
+async def request_in_page(
+	page: Page,
+	path: str,
+	*,
+	method: str = 'GET',
+	headers: dict[str, str] | None = None,
+) -> tuple[int, str]:
+	"""在页面里用 fetch 发同源请求，返回 (status, body)。
+
+	机房 IP 上 Cloudflare 会连 TLS(JA3)/HTTP2 指纹一起校验，httpx 走 OpenSSL
+	握手伪装不了，即便持有有效 cf_clearance 也会 403。改由页面自己发请求，
+	指纹和挑战通过时完全一致，也不必把 cookie 搬来搬去。
+	"""
+	result = await page.evaluate(
+		"""async ({path, method, headers}) => {
+			const res = await fetch(path, {
+				method,
+				headers,
+				credentials: 'include',
+			});
+			return {status: res.status, body: await res.text()};
+		}""",
+		{'path': path, 'method': method, 'headers': headers or {}},
+	)
+	return int(result['status']), result.get('body') or ''
+
+
 async def wait_for_cookies(
 	page: Page,
 	cookie_names: list[str],

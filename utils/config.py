@@ -26,6 +26,7 @@ class ProviderConfig:
 	use_proxy: bool = False
 	persist_profile: bool = False
 	http2: bool = True
+	request_in_page: bool = False
 
 	def __post_init__(self):
 		required_waf_cookies = set()
@@ -54,6 +55,7 @@ class ProviderConfig:
 		default_use_proxy = defaults.use_proxy if defaults else False
 		default_persist_profile = defaults.persist_profile if defaults else False
 		default_http2 = defaults.http2 if defaults else True
+		default_request_in_page = defaults.request_in_page if defaults else False
 		return cls(
 			name=name,
 			domain=data['domain'],
@@ -70,6 +72,7 @@ class ProviderConfig:
 			use_proxy=data.get('use_proxy', default_use_proxy),
 			persist_profile=data.get('persist_profile', default_persist_profile),
 			http2=data.get('http2', default_http2),
+			request_in_page=data.get('request_in_page', default_request_in_page),
 		)
 
 	def needs_waf_cookies(self) -> bool:
@@ -130,6 +133,9 @@ class AppConfig:
 				# h2 指纹和 Chrome 不一致，即便持有有效 cf_clearance 也一律 403。
 				# 走 HTTP/1.1 时只看 UA + cf_clearance，能正常通过。
 				http2=False,
+				# 机房 IP 上 CF 还会查 TLS(JA3) 指纹，httpx 无论怎么设都过不了，
+				# 所以签到/查询一律交给浏览器页面自己发。
+				request_in_page=True,
 			),
 		}
 

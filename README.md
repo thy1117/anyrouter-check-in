@@ -239,10 +239,21 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 `session` 与 `api_user` 的取法：登录后打开开发者工具，`Application → Cookies` 里复制 `session` 的值，`api_user` 就是 `/api/user/self` 返回的 `data.id`。
 
+更推荐用「系统访问令牌」：控制台 → 个人设置 → 安全设置 → 系统访问令牌，复制后填 `access_token`，比 session 稳定：
+
+```json
+{
+  "name": "FuturePPO-Dodo",
+  "provider": "futureppo",
+  "access_token": "系统访问令牌",
+  "api_user": "你的用户 id"
+}
+```
+
 站点挂在 Cloudflare 后面，有两点需要注意：
 
-- `cf_clearance` 由脚本内置的浏览器自动获取，**不需要**手动填。它绑定出口 IP，手动复制到 CI 也用不了。
-- 该 provider 固定走 HTTP/1.1（`http2: false`）。Cloudflare 会校验 HTTP/2 指纹，httpx 的 h2 握手和 Chrome 不一致，即便带着有效的 `cf_clearance` 也会被判定为机器人返回 403。
+- `cf_clearance` 由脚本内置的浏览器自动获取，**不需要**手动填。
+- 该 provider 的请求由浏览器页面内的 `fetch` 发出（`request_in_page: true`），而不是 Python 侧的 httpx。在 GitHub Actions 这类机房 IP 上，Cloudflare 会连 TLS(JA3) 与 HTTP/2 指纹一起校验，httpx 走 OpenSSL 握手伪装不了，即便持有刚拿到的有效 `cf_clearance` 也一律返回 403；改由页面自己发请求，指纹与挑战通过时完全一致。同时保留 `http2: false`，用于本机直连等仍走 httpx 的场景。
 
 请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
 

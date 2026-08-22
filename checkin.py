@@ -29,6 +29,7 @@ from utils.browser import (
 	navigate_login_page,
 	prepare_browser_page,
 	read_auth_session,
+	request_in_page,
 	save_login_screenshot,
 	take_pending_screenshots,
 	verify_browser_login,
@@ -366,6 +367,61 @@ async def prepare_cookies(account_name: str, provider_config, user_cookies: dict
 	return {**waf_cookies, **user_cookies}
 
 
+def parse_check_in_response(account_name: str, status_code: int, body: str) -> bool:
+	"""解析签到响应，判断是否成功（含"今日已签到"）。"""
+	print(f'[RESPONSE] {account_name}: Response status code {status_code}')
+
+	if status_code != 200:
+		print(f'[FAILED] {account_name}: Check-in failed - HTTP {status_code}')
+		return False
+
+	try:
+		result = json.loads(body)
+	except json.JSONDecodeError:
+		if 'success' in body.lower():
+			print(f'[SUCCESS] {account_name}: Check-in successful!')
+			return True
+		print(f'[FAILED] {account_name}: Check-in failed - Invalid response format')
+		return False
+
+	if result.get('ret') == 1 or result.get('code') == 0 or result.get('success'):
+		print(f'[SUCCESS] {account_name}: Check-in successful!')
+		return True
+
+	error_msg = result.get('msg', result.get('message', 'Unknown error'))
+	already_checked_keywords = ['已经签到', '已签到', '重复签到', 'already checked', 'already signed']
+	if any(keyword in error_msg.lower() for keyword in already_checked_keywords):
+		print(f'[SUCCESS] {account_name}: Already checked in today')
+		return True
+
+	print(f'[FAILED] {account_name}: Check-in failed - {error_msg}')
+	return False
+
+
+def parse_user_info_response(status_code: int, body: str) -> dict:
+	"""解析 /api/user/self 响应，提取余额。"""
+	if status_code != 200:
+		return {'success': False, 'error': f'Failed to get user info: HTTP {status_code}'}
+
+	try:
+		data = json.loads(body)
+	except json.JSONDecodeError:
+		return {'success': False, 'error': 'Failed to get user info: invalid JSON'}
+
+	if not data.get('success'):
+		return {'success': False, 'error': f'Failed to get user info: {data.get("message", "unknown")}'}
+
+	info = data.get('data') or {}
+	quota = round(info.get('quota', 0) / 500000, 2)
+	used_quota = round(info.get('used_quota', 0) / 500000, 2)
+	return {
+		'success': True,
+		'quota': quota,
+		'used_quota': used_quota,
+		'display': f':money: Current balance: ${quota}, Used: ${used_quota}',
+	}
+
+
 def execute_check_in(client, account_name: str, provider_config, headers: dict):
 	"""执行签到请求"""
 	print(f'[NETWORK] {account_name}: Executing check-in')
@@ -448,6 +504,85 @@ def format_check_in_notification(detail: dict) -> str:
 	return '\n'.join(lines)
 
 
+async def run_check_in_in_page(
+	account: AccountConfig,
+	account_name: str,
+	provider_config,
+	*,
+	api_user_override: str | None = None,
+	access_token_override: str | None = None,
+) -> tuple[bool, dict | None, dict | None]:
+	"""在浏览器页面内完成查询与签到。
+
+	机房 IP 上 Cloudflare 会校验 TLS(JA3)/HTTP2 指纹，Python 侧的 httpx 过不去；
+	由页面自己发 fetch，指纹与挑战通过时一致，凭据也直接复用页面 cookie。
+	"""
+	print(f'[PROCESSING] {account_name}: Starting browser for in-page requests...')
+
+	launch_kwargs: dict = {'headless': True}
+	proxy = get_playwright_proxy(use_proxy=provider_config.use_proxy)
+	if proxy:
+		launch_kwargs['proxy'] = proxy
+	browser = await launch_async(**launch_kwargs)
+
+	try:
+		page = await browser.new_page()
+		await prepare_browser_page(page)
+		login_url = f'{provider_config.domain}{provider_config.login_path}'
+		await page.goto(login_url, wait_until='domcontentloaded')
+		await wait_for_waf_ready(page)
+		await wait_for_cookies(page, provider_config.waf_cookie_names or [])
+
+		user_cookies = parse_cookies(account.cookies) if account.cookies else {}
+		if user_cookies:
+			domain = provider_config.domain.split('://', 1)[-1]
+			await page.context.add_cookies(
+				[{'name': name, 'value': value, 'domain': domain, 'path': '/'} for name, value in user_cookies.items()]
+			)
+
+		headers = {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
+		api_user = api_user_override or account.api_user
+		if api_user:
+			headers[provider_config.api_user_key] = api_user
+		access_token = access_token_override or account.access_token
+		if access_token:
+			headers['Authorization'] = f'Bearer {access_token}'
+
+		status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+		user_info_before = parse_user_info_response(status, body)
+		if user_info_before.get('success'):
+			print(user_info_before['display'])
+		else:
+			print(f'[WARN] {account_name}: {user_info_before.get("error")}')
+
+		success = True
+		if provider_config.needs_manual_check_in():
+			print(f'[NETWORK] {account_name}: Executing check-in')
+			status, body = await request_in_page(
+				page,
+				provider_config.sign_in_path,
+				method='POST',
+				headers=headers,
+			)
+			success = parse_check_in_response(account_name, status, body)
+
+		status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+		user_info_after = parse_user_info_response(status, body)
+
+		if not provider_config.needs_manual_check_in():
+			success = user_info_after.get('success', False)
+			if success:
+				print(f'[INFO] {account_name}: Check-in completed automatically (triggered by user info request)')
+
+		return success, user_info_before, user_info_after
+
+	except Exception as e:
+		print(f'[FAILED] {account_name}: Error during in-page check-in: {e}')
+		return False, None, None
+	finally:
+		await browser.close()
+
+
 async def check_in_account(account: AccountConfig, account_index: int, app_config: AppConfig):
 	"""为单个账号执行签到操作"""
 	account_name = account.get_display_name(account_index)
@@ -492,17 +627,30 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 		if not user_cookies and not account.has_access_token():
 			print(f'[FAILED] {account_name}: Invalid configuration format')
 			return False, None, None
-		all_cookies = (
-			await prepare_cookies(account_name, provider_config, user_cookies)
-			if user_cookies or provider_config.needs_waf_cookies()
-			else {}
-		)
+		# request_in_page 会在自己的浏览器上下文里拿 WAF cookie，这里不必再开一次。
+		if provider_config.request_in_page:
+			all_cookies = user_cookies
+		else:
+			all_cookies = (
+				await prepare_cookies(account_name, provider_config, user_cookies)
+				if user_cookies or provider_config.needs_waf_cookies()
+				else {}
+			)
 		auth_method = 'bearer token' if account.has_access_token() else 'session cookies'
 
 	if not all_cookies and not account.has_access_token():
 		return False, None, None
 
 	print(f'[AUTH] {account_name}: Using auth method -> {auth_method}')
+
+	if provider_config.request_in_page:
+		return await run_check_in_in_page(
+			account,
+			account_name,
+			provider_config,
+			api_user_override=resolved_api_user,
+			access_token_override=resolved_access_token,
+		)
 
 	return run_check_in_requests(
 		all_cookies,
