@@ -45,3 +45,12 @@ def test_get_user_info_retries_without_stale_api_user_after_401():
 	assert client.calls[0]['headers']['X-Requested-With'] == 'XMLHttpRequest'
 	assert 'new-api-user' not in client.calls[1]['headers']
 	assert client.calls[1]['headers']['X-Requested-With'] == 'XMLHttpRequest'
+
+
+def test_parse_cookies_accepts_full_cookie_request_header():
+	from checkin import parse_cookies
+
+	assert parse_cookies('Cookie: session=fresh; cf_clearance=ready') == {
+		'session': 'fresh',
+		'cf_clearance': 'ready',
+	}

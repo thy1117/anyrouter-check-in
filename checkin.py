@@ -78,6 +78,9 @@ def parse_cookies(cookies_data):
 		return cookies_data
 
 	if isinstance(cookies_data, str):
+		cookies_data = cookies_data.strip()
+		if cookies_data.lower().startswith('cookie:'):
+			cookies_data = cookies_data.split(':', 1)[1].strip()
 		cookies_dict = {}
 		for cookie in cookies_data.split(';'):
 			if '=' in cookie:
