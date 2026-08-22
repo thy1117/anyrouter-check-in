@@ -54,3 +54,55 @@ def test_parse_cookies_accepts_full_cookie_request_header():
 		'session': 'fresh',
 		'cf_clearance': 'ready',
 	}
+
+
+class FakeRefreshClient(FakeClient):
+	"""GET 走 responses，POST /auth/refresh 单独给一份响应。"""
+
+	def __init__(self, responses, refresh_response):
+		super().__init__(responses)
+		self.refresh_response = refresh_response
+		self.posts = []
+
+	def post(self, url, *, headers, timeout):
+		self.posts.append({'url': url, 'headers': headers, 'timeout': timeout})
+		return self.refresh_response
+
+
+def test_refresh_access_token_returns_rotated_token():
+	from checkin import refresh_access_token
+	from utils.config import ProviderConfig
+
+	provider = ProviderConfig(name='xiaojimao', domain='https://api.ark717.com')
+	client = FakeRefreshClient(
+		[],
+		FakeResponse(200, {'success': True, 'data': {'access_token': 'rotated', 'token_type': 'Bearer'}}),
+	)
+
+	token = refresh_access_token(client, {'Authorization': 'Bearer stale'}, provider, 'acct')
+
+	assert token == 'rotated'
+	assert client.posts[0]['url'] == 'https://api.ark717.com/api/user/auth/refresh'
+	# 轮换请求不能带过期的 Authorization，否则服务端会直接拒绝。
+	assert 'Authorization' not in client.posts[0]['headers']
+
+
+def test_refresh_access_token_returns_none_on_401():
+	from checkin import refresh_access_token
+	from utils.config import ProviderConfig
+
+	provider = ProviderConfig(name='xiaojimao', domain='https://api.ark717.com')
+	client = FakeRefreshClient([], FakeResponse(401, {'success': False}))
+
+	assert refresh_access_token(client, {}, provider, 'acct') is None
+
+
+def test_refresh_access_token_skipped_when_provider_has_no_path():
+	from checkin import refresh_access_token
+	from utils.config import ProviderConfig
+
+	provider = ProviderConfig(name='legacy', domain='https://example.com', auth_refresh_path=None)
+	client = FakeRefreshClient([], FakeResponse(200, {'success': True, 'data': {'access_token': 'x'}}))
+
+	assert refresh_access_token(client, {}, provider, 'acct') is None
+	assert client.posts == []

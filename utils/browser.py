@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import time
@@ -44,6 +45,7 @@ SUBMIT_SELECTORS = (
 	'button[type="submit"]',
 )
 SESSION_COOKIE_NAME = 'session'
+REFRESH_COOKIE_NAME = 'new_api_refresh'
 USER_SELF_API_SUFFIX = '/api/user/self'
 CONSOLE_PATH = '/console'
 DEFAULT_SCREENSHOT_DIR = 'checkin_screenshots'
@@ -143,6 +145,7 @@ _OPEN_EMAIL_FORM_JS = """() => {
 class BrowserLoginResult:
 	cookies: dict[str, str]
 	api_user: str | None = None
+	access_token: str | None = None
 
 
 @dataclass(frozen=True)
@@ -473,6 +476,59 @@ async def verify_browser_login(page: Page, console_url: str, timeout_ms: int) ->
 	else:
 		debug_print(f'[WARN] Login verification failed: current URL={page.url}')
 		print('[WARN] Login verification failed')
+	return None
+
+
+AUTH_SESSION_STORAGE_KEY = 'new-api:auth-session'
+
+
+async def read_access_token(page: Page) -> str | None:
+	"""从 localStorage 的 ``new-api:auth-session`` 读出 Bearer access_token。
+
+	新版 NewAPI（v1.0.0-rc 起）不再用 ``session`` cookie 认证接口，而是把
+	短效 access_token 放在 localStorage，靠 HttpOnly 的 ``new_api_refresh``
+	cookie 轮换。这类站点必须带 ``Authorization: Bearer``，否则一律 401。
+	"""
+	try:
+		raw = await page.evaluate(
+			'key => window.localStorage.getItem(key)',
+			AUTH_SESSION_STORAGE_KEY,
+		)
+	except Exception as e:  # localStorage 可能被站点或浏览器策略拦住
+		debug_print(f'[WARN] Unable to read {AUTH_SESSION_STORAGE_KEY}: {e}')
+		return None
+
+	if not raw:
+		return None
+
+	try:
+		payload = json.loads(raw)
+	except (TypeError, ValueError):
+		debug_print(f'[WARN] {AUTH_SESSION_STORAGE_KEY} is not valid JSON')
+		return None
+
+	# 兼容 {access_token: ...} 与 zustand 的 {state: {auth: {accessToken: ...}}}
+	candidates = [payload]
+	if isinstance(payload, dict):
+		state = payload.get('state')
+		if isinstance(state, dict):
+			candidates.append(state)
+			auth = state.get('auth')
+			if isinstance(auth, dict):
+				candidates.append(auth)
+		auth = payload.get('auth')
+		if isinstance(auth, dict):
+			candidates.append(auth)
+
+	for candidate in candidates:
+		if not isinstance(candidate, dict):
+			continue
+		for key in ('access_token', 'accessToken'):
+			token = candidate.get(key)
+			if isinstance(token, str) and token:
+				return token
+
+	debug_print(f'[WARN] No access_token found in {AUTH_SESSION_STORAGE_KEY}')
 	return None
 
 

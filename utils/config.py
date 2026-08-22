@@ -18,6 +18,7 @@ class ProviderConfig:
 	login_path: str = '/login'
 	sign_in_path: str | None = '/api/user/sign_in'
 	user_info_path: str = '/api/user/self'
+	auth_refresh_path: str | None = '/api/user/auth/refresh'
 	api_user_key: str = 'new-api-user'
 	bypass_method: Literal['waf_cookies'] | None = None
 	waf_cookie_names: List[str] | None = None
@@ -56,6 +57,10 @@ class ProviderConfig:
 			login_path=data.get('login_path', defaults.login_path if defaults else '/login'),
 			sign_in_path=data.get('sign_in_path', defaults.sign_in_path if defaults else '/api/user/sign_in'),
 			user_info_path=data.get('user_info_path', defaults.user_info_path if defaults else '/api/user/self'),
+			auth_refresh_path=data.get(
+				'auth_refresh_path',
+				defaults.auth_refresh_path if defaults else '/api/user/auth/refresh',
+			),
 			api_user_key=data.get('api_user_key', defaults.api_user_key if defaults else 'new-api-user'),
 			bypass_method=data.get('bypass_method', defaults.bypass_method if defaults else None),
 			waf_cookie_names=data.get('waf_cookie_names', defaults.waf_cookie_names if defaults else None),
@@ -253,9 +258,7 @@ def load_accounts_config() -> list[AccountConfig] | None:
 
 			if 'api_user' not in account_dict:
 				if not has_cookies and not has_login and not has_access_token:
-					print(
-						f'ERROR: Account {i + 1} must have cookies, access_token, or email+password'
-					)
+					print(f'ERROR: Account {i + 1} must have cookies, access_token, or email+password')
 					return None
 
 			if not has_cookies and not has_login and not has_access_token:

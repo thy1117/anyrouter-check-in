@@ -29,15 +29,6 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: 缓存 UV 依赖
-      uses: actions/cache@v5
-      id: uv-cache
-      with:
-        path: ~/.cache/uv
-        key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml', 'uv.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-uv-
-
     - name: 安装依赖
       run: |
         uv sync --frozen
@@ -75,11 +66,14 @@ jobs:
           balance-hash-${{ github.ref_name }}-
           balance-hash-
 
+    - name: 准备浏览器 Profile 目录
+      run: mkdir -p .browser_profiles
+
     - name: 恢复浏览器 Profile 缓存
       uses: actions/cache@v5
       with:
         path: .browser_profiles
-        key: browser-profiles-${{ runner.os }}-v1
+        key: browser-profiles-${{ runner.os }}-${{ github.run_id }}
         restore-keys: |
           browser-profiles-${{ runner.os }}-
 

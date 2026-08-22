@@ -28,6 +28,7 @@ from utils.browser import (
 	login_with_email_form,
 	navigate_login_page,
 	prepare_browser_page,
+	read_access_token,
 	save_login_screenshot,
 	take_pending_screenshots,
 	verify_browser_login,
@@ -221,13 +222,16 @@ async def login_with_credentials(
 			cookie.get('name'): cookie.get('value') for cookie in cookies if cookie.get('name') and cookie.get('value')
 		}
 		api_user = str(user_profile['id']) if user_profile.get('id') is not None else None
+		access_token = await read_access_token(page)
 
 		success_msg = f'[SUCCESS] {account_name}: Login successful, got {len(all_cookies)} cookies'
+		if access_token:
+			success_msg += ', got access_token'
 		if is_debug_enabled() and api_user:
 			success_msg += f', api_user={api_user}'
 		print(success_msg)
 		await context.close()
-		return BrowserLoginResult(cookies=all_cookies, api_user=api_user)
+		return BrowserLoginResult(cookies=all_cookies, api_user=api_user, access_token=access_token)
 
 	except Exception as e:
 		print(f'[FAILED] {account_name}: Error during login: {e}')
@@ -235,6 +239,47 @@ async def login_with_credentials(
 			await save_login_screenshot(page, provider_name, account_name, 'login-error')
 		await context.close()
 		return None
+
+
+def refresh_access_token(client, headers: dict, provider_config, account_name: str) -> str | None:
+	"""用 HttpOnly 的 refresh cookie 换一枚新的 access_token。
+
+	新版 NewAPI 的 access_token 只有分钟级有效期，靠 ``new_api_refresh``
+	cookie 轮换。截图或 localStorage 里复制出来的 token 很快就过期，所以
+	401 之后先尝试轮换，再判定账号失效。
+	"""
+	if not provider_config.auth_refresh_path:
+		return None
+
+	refresh_url = f'{provider_config.domain}{provider_config.auth_refresh_path}'
+	refresh_headers = {k: v for k, v in headers.items() if k != 'Authorization'}
+	refresh_headers['X-Requested-With'] = 'XMLHttpRequest'
+
+	try:
+		response = client.post(refresh_url, headers=refresh_headers, timeout=30)
+	except Exception as e:
+		debug_print(f'[WARN] {account_name}: Token refresh request failed: {e}')
+		return None
+
+	if response.status_code != 200:
+		debug_print(f'[WARN] {account_name}: Token refresh returned HTTP {response.status_code}')
+		return None
+
+	try:
+		payload = response.json()
+	except json.JSONDecodeError:
+		debug_print(f'[WARN] {account_name}: Token refresh returned non-JSON body')
+		return None
+
+	data = payload.get('data') if isinstance(payload, dict) else None
+	if not isinstance(data, dict):
+		return None
+
+	token = data.get('access_token')
+	if isinstance(token, str) and token:
+		print(f'[INFO] {account_name}: Refreshed access_token via {provider_config.auth_refresh_path}')
+		return token
+	return None
 
 
 def get_user_info(client, headers, user_info_url: str, *, api_user_key: str | None = None):
@@ -396,6 +441,7 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 	# 邮箱密码优先
 	all_cookies = None
 	resolved_api_user: str | None = None
+	resolved_access_token: str | None = None
 	auth_method = None
 	if account.has_login_credentials():
 		print(f'[INFO] {account_name}: Attempting email/password login (priority)...')
@@ -410,7 +456,10 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 		if login_result:
 			all_cookies = login_result.cookies
 			resolved_api_user = login_result.api_user
+			resolved_access_token = login_result.access_token
 			auth_method = 'email/password'
+			if resolved_access_token:
+				auth_method = 'email/password + bearer token'
 		else:
 			print(f'[FAILED] {account_name}: Email/password login failed, will not use stale session cookies')
 			return False, None, None
@@ -424,7 +473,7 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 			if user_cookies or provider_config.needs_waf_cookies()
 			else {}
 		)
-		auth_method = 'session cookies'
+		auth_method = 'bearer token' if account.has_access_token() else 'session cookies'
 
 	if not all_cookies and not account.has_access_token():
 		return False, None, None
@@ -437,6 +486,7 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 		account_name,
 		provider_config,
 		api_user_override=resolved_api_user,
+		access_token_override=resolved_access_token,
 		use_proxy=provider_config.use_proxy,
 	)
 
@@ -448,6 +498,7 @@ def run_check_in_requests(
 	provider_config,
 	*,
 	api_user_override: str | None = None,
+	access_token_override: str | None = None,
 	use_proxy: bool = False,
 ) -> tuple[bool, dict | None, dict | None]:
 	"""执行 HTTP 签到请求（同步，避免在 async 上下文中使用阻塞 httpx）。"""
@@ -482,8 +533,9 @@ def run_check_in_requests(
 			api_user = api_user_override or account.api_user
 			if api_user:
 				headers[provider_config.api_user_key] = api_user
-			if account.access_token:
-				headers['Authorization'] = f'Bearer {account.access_token}'
+			access_token = access_token_override or account.access_token
+			if access_token:
+				headers['Authorization'] = f'Bearer {access_token}'
 
 			user_info_url = f'{provider_config.domain}{provider_config.user_info_path}'
 			user_info_before = get_user_info(
@@ -492,10 +544,30 @@ def run_check_in_requests(
 				user_info_url,
 				api_user_key=provider_config.api_user_key,
 			)
+
+			# access_token 是分钟级短效凭据：认证失败时先用 refresh cookie 轮换一次，
+			# 再决定是否真的判账号失效。
+			if user_info_before and not user_info_before.get('success'):
+				refreshed = refresh_access_token(client, headers, provider_config, account_name)
+				if refreshed:
+					headers['Authorization'] = f'Bearer {refreshed}'
+					user_info_before = get_user_info(
+						client,
+						headers,
+						user_info_url,
+						api_user_key=provider_config.api_user_key,
+					)
+
 			if user_info_before and user_info_before.get('success'):
 				print(user_info_before['display'])
 			elif user_info_before:
 				print(user_info_before.get('error', 'Unknown error'))
+				if not access_token:
+					print(
+						f'[HINT] {account_name}: This site may be Bearer-only (new NewAPI). '
+						'Session cookies alone cannot authenticate — configure email+password '
+						'so the browser can capture access_token, or supply a fresh access_token.'
+					)
 
 			if provider_config.needs_manual_check_in():
 				success = execute_check_in(client, account_name, provider_config, headers)

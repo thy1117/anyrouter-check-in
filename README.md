@@ -103,7 +103,24 @@
 
 ![获取 api_user](./assets/request-api-user.png)
 
-部分站点已切换到新版 Bearer token 认证。如果出现 `401 Unauthorized, invalid access token`，请登录对应站点后在 F12 → Application → Local Storage 中找到 `new-api:auth-session`，复制 JSON 里的 `access_token`，然后把账号改成：
+部分站点已切换到新版 Bearer token 认证（NewAPI v1.0.0-rc 起）。这类站点的 `/api/user/self`
+**完全不认 session cookie**，只认 `Authorization: Bearer`，所以只配 cookies 一定是
+`401 Unauthorized, invalid access token`。
+
+这类站点**推荐配邮箱密码**，让脚本自己登录并从 localStorage 取 token：
+
+```json
+{
+  "name": "小鸡毛-thy1117",
+  "provider": "xiaojimao",
+  "email": "your@email.com",
+  "password": "your_password"
+}
+```
+
+原因是 access_token 只有**分钟级**有效期，靠 HttpOnly 的 `new_api_refresh` cookie 轮换。
+手工从 F12 → Application → Local Storage 的 `new-api:auth-session` 里复制出来的
+`access_token`，通常在下一次定时任务跑之前就已经过期：
 
 ```json
 {
@@ -112,6 +129,10 @@
   "access_token": "替换成最新 access_token"
 }
 ```
+
+脚本在认证失败时会自动 POST `/api/user/auth/refresh` 尝试轮换一次 token，因此如果你
+复制的是完整 Cookie 请求头（其中含 `new_api_refresh`），也可以撑过 token 过期。但只有
+邮箱密码方式能长期免维护。
 
 不要把 token 发到聊天或提交到仓库，只更新 GitHub Actions 的 `ANYROUTER_ACCOUNTS` Secret。
 
@@ -142,7 +163,7 @@
 - 请确保每个账号的 cookies 和 API User 都是正确的
 - 可以在 Actions 页面查看详细的运行日志
 - 支持部分账号失败，只要有账号成功签到，整个任务就不会失败
-- 报 401 错误，请先确认站点仍使用 session cookies；若返回 `invalid access token`，改用新版 `access_token` 配置。旧版 cookies 理论 1 个月失效，但有 Bug，详见 [#6](https://github.com/millylee/anyrouter-check-in/issues/6)
+- 报 401 错误，请先确认站点仍使用 session cookies；若返回 `invalid access token`，说明站点已是 Bearer-only，改配邮箱密码（见上文），手填 `access_token` 会很快过期。旧版 cookies 理论 1 个月失效，但有 Bug，详见 [#6](https://github.com/millylee/anyrouter-check-in/issues/6)
 - 请求 200，但出现 Error 1040（08004）：Too many connections，官方数据库问题，目前已修复，但遇到几次了，详见 [#7](https://github.com/millylee/anyrouter-check-in/issues/7)
 
 ## 配置示例
