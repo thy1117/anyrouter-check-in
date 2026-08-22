@@ -108,17 +108,21 @@ class AppConfig:
 			),
 		}
 
-		# 尝试从环境变量加载自定义 providers
-		providers_str = os.getenv('PROVIDERS')
-		if providers_str:
+		# 依次加载主配置和追加配置。EXTRA_PROVIDERS 用于在无法读取原 Secret 时安全追加站点。
+		for env_name in ('PROVIDERS', 'EXTRA_PROVIDERS'):
+			providers_str = os.getenv(env_name)
+			if not providers_str:
+				continue
+
 			try:
 				providers_data = json.loads(providers_str)
 
 				if not isinstance(providers_data, dict):
-					print('[WARNING] PROVIDERS must be a JSON object, ignoring custom providers')
-					return cls(providers=providers)
+					print(f'[WARNING] {env_name} must be a JSON object, ignoring it')
+					continue
 
-				# 解析自定义 providers,会覆盖默认配置
+				# 后加载的配置会覆盖同名 provider，并继承未显式填写的已有设置。
+				loaded_count = 0
 				for name, provider_data in providers_data.items():
 					try:
 						providers[name] = ProviderConfig.from_dict(
@@ -126,17 +130,15 @@ class AppConfig:
 							provider_data,
 							defaults=providers.get(name),
 						)
+						loaded_count += 1
 					except Exception as e:
-						print(f'[WARNING] Failed to parse provider "{name}": {e}, skipping')
-						continue
+						print(f'[WARNING] Failed to parse provider "{name}" from {env_name}: {e}, skipping')
 
-				print(f'[INFO] Loaded {len(providers_data)} custom provider(s) from PROVIDERS environment variable')
+				print(f'[INFO] Loaded {loaded_count} custom provider(s) from {env_name} environment variable')
 			except json.JSONDecodeError as e:
-				print(
-					f'[WARNING] Failed to parse PROVIDERS environment variable: {e}, using default configuration only'
-				)
+				print(f'[WARNING] Failed to parse {env_name} environment variable: {e}, ignoring it')
 			except Exception as e:
-				print(f'[WARNING] Error loading PROVIDERS: {e}, using default configuration only')
+				print(f'[WARNING] Error loading {env_name}: {e}, ignoring it')
 
 		return cls(providers=providers)
 
@@ -151,6 +153,7 @@ class AccountConfig:
 
 	cookies: dict | str | None
 	api_user: str | None = None
+	access_token: str | None = None
 	provider: str = 'anyrouter'
 	name: str | None = None
 	email: str | None = None
@@ -165,6 +168,7 @@ class AccountConfig:
 		return cls(
 			cookies=data.get('cookies'),
 			api_user=data.get('api_user'),
+			access_token=data.get('access_token') or data.get('accessToken') or data.get('token'),
 			provider=provider,
 			name=name if name else None,
 			email=data.get('email'),
@@ -175,6 +179,10 @@ class AccountConfig:
 		"""是否配置了邮箱密码登录"""
 		return bool(self.email and self.password)
 
+	def has_access_token(self) -> bool:
+		"""是否配置了新版 Bearer access token"""
+		return bool(self.access_token)
+
 	def get_display_name(self, index: int) -> str:
 		"""获取显示名称"""
 		return self.name if self.name else f'Account {index + 1}'
@@ -182,32 +190,44 @@ class AccountConfig:
 
 def load_accounts_config() -> list[AccountConfig] | None:
 	"""从环境变量加载账号配置"""
-	accounts_str = os.getenv('ANYROUTER_ACCOUNTS')
-	if not accounts_str:
-		print('ERROR: ANYROUTER_ACCOUNTS environment variable not found')
-		return None
+	account_sources = []
+	for env_name in ('ANYROUTER_ACCOUNTS', 'EXTRA_ACCOUNTS'):
+		accounts_str = os.getenv(env_name)
+		if not accounts_str:
+			continue
 
-	try:
-		accounts_data = json.loads(accounts_str)
-	except json.JSONDecodeError as e:
-		print(f'ERROR: ANYROUTER_ACCOUNTS JSON 解析失败: {e}')
-		print('HINT: 常见原因 - 末尾多余逗号、使用了单引号、包含注释、或换行格式问题')
-		return None
-
-	try:
-		if not isinstance(accounts_data, list):
-			print('ERROR: Account configuration must use array format [{}]')
+		try:
+			accounts_data = json.loads(accounts_str)
+		except json.JSONDecodeError as e:
+			print(f'ERROR: {env_name} JSON 解析失败: {e}')
+			print('HINT: 常见原因 - 末尾多余逗号、使用了单引号、包含注释、或换行格式问题')
 			return None
 
+		if not isinstance(accounts_data, list):
+			print(f'ERROR: {env_name} must use array format [{{}}]')
+			return None
+
+		account_sources.extend(accounts_data)
+		print(f'[INFO] Loaded {len(accounts_data)} account(s) from {env_name}')
+
+	if not account_sources:
+		print('ERROR: ANYROUTER_ACCOUNTS or EXTRA_ACCOUNTS environment variable not found')
+		return None
+
+	try:
 		accounts = []
-		for i, account_dict in enumerate(accounts_data):
+		for i, account_dict in enumerate(account_sources):
 			if not isinstance(account_dict, dict):
 				print(f'ERROR: Account {i + 1} configuration format is incorrect')
 				return None
 
+			has_access_token = bool(
+				account_dict.get('access_token') or account_dict.get('accessToken') or account_dict.get('token')
+			)
+
 			if 'api_user' not in account_dict:
 				has_login = account_dict.get('email') and account_dict.get('password')
-				if not has_login:
+				if not has_login and not has_access_token:
 					print(
 						f'ERROR: Account {i + 1} missing required field (api_user) - only email+password login can omit it'
 					)
@@ -216,8 +236,8 @@ def load_accounts_config() -> list[AccountConfig] | None:
 			has_cookies = 'cookies' in account_dict and account_dict['cookies']
 			has_login = account_dict.get('email') and account_dict.get('password')
 
-			if not has_cookies and not has_login:
-				print(f'ERROR: Account {i + 1} must have either cookies or email+password')
+			if not has_cookies and not has_login and not has_access_token:
+				print(f'ERROR: Account {i + 1} must have cookies, access_token, or email+password')
 				return None
 
 			if 'name' in account_dict and not account_dict['name']:

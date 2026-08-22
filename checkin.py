@@ -412,14 +412,16 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 			print(f'[FAILED] {account_name}: Email/password login failed, will not use stale session cookies')
 			return False, None, None
 	else:
-		user_cookies = parse_cookies(account.cookies)
-		if not user_cookies:
+		user_cookies = parse_cookies(account.cookies) if account.cookies else {}
+		if not user_cookies and not account.has_access_token():
 			print(f'[FAILED] {account_name}: Invalid configuration format')
 			return False, None, None
-		all_cookies = await prepare_cookies(account_name, provider_config, user_cookies)
+		all_cookies = (
+			await prepare_cookies(account_name, provider_config, user_cookies) if user_cookies else {}
+		)
 		auth_method = 'session cookies'
 
-	if not all_cookies:
+	if not all_cookies and not account.has_access_token():
 		return False, None, None
 
 	print(f'[AUTH] {account_name}: Using auth method -> {auth_method}')
@@ -475,6 +477,8 @@ def run_check_in_requests(
 			api_user = api_user_override or account.api_user
 			if api_user:
 				headers[provider_config.api_user_key] = api_user
+			if account.access_token:
+				headers['Authorization'] = f'Bearer {account.access_token}'
 
 			user_info_url = f'{provider_config.domain}{provider_config.user_info_path}'
 			user_info_before = get_user_info(
