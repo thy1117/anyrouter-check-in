@@ -115,3 +115,17 @@ def test_42w_provider_uses_browser_page_for_cloudflare(monkeypatch):
 	assert provider.use_proxy is True
 	assert provider.http2 is False
 	assert provider.request_in_page is True
+
+
+def test_kapibala_provider_uses_newapi_refresh_auth(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['kapibala']
+
+	assert provider.domain == 'https://kapibala.asia'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.auth_refresh_path == '/api/user/auth/refresh'
+	assert provider.use_proxy is True
