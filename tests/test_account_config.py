@@ -108,3 +108,17 @@ def test_later_disabled_account_removes_existing_account(monkeypatch):
 
 	assert accounts is not None
 	assert [account.name for account in accounts] == ['keep']
+
+
+def test_username_password_account_is_valid(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS',
+		json.dumps([{'name': 'user-login', 'provider': 'custom', 'username': 'user', 'password': 'pass'}]),
+	)
+
+	accounts = load_accounts_config()
+
+	assert accounts is not None
+	assert accounts[0].has_login_credentials() is True
+	assert accounts[0].get_login_identifier() == 'user'

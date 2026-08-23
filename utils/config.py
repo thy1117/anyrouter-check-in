@@ -170,6 +170,7 @@ class AppConfig:
 				name='kapibala',
 				domain='https://kapibala.asia',
 				login_path='/profile',
+				login_api_path='/api/user/login',
 				sign_in_path='/api/user/checkin',
 				user_info_path='/api/user/self',
 				auth_refresh_path='/api/user/auth/refresh',
@@ -228,6 +229,7 @@ class AccountConfig:
 	session_id: str | None = None
 	provider: str = 'anyrouter'
 	name: str | None = None
+	username: str | None = None
 	email: str | None = None
 	password: str | None = None
 
@@ -245,13 +247,17 @@ class AccountConfig:
 			session_id=data.get('session_id') or data.get('sid'),
 			provider=provider,
 			name=name if name else None,
+			username=data.get('username'),
 			email=data.get('email'),
 			password=data.get('password'),
 		)
 
 	def has_login_credentials(self) -> bool:
 		"""是否配置了邮箱密码登录"""
-		return bool(self.email and self.password)
+		return bool((self.username or self.email) and self.password)
+
+	def get_login_identifier(self) -> str | None:
+		return self.username or self.email
 
 	def has_access_token(self) -> bool:
 		"""是否配置了新版 Bearer access token"""
@@ -333,15 +339,19 @@ def load_accounts_config() -> list[AccountConfig] | None:
 			)
 			has_refresh_token = bool(account_dict.get('refresh_token') or account_dict.get('refreshToken'))
 			has_cookies = 'cookies' in account_dict and account_dict['cookies']
-			has_login = account_dict.get('email') and account_dict.get('password')
+			has_login = (account_dict.get('username') or account_dict.get('email')) and account_dict.get('password')
 
 			if 'api_user' not in account_dict:
 				if not has_cookies and not has_login and not has_access_token and not has_refresh_token:
-					print(f'ERROR: Account {i + 1} must have cookies, access_token, refresh_token, or email+password')
+					print(
+						f'ERROR: Account {i + 1} must have cookies, access_token, refresh_token, or username/email+password'
+					)
 					return None
 
 			if not has_cookies and not has_login and not has_access_token and not has_refresh_token:
-				print(f'ERROR: Account {i + 1} must have cookies, access_token, refresh_token, or email+password')
+				print(
+					f'ERROR: Account {i + 1} must have cookies, access_token, refresh_token, or username/email+password'
+				)
 				return None
 
 			if 'name' in account_dict and not account_dict['name']:

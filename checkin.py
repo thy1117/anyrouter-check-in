@@ -625,6 +625,99 @@ def run_sub2api_check_in(
 		return False, None, None
 
 
+def run_newapi_password_check_in(
+	account: AccountConfig,
+	account_name: str,
+	provider_config,
+) -> tuple[bool, dict | None, dict | None]:
+	"""通过新版 NewAPI 登录接口执行签到，完成后注销临时会话。"""
+	identifier = account.get_login_identifier()
+	if not identifier or not account.password or not provider_config.login_api_path:
+		return False, None, None
+
+	client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0}
+	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
+	if proxy_url:
+		client_kwargs['proxy'] = proxy_url
+
+	base_headers = {
+		'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+		'Accept': 'application/json, text/plain, */*',
+		'Content-Type': 'application/json',
+		'Origin': provider_config.domain,
+		'Referer': f'{provider_config.domain}{provider_config.login_path}',
+	}
+
+	try:
+		with httpx.Client(headers=base_headers, **client_kwargs) as client:
+			print(f'[AUTH] {account_name}: Logging in through NewAPI username/password API')
+			response = client.post(
+				f'{provider_config.domain}{provider_config.login_api_path}',
+				json={'username': identifier, 'password': account.password},
+				timeout=30,
+			)
+			if response.status_code != 200:
+				print(f'[FAILED] {account_name}: Login failed - HTTP {response.status_code}')
+				return False, None, None
+
+			payload = response.json()
+			if not payload.get('success'):
+				print(f'[FAILED] {account_name}: Login failed - {payload.get("message", "unknown error")}')
+				return False, None, None
+			data = payload.get('data') or {}
+			if data.get('requires_2fa'):
+				print(f'[FAILED] {account_name}: Login requires 2FA')
+				return False, None, None
+
+			access_token = data.get('access_token')
+			session = data.get('session') or {}
+			session_id = session.get('sid')
+			user = data.get('user') or {}
+			api_user = str(user.get('id')) if user.get('id') is not None else None
+			if not access_token:
+				print(f'[FAILED] {account_name}: Login response did not include access token')
+				return False, None, None
+
+			headers = {**base_headers, 'Authorization': f'Bearer {access_token}'}
+			if api_user and provider_config.api_user_key:
+				headers[provider_config.api_user_key] = api_user
+			user_info_url = f'{provider_config.domain}{provider_config.user_info_path}'
+			user_info_before = get_user_info(
+				client,
+				headers,
+				user_info_url,
+				api_user_key=provider_config.api_user_key,
+			)
+			if not user_info_before.get('success'):
+				print(f'[FAILED] {account_name}: {user_info_before.get("error", "Unable to get profile")}')
+				return False, user_info_before, None
+			print(user_info_before['display'])
+
+			success = execute_check_in(client, account_name, provider_config, headers)
+			user_info_after = get_user_info(
+				client,
+				headers,
+				user_info_url,
+				api_user_key=provider_config.api_user_key,
+			)
+
+			logout_headers = headers.copy()
+			if session_id:
+				logout_headers['X-Auth-Session'] = session_id
+			try:
+				client.post(
+					f'{provider_config.domain}/api/user/auth/logout',
+					headers=logout_headers,
+					timeout=15,
+				)
+			except Exception:
+				debug_print(f'[WARN] {account_name}: Failed to close temporary login session')
+			return success, user_info_before, user_info_after
+	except Exception as e:
+		print(f'[FAILED] {account_name}: NewAPI password check-in error - {str(e)[:100]}')
+		return False, None, None
+
+
 def execute_check_in(client, account_name: str, provider_config, headers: dict):
 	"""执行签到请求"""
 	print(f'[NETWORK] {account_name}: Executing check-in')
@@ -805,6 +898,8 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 
 	if provider_config.api_style == 'sub2api':
 		return run_sub2api_check_in(account, account_name, provider_config)
+	if provider_config.login_api_path and account.has_login_credentials():
+		return run_newapi_password_check_in(account, account_name, provider_config)
 
 	# 邮箱密码优先
 	all_cookies = None
@@ -814,12 +909,13 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 	auth_method = None
 	if account.has_login_credentials():
 		print(f'[INFO] {account_name}: Attempting email/password login (priority)...')
-		assert account.email is not None and account.password is not None
+		login_identifier = account.get_login_identifier()
+		assert login_identifier is not None and account.password is not None
 		login_result = await login_with_credentials(
 			account_name,
 			provider_config,
 			account.provider,
-			account.email,
+			login_identifier,
 			account.password,
 		)
 		if login_result:
