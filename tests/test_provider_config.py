@@ -189,3 +189,18 @@ def test_sheapi_provider_uses_local_captcha_ocr(monkeypatch):
 	assert provider.checkin_captcha is True
 	assert provider.captcha_path == '/api/captcha?scene=checkin'
 	assert provider.use_proxy is False
+
+
+def test_aiaiai_provider_uses_cookie_auth(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['aiaiai']
+
+	assert provider.domain == 'https://api.aiaiai001.com'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.login_api_path is None
+	assert provider.use_proxy is False
