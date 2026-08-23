@@ -143,3 +143,19 @@ def test_cun_provider_uses_password_login_over_proxy(monkeypatch):
 	assert provider.sign_in_path == '/api/user/checkin'
 	assert provider.user_info_path == '/api/user/self'
 	assert provider.use_proxy is True
+
+
+def test_nova_provider_uses_browser_page_for_cloudflare(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['nova']
+
+	assert provider.domain == 'https://nova.vcrauo.com'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.waf_cookie_names == ['cf_clearance']
+	assert provider.use_proxy is True
+	assert provider.http2 is False
+	assert provider.request_in_page is True
