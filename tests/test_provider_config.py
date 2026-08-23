@@ -84,3 +84,18 @@ def test_extra_providers_are_merged_after_main_providers(monkeypatch):
 	assert config.providers['custom'].domain == 'https://new.example.com'
 	assert config.providers['custom'].use_proxy is True
 	assert config.providers['futureppo'].sign_in_path == '/api/user/checkin'
+
+
+def test_twinkle_sub2api_provider_is_built_in(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['twinkle']
+
+	assert provider.api_style == 'sub2api'
+	assert provider.domain == 'https://big-model.smart-agi.com'
+	assert provider.login_api_path == '/api/v1/auth/login'
+	assert provider.sign_in_path == '/api/v1/user/daily-checkin'
+	assert provider.user_info_path == '/api/v1/user/profile'
+	assert provider.use_proxy is True

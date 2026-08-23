@@ -259,7 +259,7 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 

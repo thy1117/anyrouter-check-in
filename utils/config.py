@@ -16,7 +16,9 @@ class ProviderConfig:
 
 	name: str
 	domain: str
+	api_style: Literal['newapi', 'sub2api'] = 'newapi'
 	login_path: str = '/login'
+	login_api_path: str | None = None
 	sign_in_path: str | None = '/api/user/sign_in'
 	user_info_path: str = '/api/user/self'
 	auth_refresh_path: str | None = '/api/user/auth/refresh'
@@ -59,7 +61,9 @@ class ProviderConfig:
 		return cls(
 			name=name,
 			domain=data['domain'],
+			api_style=data.get('api_style', defaults.api_style if defaults else 'newapi'),
 			login_path=data.get('login_path', defaults.login_path if defaults else '/login'),
+			login_api_path=data.get('login_api_path', defaults.login_api_path if defaults else None),
 			sign_in_path=data.get('sign_in_path', defaults.sign_in_path if defaults else '/api/user/sign_in'),
 			user_info_path=data.get('user_info_path', defaults.user_info_path if defaults else '/api/user/self'),
 			auth_refresh_path=data.get(
@@ -137,6 +141,18 @@ class AppConfig:
 				# 所以签到/查询一律交给浏览器页面自己发。
 				request_in_page=True,
 			),
+			'twinkle': ProviderConfig(
+				name='twinkle',
+				domain='https://big-model.smart-agi.com',
+				api_style='sub2api',
+				login_path='/login',
+				login_api_path='/api/v1/auth/login',
+				sign_in_path='/api/v1/user/daily-checkin',
+				user_info_path='/api/v1/user/profile',
+				auth_refresh_path='/api/v1/auth/refresh',
+				api_user_key='',
+				use_proxy=True,
+			),
 		}
 
 		# 依次加载主配置和追加配置。EXTRA_PROVIDERS 用于在无法读取原 Secret 时安全追加站点。
@@ -185,6 +201,7 @@ class AccountConfig:
 	cookies: dict | str | None
 	api_user: str | None = None
 	access_token: str | None = None
+	refresh_token: str | None = None
 	session_id: str | None = None
 	provider: str = 'anyrouter'
 	name: str | None = None
@@ -201,6 +218,7 @@ class AccountConfig:
 			cookies=data.get('cookies'),
 			api_user=data.get('api_user'),
 			access_token=data.get('access_token') or data.get('accessToken') or data.get('token'),
+			refresh_token=data.get('refresh_token') or data.get('refreshToken'),
 			session_id=data.get('session_id') or data.get('sid'),
 			provider=provider,
 			name=name if name else None,
@@ -215,6 +233,9 @@ class AccountConfig:
 	def has_access_token(self) -> bool:
 		"""是否配置了新版 Bearer access token"""
 		return bool(self.access_token)
+
+	def has_refresh_token(self) -> bool:
+		return bool(self.refresh_token)
 
 	def get_display_name(self, index: int) -> str:
 		"""获取显示名称"""
@@ -283,16 +304,17 @@ def load_accounts_config() -> list[AccountConfig] | None:
 			has_access_token = bool(
 				account_dict.get('access_token') or account_dict.get('accessToken') or account_dict.get('token')
 			)
+			has_refresh_token = bool(account_dict.get('refresh_token') or account_dict.get('refreshToken'))
 			has_cookies = 'cookies' in account_dict and account_dict['cookies']
 			has_login = account_dict.get('email') and account_dict.get('password')
 
 			if 'api_user' not in account_dict:
-				if not has_cookies and not has_login and not has_access_token:
-					print(f'ERROR: Account {i + 1} must have cookies, access_token, or email+password')
+				if not has_cookies and not has_login and not has_access_token and not has_refresh_token:
+					print(f'ERROR: Account {i + 1} must have cookies, access_token, refresh_token, or email+password')
 					return None
 
-			if not has_cookies and not has_login and not has_access_token:
-				print(f'ERROR: Account {i + 1} must have cookies, access_token, or email+password')
+			if not has_cookies and not has_login and not has_access_token and not has_refresh_token:
+				print(f'ERROR: Account {i + 1} must have cookies, access_token, refresh_token, or email+password')
 				return None
 
 			if 'name' in account_dict and not account_dict['name']:

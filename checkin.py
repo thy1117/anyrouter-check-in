@@ -422,6 +422,209 @@ def parse_user_info_response(status_code: int, body: str) -> dict:
 	}
 
 
+def unwrap_api_data(payload: object) -> object:
+	"""兼容直接响应与 ``{code: 0, data: ...}`` 包装。"""
+	if isinstance(payload, dict) and payload.get('code') == 0 and 'data' in payload:
+		return payload['data']
+	return payload
+
+
+def _number(value: object, default: float = 0.0) -> float:
+	try:
+		return float(value)  # type: ignore[arg-type]
+	except (TypeError, ValueError):
+		return default
+
+
+def parse_sub2api_profile_response(status_code: int, body: str) -> dict:
+	"""解析 Sub2API ``/api/v1/user/profile`` 响应。"""
+	if status_code != 200:
+		return {'success': False, 'error': f'Failed to get user info: HTTP {status_code}'}
+
+	try:
+		payload = json.loads(body)
+	except json.JSONDecodeError:
+		return {'success': False, 'error': 'Failed to get user info: invalid JSON'}
+
+	if isinstance(payload, dict) and payload.get('code') not in (None, 0):
+		return {'success': False, 'error': payload.get('message', 'Failed to get user info')}
+
+	info = unwrap_api_data(payload)
+	if not isinstance(info, dict):
+		return {'success': False, 'error': 'Failed to get user info: invalid response data'}
+
+	quota = round(_number(info.get('balance')), 4)
+	used_quota = round(
+		_number(
+			info.get(
+				'used_balance',
+				info.get('used_quota', info.get('total_used', info.get('total_spent', 0))),
+			)
+		),
+		4,
+	)
+	return {
+		'success': True,
+		'quota': quota,
+		'used_quota': used_quota,
+		'display': f':money: Current balance: ${quota:.4f}, Used: ${used_quota:.4f}',
+	}
+
+
+def _sub2api_token_from_response(response, account_name: str) -> tuple[str | None, str | None]:
+	try:
+		payload = response.json()
+	except json.JSONDecodeError:
+		print(f'[FAILED] {account_name}: Authentication returned invalid JSON')
+		return None, None
+
+	if response.status_code != 200:
+		message = payload.get('message', f'HTTP {response.status_code}') if isinstance(payload, dict) else response.text
+		print(f'[FAILED] {account_name}: Authentication failed - {message}')
+		return None, None
+
+	data = unwrap_api_data(payload)
+	if not isinstance(data, dict):
+		print(f'[FAILED] {account_name}: Authentication response has no token data')
+		return None, None
+	if data.get('requires_2fa'):
+		print(f'[FAILED] {account_name}: This Sub2API account requires 2FA; use refresh_token instead')
+		return None, None
+
+	access_token = data.get('access_token')
+	refresh_token = data.get('refresh_token')
+	return (
+		access_token if isinstance(access_token, str) and access_token else None,
+		refresh_token if isinstance(refresh_token, str) and refresh_token else None,
+	)
+
+
+def _sub2api_refresh_token(
+	client, account_name: str, provider_config, refresh_token: str
+) -> tuple[str | None, str | None]:
+	if not provider_config.auth_refresh_path:
+		return None, None
+	response = client.post(
+		f'{provider_config.domain}{provider_config.auth_refresh_path}',
+		json={'refresh_token': refresh_token},
+		timeout=30,
+	)
+	return _sub2api_token_from_response(response, account_name)
+
+
+def run_sub2api_check_in(
+	account: AccountConfig,
+	account_name: str,
+	provider_config,
+) -> tuple[bool, dict | None, dict | None]:
+	"""使用 Sub2API 的 Bearer API 登录、查询余额并签到。"""
+	client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0}
+	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
+	if proxy_url:
+		client_kwargs['proxy'] = proxy_url
+		print(f'[INFO] {account_name}: Sub2API HTTP client proxy enabled')
+	elif provider_config.use_proxy:
+		print(f'[WARN] {account_name}: Provider requires proxy but CHECKIN_PROXY_URL is not set')
+
+	headers = {
+		'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+		'Accept': 'application/json, text/plain, */*',
+		'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+		'Content-Type': 'application/json',
+		'Referer': f'{provider_config.domain}/dashboard',
+		'Origin': provider_config.domain,
+	}
+
+	try:
+		with httpx.Client(headers=headers, **client_kwargs) as client:
+			access_token = account.access_token
+			refresh_token = account.refresh_token
+
+			if account.has_login_credentials():
+				if not provider_config.login_api_path:
+					print(f'[FAILED] {account_name}: Sub2API login_api_path is not configured')
+					return False, None, None
+				print(f'[AUTH] {account_name}: Logging in through Sub2API email/password API')
+				response = client.post(
+					f'{provider_config.domain}{provider_config.login_api_path}',
+					json={'email': account.email, 'password': account.password},
+					headers=headers,
+					timeout=30,
+				)
+				access_token, login_refresh_token = _sub2api_token_from_response(response, account_name)
+				refresh_token = login_refresh_token or refresh_token
+			elif not access_token and refresh_token:
+				print(f'[AUTH] {account_name}: Refreshing Sub2API access token')
+				access_token, refresh_token = _sub2api_refresh_token(
+					client,
+					account_name,
+					provider_config,
+					refresh_token,
+				)
+
+			if not access_token:
+				print(f'[FAILED] {account_name}: No usable Sub2API access token')
+				return False, None, None
+
+			headers['Authorization'] = f'Bearer {access_token}'
+			profile_url = f'{provider_config.domain}{provider_config.user_info_path}'
+			status_url = f'{provider_config.domain}{provider_config.sign_in_path}'
+
+			def get_profile():
+				response = client.get(profile_url, headers=headers, timeout=30)
+				return response, parse_sub2api_profile_response(response.status_code, response.text)
+
+			profile_response, user_info_before = get_profile()
+			if profile_response.status_code == 401 and refresh_token:
+				new_access_token, new_refresh_token = _sub2api_refresh_token(
+					client,
+					account_name,
+					provider_config,
+					refresh_token,
+				)
+				if new_access_token:
+					headers['Authorization'] = f'Bearer {new_access_token}'
+					refresh_token = new_refresh_token or refresh_token
+					_, user_info_before = get_profile()
+
+			if not user_info_before.get('success'):
+				print(f'[FAILED] {account_name}: {user_info_before.get("error", "Unable to get profile")}')
+				return False, user_info_before, None
+			print(user_info_before['display'])
+
+			status_response = client.get(status_url, headers=headers, timeout=30)
+			status_payload = None
+			try:
+				status_payload = unwrap_api_data(status_response.json())
+			except json.JSONDecodeError:
+				pass
+
+			if (
+				status_response.status_code == 200
+				and isinstance(status_payload, dict)
+				and status_payload.get('checked_today')
+			):
+				print(f'[SUCCESS] {account_name}: Already checked in today')
+				success = True
+			elif (
+				status_response.status_code == 200
+				and isinstance(status_payload, dict)
+				and status_payload.get('eligible') is False
+			):
+				print(f'[FAILED] {account_name}: Daily check-in is currently not eligible')
+				success = False
+			else:
+				print(f'[NETWORK] {account_name}: Executing Sub2API daily check-in')
+				check_response = client.post(status_url, headers=headers, timeout=30)
+				success = parse_check_in_response(account_name, check_response.status_code, check_response.text)
+
+			_, user_info_after = get_profile()
+			return success, user_info_before, user_info_after
+	except Exception as e:
+		print(f'[FAILED] {account_name}: Sub2API check-in error - {str(e)[:100]}')
+		return False, None, None
+
+
 def execute_check_in(client, account_name: str, provider_config, headers: dict):
 	"""执行签到请求"""
 	print(f'[NETWORK] {account_name}: Executing check-in')
@@ -594,6 +797,9 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 		return False, None, None
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
+
+	if provider_config.api_style == 'sub2api':
+		return run_sub2api_check_in(account, account_name, provider_config)
 
 	# 邮箱密码优先
 	all_cookies = None
