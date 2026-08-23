@@ -738,6 +738,11 @@ async def run_check_in_in_page(
 
 		user_cookies = parse_cookies(account.cookies) if account.cookies else {}
 		if user_cookies:
+			# WAF cookies are tied to the runner's current IP/browser fingerprint. Keep the
+			# fresh values obtained above instead of overwriting them with cookies copied
+			# from the user's local browser.
+			waf_cookie_names = set(provider_config.waf_cookie_names or [])
+			user_cookies = {name: value for name, value in user_cookies.items() if name not in waf_cookie_names}
 			domain = provider_config.domain.split('://', 1)[-1]
 			await page.context.add_cookies(
 				[{'name': name, 'value': value, 'domain': domain, 'path': '/'} for name, value in user_cookies.items()]
