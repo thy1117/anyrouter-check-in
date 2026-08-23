@@ -159,3 +159,17 @@ def test_nova_provider_uses_browser_page_for_cloudflare(monkeypatch):
 	assert provider.use_proxy is False
 	assert provider.http2 is False
 	assert provider.request_in_page is True
+
+
+def test_nianhua_provider_uses_password_login(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['nianhua']
+
+	assert provider.domain == 'https://us-3.nianhuaapi.com'
+	assert provider.login_api_path == '/api/user/login'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.use_proxy is False

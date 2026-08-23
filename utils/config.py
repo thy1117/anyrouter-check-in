@@ -201,6 +201,17 @@ class AppConfig:
 				http2=False,
 				request_in_page=True,
 			),
+			'nianhua': ProviderConfig(
+				name='nianhua',
+				domain='https://us-3.nianhuaapi.com',
+				login_path='/profile',
+				login_api_path='/api/user/login',
+				sign_in_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				auth_refresh_path='/api/user/auth/refresh',
+				api_user_key='New-Api-User',
+				use_proxy=False,
+			),
 		}
 
 		# 依次加载主配置和追加配置。EXTRA_PROVIDERS 用于在无法读取原 Secret 时安全追加站点。
