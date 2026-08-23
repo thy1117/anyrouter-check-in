@@ -19,6 +19,10 @@ class FakeClient:
 		self.calls.append({'url': url, 'headers': headers, 'timeout': timeout})
 		return next(self.responses)
 
+	def post(self, url, *, headers, timeout, json=None):
+		self.calls.append({'url': url, 'json': json, 'headers': headers, 'timeout': timeout})
+		return next(self.responses)
+
 
 def test_get_user_info_retries_without_stale_api_user_after_401():
 	client = FakeClient(
@@ -64,7 +68,7 @@ class FakeRefreshClient(FakeClient):
 		self.refresh_response = refresh_response
 		self.posts = []
 
-	def post(self, url, *, headers, timeout):
+	def post(self, url, *, headers, timeout, json=None):
 		self.posts.append({'url': url, 'headers': headers, 'timeout': timeout})
 		return self.refresh_response
 
@@ -106,3 +110,48 @@ def test_refresh_access_token_skipped_when_provider_has_no_path():
 
 	assert refresh_access_token(client, {}, provider, 'acct') is None
 	assert client.posts == []
+
+
+def test_execute_captcha_check_in_retries_uncertain_ocr(monkeypatch):
+	import json
+
+	from checkin import execute_captcha_check_in
+	from utils.config import ProviderConfig
+
+	class Response:
+		def __init__(self, status_code, payload):
+			self.status_code = status_code
+			self._payload = payload
+			self.text = json.dumps(payload)
+
+		def json(self):
+			return self._payload
+
+	class CaptchaClient:
+		def __init__(self):
+			self.captcha_count = 0
+			self.submissions = []
+
+		def get(self, url, *, headers, timeout):
+			self.captcha_count += 1
+			return Response(
+				200, {'data': {'captcha_id': f'id-{self.captcha_count}', 'image': 'data:image/png;base64,abc'}}
+			)
+
+		def post(self, url, *, json, headers, timeout):
+			self.submissions.append(json)
+			return Response(200, {'success': True})
+
+	client = CaptchaClient()
+	provider = ProviderConfig(name='sheapi', domain='https://www.sheapi.top', checkin_captcha=True)
+	results = iter(
+		[
+			type('OCR', (), {'text': '2345', 'exact': False})(),
+			type('OCR', (), {'text': '6789', 'exact': True})(),
+		]
+	)
+	monkeypatch.setattr('captcha_ocr.base64_captcha.solve_data_url', lambda image: next(results))
+
+	assert execute_captcha_check_in(client, 'SheApi', provider, {}) is True
+	assert client.captcha_count == 2
+	assert client.submissions == [{'captcha_id': 'id-2', 'captcha_code': '6789'}]

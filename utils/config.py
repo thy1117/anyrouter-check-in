@@ -29,6 +29,9 @@ class ProviderConfig:
 	persist_profile: bool = False
 	http2: bool = True
 	request_in_page: bool = False
+	checkin_captcha: bool = False
+	captcha_path: str = '/api/captcha?scene=checkin'
+	captcha_code_key: str = 'captcha_code'
 
 	def __post_init__(self):
 		required_waf_cookies = set()
@@ -58,6 +61,9 @@ class ProviderConfig:
 		default_persist_profile = defaults.persist_profile if defaults else False
 		default_http2 = defaults.http2 if defaults else True
 		default_request_in_page = defaults.request_in_page if defaults else False
+		default_checkin_captcha = defaults.checkin_captcha if defaults else False
+		default_captcha_path = defaults.captcha_path if defaults else '/api/captcha?scene=checkin'
+		default_captcha_code_key = defaults.captcha_code_key if defaults else 'captcha_code'
 		return cls(
 			name=name,
 			domain=data['domain'],
@@ -77,6 +83,9 @@ class ProviderConfig:
 			persist_profile=data.get('persist_profile', default_persist_profile),
 			http2=data.get('http2', default_http2),
 			request_in_page=data.get('request_in_page', default_request_in_page),
+			checkin_captcha=data.get('checkin_captcha', default_checkin_captcha),
+			captcha_path=data.get('captcha_path', default_captcha_path),
+			captcha_code_key=data.get('captcha_code_key', default_captcha_code_key),
 		)
 
 	def needs_waf_cookies(self) -> bool:
@@ -211,6 +220,18 @@ class AppConfig:
 				auth_refresh_path='/api/user/auth/refresh',
 				api_user_key='New-Api-User',
 				use_proxy=False,
+			),
+			'sheapi': ProviderConfig(
+				name='sheapi',
+				domain='https://www.sheapi.top',
+				login_path='/profile',
+				login_api_path='/api/user/login',
+				sign_in_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				auth_refresh_path='/api/user/auth/refresh',
+				api_user_key='New-Api-User',
+				use_proxy=False,
+				checkin_captcha=True,
 			),
 		}
 

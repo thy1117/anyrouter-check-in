@@ -44,6 +44,9 @@ from utils.proxy import get_playwright_proxy, get_proxy_server
 load_dotenv()
 
 BALANCE_HASH_FILE = 'balance_hash.txt'
+CAPTCHA_MAX_ATTEMPTS = 4
+CAPTCHA_RETRY_KEYWORDS = ('验证码', 'captcha', '过期', 'expired', 'invalid code')
+ALREADY_CHECKED_KEYWORDS = ('已经签到', '已签到', '重复签到', 'already checked', 'already signed')
 
 
 def load_balance_hash():
@@ -389,12 +392,95 @@ def parse_check_in_response(account_name: str, status_code: int, body: str) -> b
 		return True
 
 	error_msg = result.get('msg', result.get('message', 'Unknown error'))
-	already_checked_keywords = ['已经签到', '已签到', '重复签到', 'already checked', 'already signed']
-	if any(keyword in error_msg.lower() for keyword in already_checked_keywords):
+	if any(keyword in error_msg.lower() for keyword in ALREADY_CHECKED_KEYWORDS):
 		print(f'[SUCCESS] {account_name}: Already checked in today')
 		return True
 
 	print(f'[FAILED] {account_name}: Check-in failed - {error_msg}')
+	return False
+
+
+def _response_message(body: str) -> str:
+	"""提取签到接口错误信息，兼容 JSON 和纯文本响应。"""
+	try:
+		payload = json.loads(body)
+	except json.JSONDecodeError:
+		return body.strip()
+
+	if isinstance(payload, dict):
+		return str(payload.get('message') or payload.get('msg') or payload.get('error') or body)
+	return body
+
+
+def execute_captcha_check_in(client, account_name: str, provider_config, headers: dict) -> bool:
+	"""执行需要 base64Captcha 图片验证码的签到。"""
+	try:
+		from captcha_ocr.base64_captcha import solve_data_url
+	except Exception as exc:
+		print(f'[FAILED] {account_name}: CAPTCHA OCR is unavailable: {exc}')
+		return False
+
+	checkin_headers = headers.copy()
+	checkin_headers.update({'Accept': 'application/json, text/plain, */*', 'X-Requested-With': 'XMLHttpRequest'})
+	captcha_url = f'{provider_config.domain}{provider_config.captcha_path}'
+	sign_in_url = f'{provider_config.domain}{provider_config.sign_in_path}'
+
+	for attempt in range(1, CAPTCHA_MAX_ATTEMPTS + 1):
+		try:
+			captcha_response = client.get(captcha_url, headers=checkin_headers, timeout=30)
+			if captcha_response.status_code != 200:
+				print(f'[FAILED] {account_name}: CAPTCHA request failed - HTTP {captcha_response.status_code}')
+				return False
+			captcha_payload = captcha_response.json()
+			captcha_data = captcha_payload.get('data', captcha_payload) if isinstance(captcha_payload, dict) else {}
+			captcha_id = str(captcha_data.get('captcha_id') or '')
+			image = str(captcha_data.get('image') or '')
+			if not captcha_id or not image:
+				print(f'[FAILED] {account_name}: CAPTCHA response has no captcha_id/image')
+				return False
+
+			result = solve_data_url(image)
+			if not result.text:
+				print(f'[WARN] {account_name}: CAPTCHA OCR returned no text, refreshing image')
+				continue
+			if not result.exact and attempt < CAPTCHA_MAX_ATTEMPTS:
+				print(f'[WARN] {account_name}: CAPTCHA OCR uncertain ({result.text}), refreshing image')
+				continue
+
+			print(
+				f'[NETWORK] {account_name}: Submitting CAPTCHA check-in '
+				f'({attempt}/{CAPTCHA_MAX_ATTEMPTS}, exact={result.exact})'
+			)
+			response = client.post(
+				sign_in_url,
+				json={'captcha_id': captcha_id, provider_config.captcha_code_key: result.text},
+				headers=checkin_headers,
+				timeout=30,
+			)
+			body = response.text
+			message = _response_message(body)
+			if any(keyword in message.lower() for keyword in ALREADY_CHECKED_KEYWORDS):
+				print(f'[SUCCESS] {account_name}: Already checked in today')
+				return True
+			if response.status_code == 200:
+				try:
+					payload = response.json()
+				except json.JSONDecodeError:
+					payload = None
+				if isinstance(payload, dict) and (
+					payload.get('success') or payload.get('code') == 0 or payload.get('ret') == 1
+				):
+					print(f'[SUCCESS] {account_name}: Check-in successful!')
+					return True
+			if any(keyword in message.lower() for keyword in CAPTCHA_RETRY_KEYWORDS):
+				print(f'[WARN] {account_name}: CAPTCHA rejected ({message[:120]}), refreshing image')
+				continue
+			print(f'[FAILED] {account_name}: Check-in failed - {message[:120]}')
+			return False
+		except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+			print(f'[WARN] {account_name}: CAPTCHA attempt {attempt} failed - {str(exc)[:120]}')
+
+	print(f'[FAILED] {account_name}: CAPTCHA check-in failed after {CAPTCHA_MAX_ATTEMPTS} attempts')
 	return False
 
 
@@ -720,6 +806,9 @@ def run_newapi_password_check_in(
 
 def execute_check_in(client, account_name: str, provider_config, headers: dict):
 	"""执行签到请求"""
+	if provider_config.checkin_captcha:
+		return execute_captcha_check_in(client, account_name, provider_config, headers)
+
 	print(f'[NETWORK] {account_name}: Executing check-in')
 
 	checkin_headers = headers.copy()

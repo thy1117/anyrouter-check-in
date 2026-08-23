@@ -173,3 +173,19 @@ def test_nianhua_provider_uses_password_login(monkeypatch):
 	assert provider.sign_in_path == '/api/user/checkin'
 	assert provider.user_info_path == '/api/user/self'
 	assert provider.use_proxy is False
+
+
+def test_sheapi_provider_uses_local_captcha_ocr(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['sheapi']
+
+	assert provider.domain == 'https://www.sheapi.top'
+	assert provider.login_api_path == '/api/user/login'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.checkin_captcha is True
+	assert provider.captcha_path == '/api/captcha?scene=checkin'
+	assert provider.use_proxy is False
