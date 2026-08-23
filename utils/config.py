@@ -197,7 +197,7 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				bypass_method='waf_cookies',
 				waf_cookie_names=['cf_clearance'],
-				use_proxy=True,
+				use_proxy=False,
 				http2=False,
 				request_in_page=True,
 			),

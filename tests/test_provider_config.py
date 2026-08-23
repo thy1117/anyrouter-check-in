@@ -156,6 +156,6 @@ def test_nova_provider_uses_browser_page_for_cloudflare(monkeypatch):
 	assert provider.sign_in_path == '/api/user/checkin'
 	assert provider.user_info_path == '/api/user/self'
 	assert provider.waf_cookie_names == ['cf_clearance']
-	assert provider.use_proxy is True
+	assert provider.use_proxy is False
 	assert provider.http2 is False
 	assert provider.request_in_page is True
