@@ -87,3 +87,24 @@ def test_cookie_account_can_omit_api_user(monkeypatch):
 	assert accounts is not None
 	assert accounts[0].api_user is None
 	assert accounts[0].cookies == {'session': 'fresh'}
+
+
+def test_later_disabled_account_removes_existing_account(monkeypatch):
+	monkeypatch.setenv(
+		'ANYROUTER_ACCOUNTS',
+		json.dumps(
+			[
+				{'name': 'keep', 'cookies': {'session': 'keep'}, 'api_user': '1'},
+				{'name': 'remove', 'cookies': {'session': 'old'}, 'api_user': '2'},
+			]
+		),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_4',
+		json.dumps([{'name': 'remove', 'provider': 'custom', 'disabled': True}]),
+	)
+
+	accounts = load_accounts_config()
+
+	assert accounts is not None
+	assert [account.name for account in accounts] == ['keep']

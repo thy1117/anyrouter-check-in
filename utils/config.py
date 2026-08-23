@@ -314,6 +314,10 @@ def load_accounts_config() -> list[AccountConfig] | None:
 
 		accounts = []
 		for i, account_dict in enumerate(merged_account_sources):
+			if account_dict.get('disabled') is True:
+				print(f'[INFO] Account "{account_dict.get("name", i + 1)}" is disabled, skipping')
+				continue
+
 			has_access_token = bool(
 				account_dict.get('access_token') or account_dict.get('accessToken') or account_dict.get('token')
 			)
