@@ -129,3 +129,17 @@ def test_kapibala_provider_uses_newapi_refresh_auth(monkeypatch):
 	assert provider.user_info_path == '/api/user/self'
 	assert provider.auth_refresh_path == '/api/user/auth/refresh'
 	assert provider.use_proxy is False
+
+
+def test_cun_provider_uses_password_login_over_proxy(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['cun']
+
+	assert provider.domain == 'https://www.cun.ai'
+	assert provider.login_api_path == '/api/user/login'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.use_proxy is True
