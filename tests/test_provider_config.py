@@ -128,4 +128,4 @@ def test_kapibala_provider_uses_newapi_refresh_auth(monkeypatch):
 	assert provider.sign_in_path == '/api/user/checkin'
 	assert provider.user_info_path == '/api/user/self'
 	assert provider.auth_refresh_path == '/api/user/auth/refresh'
-	assert provider.use_proxy is True
+	assert provider.use_proxy is False
