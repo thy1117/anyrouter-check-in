@@ -204,3 +204,21 @@ def test_aiaiai_provider_uses_cookie_auth(monkeypatch):
 	assert provider.api_user_key == 'New-Api-User'
 	assert provider.login_api_path is None
 	assert provider.use_proxy is False
+
+
+def test_guyscode_provider_uses_tokenrouter_check_in_api(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['guyscode']
+
+	assert provider.api_style == 'tokenrouter'
+	assert provider.domain == 'https://www.guyscode.com'
+	assert provider.login_api_path == '/api/v1/auth/login'
+	assert provider.sign_in_path == '/api/v1/check-in'
+	assert provider.check_in_status_path == '/api/v1/check-in/status'
+	assert provider.user_info_path == '/api/v1/auth/me'
+	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
+	assert provider.api_user_key == ''
+	assert provider.use_proxy is False

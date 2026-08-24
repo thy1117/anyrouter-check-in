@@ -16,10 +16,11 @@ class ProviderConfig:
 
 	name: str
 	domain: str
-	api_style: Literal['newapi', 'sub2api'] = 'newapi'
+	api_style: Literal['newapi', 'sub2api', 'tokenrouter'] = 'newapi'
 	login_path: str = '/login'
 	login_api_path: str | None = None
 	sign_in_path: str | None = '/api/user/sign_in'
+	check_in_status_path: str | None = None
 	user_info_path: str = '/api/user/self'
 	auth_refresh_path: str | None = '/api/user/auth/refresh'
 	api_user_key: str = 'new-api-user'
@@ -71,6 +72,10 @@ class ProviderConfig:
 			login_path=data.get('login_path', defaults.login_path if defaults else '/login'),
 			login_api_path=data.get('login_api_path', defaults.login_api_path if defaults else None),
 			sign_in_path=data.get('sign_in_path', defaults.sign_in_path if defaults else '/api/user/sign_in'),
+			check_in_status_path=data.get(
+				'check_in_status_path',
+				defaults.check_in_status_path if defaults else None,
+			),
 			user_info_path=data.get('user_info_path', defaults.user_info_path if defaults else '/api/user/self'),
 			auth_refresh_path=data.get(
 				'auth_refresh_path',
@@ -240,6 +245,19 @@ class AppConfig:
 				sign_in_path='/api/user/checkin',
 				user_info_path='/api/user/self',
 				api_user_key='New-Api-User',
+				use_proxy=False,
+			),
+			'guyscode': ProviderConfig(
+				name='guyscode',
+				domain='https://www.guyscode.com',
+				api_style='tokenrouter',
+				login_path='/login',
+				login_api_path='/api/v1/auth/login',
+				sign_in_path='/api/v1/check-in',
+				check_in_status_path='/api/v1/check-in/status',
+				user_info_path='/api/v1/auth/me',
+				auth_refresh_path='/api/v1/auth/refresh',
+				api_user_key='',
 				use_proxy=False,
 			),
 		}

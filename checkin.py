@@ -598,17 +598,17 @@ def _sub2api_refresh_token(
 	return _sub2api_token_from_response(response, account_name)
 
 
-def run_sub2api_check_in(
+def run_bearer_check_in(
 	account: AccountConfig,
 	account_name: str,
 	provider_config,
 ) -> tuple[bool, dict | None, dict | None]:
-	"""使用 Sub2API 的 Bearer API 登录、查询余额并签到。"""
+	"""使用 Bearer API 登录、查询余额并签到。"""
 	client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0}
 	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
 	if proxy_url:
 		client_kwargs['proxy'] = proxy_url
-		print(f'[INFO] {account_name}: Sub2API HTTP client proxy enabled')
+		print(f'[INFO] {account_name}: Bearer HTTP client proxy enabled')
 	elif provider_config.use_proxy:
 		print(f'[WARN] {account_name}: Provider requires proxy but CHECKIN_PROXY_URL is not set')
 
@@ -628,9 +628,9 @@ def run_sub2api_check_in(
 
 			if account.has_login_credentials():
 				if not provider_config.login_api_path:
-					print(f'[FAILED] {account_name}: Sub2API login_api_path is not configured')
+					print(f'[FAILED] {account_name}: Bearer login_api_path is not configured')
 					return False, None, None
-				print(f'[AUTH] {account_name}: Logging in through Sub2API email/password API')
+				print(f'[AUTH] {account_name}: Logging in through Bearer email/password API')
 				response = client.post(
 					f'{provider_config.domain}{provider_config.login_api_path}',
 					json={'email': account.email, 'password': account.password},
@@ -640,7 +640,7 @@ def run_sub2api_check_in(
 				access_token, login_refresh_token = _sub2api_token_from_response(response, account_name)
 				refresh_token = login_refresh_token or refresh_token
 			elif not access_token and refresh_token:
-				print(f'[AUTH] {account_name}: Refreshing Sub2API access token')
+				print(f'[AUTH] {account_name}: Refreshing Bearer access token')
 				access_token, refresh_token = _sub2api_refresh_token(
 					client,
 					account_name,
@@ -649,12 +649,14 @@ def run_sub2api_check_in(
 				)
 
 			if not access_token:
-				print(f'[FAILED] {account_name}: No usable Sub2API access token')
+				print(f'[FAILED] {account_name}: No usable Bearer access token')
 				return False, None, None
 
 			headers['Authorization'] = f'Bearer {access_token}'
 			profile_url = f'{provider_config.domain}{provider_config.user_info_path}'
-			status_url = f'{provider_config.domain}{provider_config.sign_in_path}'
+			status_path = provider_config.check_in_status_path or provider_config.sign_in_path
+			status_url = f'{provider_config.domain}{status_path}'
+			check_in_url = f'{provider_config.domain}{provider_config.sign_in_path}'
 
 			def get_profile():
 				response = client.get(profile_url, headers=headers, timeout=30)
@@ -700,14 +702,14 @@ def run_sub2api_check_in(
 				print(f'[FAILED] {account_name}: Daily check-in is currently not eligible')
 				success = False
 			else:
-				print(f'[NETWORK] {account_name}: Executing Sub2API daily check-in')
-				check_response = client.post(status_url, headers=headers, timeout=30)
+				print(f'[NETWORK] {account_name}: Executing Bearer daily check-in')
+				check_response = client.post(check_in_url, headers=headers, timeout=30)
 				success = parse_check_in_response(account_name, check_response.status_code, check_response.text)
 
 			_, user_info_after = get_profile()
 			return success, user_info_before, user_info_after
 	except Exception as e:
-		print(f'[FAILED] {account_name}: Sub2API check-in error - {str(e)[:100]}')
+		print(f'[FAILED] {account_name}: Bearer check-in error - {str(e)[:100]}')
 		return False, None, None
 
 
@@ -985,8 +987,8 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
 
-	if provider_config.api_style == 'sub2api':
-		return run_sub2api_check_in(account, account_name, provider_config)
+	if provider_config.api_style in ('sub2api', 'tokenrouter'):
+		return run_bearer_check_in(account, account_name, provider_config)
 	if provider_config.login_api_path and account.has_login_credentials():
 		return run_newapi_password_check_in(account, account_name, provider_config)
 

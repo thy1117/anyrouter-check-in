@@ -39,6 +39,11 @@ def test_parse_sub2api_profile_error():
 	assert result == {'success': False, 'error': 'Failed to get user info: HTTP 401'}
 
 
+def test_bearer_profile_parser_accepts_tokenrouter_user_shape():
+	body = json.dumps({'code': 0, 'data': {'balance': 7.44, 'used_balance': 0.0147}})
+	assert parse_sub2api_profile_response(200, body)['display'] == ':money: Current balance: $7.4400, Used: $0.0147'
+
+
 def test_extract_sub2api_tokens_from_envelope():
 	response = FakeResponse(
 		200,
