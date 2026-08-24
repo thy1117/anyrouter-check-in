@@ -1006,9 +1006,13 @@ def format_check_in_notification(detail: dict) -> str:
 	quota = detail['after_quota']
 	reward = detail['check_in_reward']
 	usage = detail['usage_increase']
-	parts = [f'✅ {name}｜余额 ${quota:.2f}']
+	success = detail.get('success', True)
+	icon = '✅' if success else '❌'
+	parts = [f'{icon} {name}｜余额 ${quota:.2f}']
 
-	if reward > 0:
+	if not success:
+		parts.append('签到失败')
+	elif reward > 0:
 		parts.append(f'签到 +${reward:.2f}')
 	else:
 		parts.append('签到无变化')

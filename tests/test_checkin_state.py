@@ -71,3 +71,20 @@ def test_format_check_in_notification_shows_reward_and_usage():
 	)
 
 	assert message == '✅ Demo｜余额 $12.50｜签到 +$3.00｜消耗 $0.50'
+
+
+def test_format_check_in_notification_marks_failed_account():
+	from checkin import format_check_in_notification
+
+	message = format_check_in_notification(
+		{
+			'name': 'Failed',
+			'after_quota': 3.42,
+			'check_in_reward': 0.0,
+			'usage_increase': 0.0,
+			'balance_change': 0.0,
+			'success': False,
+		}
+	)
+
+	assert message == '❌ Failed｜余额 $3.42｜签到失败'
