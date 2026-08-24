@@ -50,7 +50,7 @@ def test_format_check_in_notification_unchanged_account_is_compact():
 		}
 	)
 
-	assert message == '✅ Demo · 今日已签到'
+	assert message == '✅ Demo｜余额 $10.00｜签到无变化'
 	assert '签到前' not in message
 
 
@@ -70,4 +70,4 @@ def test_format_check_in_notification_shows_reward_and_usage():
 		}
 	)
 
-	assert message == '✅ Demo · +$3.00 · 消耗 $0.50'
+	assert message == '✅ Demo｜余额 $12.50｜签到 +$3.00｜消耗 $0.50'

@@ -1001,24 +1001,21 @@ def execute_check_in(client, account_name: str, provider_config, headers: dict):
 
 
 def format_check_in_notification(detail: dict) -> str:
-	"""格式化单个账号的简洁签到通知。"""
+	"""格式化带余额与变化的单个账号通知。"""
 	name = detail['name']
+	quota = detail['after_quota']
 	reward = detail['check_in_reward']
 	usage = detail['usage_increase']
-	balance_change = detail['balance_change']
-	parts = [f'✅ {name}']
+	parts = [f'✅ {name}｜余额 ${quota:.2f}']
 
 	if reward > 0:
-		parts.append(f'+${reward:.2f}')
+		parts.append(f'签到 +${reward:.2f}')
+	else:
+		parts.append('签到无变化')
 	if usage > 0:
 		parts.append(f'消耗 ${usage:.2f}')
-	if balance_change != 0 and reward <= 0:
-		sign = '+' if balance_change > 0 else ''
-		parts.append(f'余额 {sign}${balance_change:.2f}')
-	if len(parts) == 1:
-		parts.append('今日已签到')
 
-	return ' · '.join(parts)
+	return '｜'.join(parts)
 
 
 async def run_check_in_in_page(
@@ -1423,22 +1420,10 @@ async def main():
 		else:
 			print('[INFO] No balance changes detected')
 
-	if balance_changed:
-		for i, account in enumerate(accounts):
-			account_key = f'account_{i + 1}'
-			if account_key in account_check_in_details:
-				detail = account_check_in_details[account_key]
-				account_name = detail['name']
-				# 只通知有奖励、余额变化或期间有消耗的账号，避免刷屏。
-				if detail['check_in_reward'] != 0 or detail['usage_increase'] != 0 or detail['balance_change'] != 0:
-					account_result = format_check_in_notification(detail)
-					if not any(account_name in item for item in notification_content):
-						notification_content.append(account_result)
-
 	if current_balance_hash:
 		save_balance_hash(current_balance_hash)
 
-	if need_notify and notification_content:
+	if need_notify and (notification_content or account_check_in_details):
 		failed_count = total_count - success_count
 		if failed_count == 0:
 			result_icon = '✅'
@@ -1453,7 +1438,13 @@ async def main():
 		if failed_count:
 			summary.append(f'❌ 失败：{failed_count} 个')
 		if notification_content:
-			summary.append('\n'.join(notification_content))
+			summary.extend(['', '❌ 失败详情', '\n'.join(notification_content)])
+		balance_lines = [
+			format_check_in_notification(account_check_in_details[key])
+			for key in sorted(account_check_in_details, key=lambda value: int(value.split('_')[1]))
+		]
+		if balance_lines:
+			summary.extend(['', '💰 余额明细', '\n'.join(balance_lines)])
 
 		notify_content = '\n'.join(summary)
 		screenshot_paths = take_pending_screenshots() if is_debug_enabled() else []
