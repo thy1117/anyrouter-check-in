@@ -1001,38 +1001,24 @@ def execute_check_in(client, account_name: str, provider_config, headers: dict):
 
 
 def format_check_in_notification(detail: dict) -> str:
-	"""格式化签到通知消息"""
-	lines = [
-		f'[CHECK-IN] {detail["name"]}',
-		'  ━━━━━━━━━━━━━━━━━━━━',
-		'  签到前',
-		f'     余额: ${detail["before_quota"]:.2f}  |  累计消耗: ${detail["before_used"]:.2f}',
-		'  签到后',
-		f'     余额: ${detail["after_quota"]:.2f}  |  累计消耗: ${detail["after_used"]:.2f}',
-	]
+	"""格式化单个账号的简洁签到通知。"""
+	name = detail['name']
+	reward = detail['check_in_reward']
+	usage = detail['usage_increase']
+	balance_change = detail['balance_change']
+	parts = [f'✅ {name}']
 
-	has_reward = detail['check_in_reward'] != 0
-	has_usage = detail['usage_increase'] != 0
+	if reward > 0:
+		parts.append(f'+${reward:.2f}')
+	if usage > 0:
+		parts.append(f'消耗 ${usage:.2f}')
+	if balance_change != 0 and reward <= 0:
+		sign = '+' if balance_change > 0 else ''
+		parts.append(f'余额 {sign}${balance_change:.2f}')
+	if len(parts) == 1:
+		parts.append('今日已签到')
 
-	if has_reward or has_usage:
-		lines.append('  ━━━━━━━━━━━━━━━━━━━━')
-
-		if not has_reward and has_usage:
-			lines.append('  今日已签到（期间有使用）')
-
-		if has_reward:
-			lines.append(f'  签到获得: +${detail["check_in_reward"]:.2f}')
-
-		if has_usage:
-			lines.append(f'  期间消耗: ${detail["usage_increase"]:.2f}')
-
-		if detail['balance_change'] != 0:
-			change_symbol = '+' if detail['balance_change'] > 0 else ''
-			lines.append(f'  余额变化: {change_symbol}${detail["balance_change"]:.2f}')
-	else:
-		lines.extend(['  ━━━━━━━━━━━━━━━━━━━━', '  今日已签到，无变化'])
-
-	return '\n'.join(lines)
+	return ' · '.join(parts)
 
 
 async def run_check_in_in_page(
@@ -1410,13 +1396,13 @@ async def main():
 
 			if should_notify_this_account:
 				account_name = account.get_display_name(i)
-				status = '[SUCCESS]' if success else '[FAIL]'
-				account_result = f'{status} {account_name}'
-				if user_info_after and user_info_after.get('success'):
-					account_result += f'\n{user_info_after["display"]}'
-				elif user_info_after:
-					account_result += f'\n{user_info_after.get("error", "Unknown error")}'
-				notification_content.append(account_result)
+				if success:
+					notification_content.append(f'✅ {account_name} · 今日已签到')
+				else:
+					error = 'Unknown error'
+					if user_info_after:
+						error = user_info_after.get('error', error)
+					notification_content.append(f'❌ {account_name} · {error}')
 
 		except Exception as e:
 			account_name = account.get_display_name(i)
@@ -1443,30 +1429,33 @@ async def main():
 			if account_key in account_check_in_details:
 				detail = account_check_in_details[account_key]
 				account_name = detail['name']
-				account_result = format_check_in_notification(detail)
-				if not any(account_name in item for item in notification_content):
-					notification_content.append(account_result)
+				# 只通知有奖励、余额变化或期间有消耗的账号，避免刷屏。
+				if detail['check_in_reward'] != 0 or detail['usage_increase'] != 0 or detail['balance_change'] != 0:
+					account_result = format_check_in_notification(detail)
+					if not any(account_name in item for item in notification_content):
+						notification_content.append(account_result)
 
 	if current_balance_hash:
 		save_balance_hash(current_balance_hash)
 
 	if need_notify and notification_content:
-		summary = [
-			'[STATS] Check-in result statistics:',
-			f'[SUCCESS] Success: {success_count}/{total_count}',
-			f'[FAIL] Failed: {total_count - success_count}/{total_count}',
-		]
-
-		if success_count == total_count:
-			summary.append('[SUCCESS] All accounts check-in successful!')
+		failed_count = total_count - success_count
+		if failed_count == 0:
+			result_icon = '✅'
 		elif success_count > 0:
-			summary.append('[WARN] Some accounts check-in successful')
+			result_icon = '⚠️'
 		else:
-			summary.append('[ERROR] All accounts check-in failed')
+			result_icon = '❌'
+		summary = [
+			f'{result_icon} 签到结果：{success_count}/{total_count} 成功',
+			f'🕘 {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+		]
+		if failed_count:
+			summary.append(f'❌ 失败：{failed_count} 个')
+		if notification_content:
+			summary.append('\n'.join(notification_content))
 
-		time_info = f'[TIME] Execution time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
-
-		notify_content = '\n\n'.join([time_info, '\n'.join(notification_content), '\n'.join(summary)])
+		notify_content = '\n'.join(summary)
 		screenshot_paths = take_pending_screenshots() if is_debug_enabled() else []
 		if screenshot_paths:
 			github_run_id = os.getenv('GITHUB_RUN_ID', '').strip()

@@ -32,3 +32,42 @@ def test_balance_hash_is_stable_for_equivalent_balances():
 	}
 
 	assert generate_balance_hash(left) == generate_balance_hash(right)
+
+
+def test_format_check_in_notification_unchanged_account_is_compact():
+	from checkin import format_check_in_notification
+
+	message = format_check_in_notification(
+		{
+			'name': 'Demo',
+			'before_quota': 10.0,
+			'before_used': 1.0,
+			'after_quota': 10.0,
+			'after_used': 1.0,
+			'check_in_reward': 0.0,
+			'usage_increase': 0.0,
+			'balance_change': 0.0,
+		}
+	)
+
+	assert message == '✅ Demo · 今日已签到'
+	assert '签到前' not in message
+
+
+def test_format_check_in_notification_shows_reward_and_usage():
+	from checkin import format_check_in_notification
+
+	message = format_check_in_notification(
+		{
+			'name': 'Demo',
+			'before_quota': 10.0,
+			'before_used': 1.0,
+			'after_quota': 12.5,
+			'after_used': 1.5,
+			'check_in_reward': 3.0,
+			'usage_increase': 0.5,
+			'balance_change': 2.5,
+		}
+	)
+
+	assert message == '✅ Demo · +$3.00 · 消耗 $0.50'
