@@ -614,6 +614,138 @@ def _sub2api_refresh_token(
 	return _sub2api_token_from_response(response, account_name)
 
 
+def _xiaobai_response_data(response, account_name: str, action: str) -> dict | None:
+	"""解析小白 Code 的 ``{ok, data}`` 响应，不把认证信息写入日志。"""
+	try:
+		payload = response.json()
+	except json.JSONDecodeError:
+		print(f'[FAILED] {account_name}: {action} returned invalid JSON')
+		return None
+
+	if response.status_code != 200:
+		message = payload.get('message') if isinstance(payload, dict) else None
+		print(f'[FAILED] {account_name}: {action} failed - {message or f"HTTP {response.status_code}"}')
+		return None
+	if isinstance(payload, dict) and payload.get('ok') is False:
+		print(f'[FAILED] {account_name}: {action} failed - {payload.get("message", "unknown error")}')
+		return None
+
+	data = payload.get('data') if isinstance(payload, dict) and 'data' in payload else unwrap_api_data(payload)
+	return data if isinstance(data, dict) else None
+
+
+def run_xiaobai_check_in(
+	account: AccountConfig,
+	account_name: str,
+	provider_config,
+) -> tuple[bool, dict | None, dict | None]:
+	"""执行小白 Code 独立签到页的 Bearer API。"""
+	client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0}
+	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
+	if proxy_url:
+		client_kwargs['proxy'] = proxy_url
+
+	headers = {
+		'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+		'Accept': 'application/json',
+		'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+		'Content-Type': 'application/json',
+		'Referer': f'{provider_config.domain}/checkin/',
+		'Origin': provider_config.domain,
+	}
+
+	try:
+		with httpx.Client(headers=headers, **client_kwargs) as client:
+			access_token = account.access_token
+			refresh_token = account.refresh_token
+
+			if not access_token and refresh_token:
+				print(f'[AUTH] {account_name}: Refreshing Bearer access token')
+				access_token, rotated_refresh_token = _sub2api_refresh_token(
+					client,
+					account_name,
+					provider_config,
+					refresh_token,
+				)
+				refresh_token = rotated_refresh_token or refresh_token
+
+			if not access_token:
+				print(f'[FAILED] {account_name}: Xiaobai requires access_token or refresh_token')
+				return False, None, None
+
+			headers['Authorization'] = f'Bearer {access_token}'
+
+			def request(method: str, url: str, *, body: dict | None = None):
+				nonlocal refresh_token
+				if method == 'GET':
+					response = client.get(url, headers=headers, timeout=30)
+				else:
+					response = client.post(url, headers=headers, json=body, timeout=30)
+
+				if response.status_code != 401 or not refresh_token:
+					return response
+
+				new_access_token, new_refresh_token = _sub2api_refresh_token(
+					client,
+					account_name,
+					provider_config,
+					refresh_token,
+				)
+				if not new_access_token:
+					return response
+
+				headers['Authorization'] = f'Bearer {new_access_token}'
+				refresh_token = new_refresh_token or refresh_token
+				if method == 'GET':
+					return client.get(url, headers=headers, timeout=30)
+				return client.post(url, headers=headers, json=body, timeout=30)
+
+			status_url = f'{provider_config.domain}{provider_config.check_in_status_path}'
+			status_response = request('GET', status_url)
+			status = _xiaobai_response_data(status_response, account_name, 'Check-in status request')
+			if status is None:
+				return False, None, None
+			if status.get('signedToday') is True:
+				print(f'[SUCCESS] {account_name}: Already checked in today')
+				return True, None, None
+
+			config = status.get('config')
+			if isinstance(config, dict) and config.get('enabled') is False:
+				print(f'[FAILED] {account_name}: Daily check-in is currently disabled')
+				return False, None, None
+
+			print(f'[NETWORK] {account_name}: Executing Xiaobai daily check-in')
+			check_in_url = f'{provider_config.domain}{provider_config.sign_in_path}'
+			check_response = request('POST', check_in_url, body={})
+			result = _xiaobai_response_data(check_response, account_name, 'Daily check-in')
+			if result is None:
+				return False, None, None
+
+			record = result.get('record')
+			result_status = result.get('status')
+			success = bool(
+				result.get('alreadyChecked') is True
+				or isinstance(record, dict)
+				or result.get('success') is True
+				or result.get('code') == 0
+				or (isinstance(result_status, dict) and result_status.get('signedToday') is True)
+			)
+			if not success:
+				print(f'[FAILED] {account_name}: Daily check-in returned an unexpected response')
+				return False, None, None
+
+			if result.get('alreadyChecked') is True:
+				print(f'[SUCCESS] {account_name}: Already checked in today')
+			elif isinstance(record, dict) and record.get('reward_amount') is not None:
+				print(f'[SUCCESS] {account_name}: Check-in successful, reward {record["reward_amount"]}')
+			else:
+				print(f'[SUCCESS] {account_name}: Check-in successful!')
+			return True, None, None
+	except Exception as e:
+		print(f'[FAILED] {account_name}: Xiaobai check-in error - {str(e)[:100]}')
+		return False, None, None
+
+
 def run_bearer_check_in(
 	account: AccountConfig,
 	account_name: str,
@@ -999,6 +1131,8 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
 
+	if provider_config.api_style == 'xiaobai':
+		return run_xiaobai_check_in(account, account_name, provider_config)
 	if provider_config.api_style in ('sub2api', 'tokenrouter'):
 		return run_bearer_check_in(account, account_name, provider_config)
 	if provider_config.login_api_path and account.has_login_credentials():

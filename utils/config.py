@@ -16,7 +16,7 @@ class ProviderConfig:
 
 	name: str
 	domain: str
-	api_style: Literal['newapi', 'sub2api', 'tokenrouter'] = 'newapi'
+	api_style: Literal['newapi', 'sub2api', 'tokenrouter', 'xiaobai'] = 'newapi'
 	login_path: str = '/login'
 	login_api_path: str | None = None
 	sign_in_path: str | None = '/api/user/sign_in'
@@ -255,6 +255,19 @@ class AppConfig:
 				login_api_path='/api/v1/auth/login',
 				sign_in_path='/api/v1/check-in',
 				check_in_status_path='/api/v1/check-in/status',
+				user_info_path='/api/v1/auth/me',
+				auth_refresh_path='/api/v1/auth/refresh',
+				api_user_key='',
+				use_proxy=False,
+			),
+			'xiaobai': ProviderConfig(
+				name='xiaobai',
+				domain='https://token.dialoguedui.com',
+				api_style='xiaobai',
+				login_path='/login',
+				login_api_path='/api/v1/auth/login',
+				sign_in_path='/checkin/api/checkin',
+				check_in_status_path='/checkin/api/status',
 				user_info_path='/api/v1/auth/me',
 				auth_refresh_path='/api/v1/auth/refresh',
 				api_user_key='',

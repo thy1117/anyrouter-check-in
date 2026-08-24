@@ -60,8 +60,7 @@
 
 #### 追加账号用的备用 Secret
 
-除了 `ANYROUTER_ACCOUNTS`，还可以用 `EXTRA_ACCOUNTS`、`EXTRA_ACCOUNTS_2`、`EXTRA_ACCOUNTS_3` 存放额外账号，格式完全一样，加载顺序为
-`ANYROUTER_ACCOUNTS` → `EXTRA_ACCOUNTS` → `EXTRA_ACCOUNTS_2` → `EXTRA_ACCOUNTS_3`，最终合并成一份账号列表。
+除了 `ANYROUTER_ACCOUNTS`，还可以用 `EXTRA_ACCOUNTS`、`EXTRA_ACCOUNTS_2`、`EXTRA_ACCOUNTS_3`…… 存放额外账号，格式完全一样。脚本会按编号顺序加载并合并成一份账号列表。
 
 之所以分多个 Secret：GitHub Secret 写入后无法再读出，如果所有账号都挤在一个 Secret 里，之后想加一个新站点就得把整份 JSON 重新写一遍，
 很容易把已有账号漏掉、覆盖没了。新站点单独占一个编号 Secret 就不会互相影响。
@@ -93,6 +92,7 @@
 - `email` + `password`：推荐的浏览器登录方式，登录成功后会自动获取 cookies 与用户标识
 - `cookies`：兼容旧版的 session cookies 登录方式
 - `access_token`：新版 NewAPI/Ark717 等站点使用的 Bearer token；可单独使用，不需要 cookies 或 `api_user`
+- `refresh_token`：Bearer access token 过期后用于自动换取新 token；GuysCode、小白 Code 等站点建议同时配置
 - `api_user`：session cookies 登录时用于请求头的 new-api-user 参数；邮箱密码登录可省略
 - `provider` (可选)：指定使用的服务商，默认为 `anyrouter`
 - `name` (可选)：自定义账号显示名称，用于通知和日志中标识账号
@@ -165,7 +165,7 @@
 
 ## 执行时间
 
-- 脚本每 6 小时执行一次（1. action 无法准确触发，基本延时 1~1.5h；2. 目前观测到 anyrouter 的签到是每 24h 而不是零点就可签到）
+- 脚本每天北京时间 09:00 和 21:00 各触发一次（GitHub Actions 定时任务可能有少量延迟）
 - 你也可以随时手动触发签到
 
 ## 注意事项
@@ -257,9 +257,24 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
 
+### 小白 Code 外站签到
+
+小白 Code 使用独立签到页 `https://token.dialoguedui.com/checkin/`，不是 NewAPI 的通用签到接口。内置 `xiaobai` Provider 会先读取签到状态，未签到时再提交签到；access token 失效后会使用 refresh token 自动刷新。
+
+```json
+{
+  "name": "小白Code-112581647",
+  "provider": "xiaobai",
+  "access_token": "Application → Local Storage 中的 auth_token",
+  "refresh_token": "Application → Local Storage 中的 refresh_token"
+}
+```
+
+该站的账号密码登录带 Turnstile 校验，GitHub Actions 不使用账号密码登录。请把上述 JSON 保存到 production Environment Secret `EXTRA_ACCOUNTS_13`，不要把 token 提交到仓库。
+
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nova`、`nianhua`、`sheapi`、`aiaiai`、`guyscode` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nova`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 

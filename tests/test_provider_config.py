@@ -222,3 +222,19 @@ def test_guyscode_provider_uses_tokenrouter_check_in_api(monkeypatch):
 	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
 	assert provider.api_user_key == ''
 	assert provider.use_proxy is False
+
+
+def test_xiaobai_provider_uses_external_check_in_api(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['xiaobai']
+
+	assert provider.api_style == 'xiaobai'
+	assert provider.domain == 'https://token.dialoguedui.com'
+	assert provider.sign_in_path == '/checkin/api/checkin'
+	assert provider.check_in_status_path == '/checkin/api/status'
+	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
+	assert provider.api_user_key == ''
+	assert provider.use_proxy is False
