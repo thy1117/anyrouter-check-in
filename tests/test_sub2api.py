@@ -1,6 +1,6 @@
 import json
 
-from checkin import _sub2api_token_from_response, parse_sub2api_profile_response, unwrap_api_data
+from checkin import _sub2api_token_from_response, is_checked_in_status, parse_sub2api_profile_response, unwrap_api_data
 
 
 class FakeResponse:
@@ -42,6 +42,11 @@ def test_parse_sub2api_profile_error():
 def test_bearer_profile_parser_accepts_tokenrouter_user_shape():
 	body = json.dumps({'code': 0, 'data': {'balance': 7.44, 'used_balance': 0.0147}})
 	assert parse_sub2api_profile_response(200, body)['display'] == ':money: Current balance: $7.4400, Used: $0.0147'
+
+
+def test_tokenrouter_checked_in_status_shape():
+	assert is_checked_in_status({'checked_in_today': True}) is True
+	assert is_checked_in_status({'checked_in_today': False}) is False
 
 
 def test_extract_sub2api_tokens_from_envelope():

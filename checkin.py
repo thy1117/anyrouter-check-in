@@ -46,7 +46,14 @@ load_dotenv()
 BALANCE_HASH_FILE = 'balance_hash.txt'
 CAPTCHA_MAX_ATTEMPTS = 4
 CAPTCHA_RETRY_KEYWORDS = ('验证码', 'captcha', '过期', 'expired', 'invalid code')
-ALREADY_CHECKED_KEYWORDS = ('已经签到', '已签到', '重复签到', 'already checked', 'already signed')
+ALREADY_CHECKED_KEYWORDS = (
+	'已经签到',
+	'已签到',
+	'重复签到',
+	'already checked',
+	'already signed',
+	'already claimed',
+)
 
 
 def load_balance_hash():
@@ -375,6 +382,10 @@ def parse_check_in_response(account_name: str, status_code: int, body: str) -> b
 	print(f'[RESPONSE] {account_name}: Response status code {status_code}')
 
 	if status_code != 200:
+		error_msg = _response_message(body)
+		if any(keyword in error_msg.lower() for keyword in ALREADY_CHECKED_KEYWORDS):
+			print(f'[SUCCESS] {account_name}: Already checked in today')
+			return True
 		print(f'[FAILED] {account_name}: Check-in failed - HTTP {status_code}')
 		return False
 
@@ -398,6 +409,11 @@ def parse_check_in_response(account_name: str, status_code: int, body: str) -> b
 
 	print(f'[FAILED] {account_name}: Check-in failed - {error_msg}')
 	return False
+
+
+def is_checked_in_status(payload: object) -> bool:
+	"""兼容不同 Bearer API 的今日签到状态字段。"""
+	return isinstance(payload, dict) and bool(payload.get('checked_today') or payload.get('checked_in_today'))
 
 
 def _response_message(body: str) -> str:
@@ -687,11 +703,7 @@ def run_bearer_check_in(
 			except json.JSONDecodeError:
 				pass
 
-			if (
-				status_response.status_code == 200
-				and isinstance(status_payload, dict)
-				and status_payload.get('checked_today')
-			):
+			if status_response.status_code == 200 and is_checked_in_status(status_payload):
 				print(f'[SUCCESS] {account_name}: Already checked in today')
 				success = True
 			elif (

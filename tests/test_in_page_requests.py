@@ -52,6 +52,11 @@ def test_parse_check_in_non_200():
 	assert parse_check_in_response('x', 403, 'blocked') is False
 
 
+def test_parse_check_in_already_claimed_conflict():
+	body = json.dumps({'code': 409, 'message': 'check-in already claimed today'})
+	assert parse_check_in_response('x', 409, body) is True
+
+
 def test_parse_check_in_non_json_success():
 	assert parse_check_in_response('x', 200, 'SUCCESS') is True
 
