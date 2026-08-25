@@ -147,8 +147,49 @@ def test_missing_tokens_fails_without_network(monkeypatch):
 
 	result = run_xiaobai_check_in(account(), '小白Code', provider())
 
-	assert result == (False, None, None)
+	assert result == (
+		False,
+		None,
+		{'success': False, 'check_in_error': 'Xiaobai requires access_token or refresh_token'},
+	)
 	assert client.calls == []
+
+
+def test_status_502_retries_and_reports_final_error(monkeypatch):
+	client = FakeClient(
+		get_responses=[
+			FakeResponse(502, {}),
+			FakeResponse(502, {}),
+			FakeResponse(502, {}),
+		],
+	)
+	install_client(monkeypatch, client)
+	monkeypatch.setattr('checkin.time.sleep', lambda seconds: None)
+
+	result = run_xiaobai_check_in(account(access_token='access-secret'), '小白Code', provider())
+
+	assert result == (
+		False,
+		None,
+		{'success': False, 'check_in_error': 'Check-in status request failed - HTTP 502'},
+	)
+	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'GET']
+
+
+def test_status_502_recovers_on_retry(monkeypatch):
+	client = FakeClient(
+		get_responses=[
+			FakeResponse(502, {}),
+			FakeResponse(200, {'ok': True, 'data': {'signedToday': True}}),
+		],
+	)
+	install_client(monkeypatch, client)
+	monkeypatch.setattr('checkin.time.sleep', lambda seconds: None)
+
+	result = run_xiaobai_check_in(account(access_token='access-secret'), '小白Code', provider())
+
+	assert result == (True, None, None)
+	assert [call['method'] for call in client.calls] == ['GET', 'GET']
 
 
 def test_logs_never_include_tokens(monkeypatch, capsys):

@@ -1,8 +1,8 @@
 name: AnyRouter 自动签到
 on:
   schedule:
-    # 09:00 and 21:00 Asia/Shanghai (UTC+8)
-    - cron: '0 1,13 * * *'
+    # 09:07 and 21:07 Asia/Shanghai (UTC+8); avoid GitHub Actions' top-of-hour congestion
+    - cron: '7 1,13 * * *'
   workflow_dispatch:
     inputs:
       debug:
@@ -18,6 +18,7 @@ jobs:
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: 1
+      CHECKIN_TIMEZONE: Asia/Shanghai
       DEBUG_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug == 'true' && 'true' || 'false' }}
     steps:
     - uses: actions/checkout@v6

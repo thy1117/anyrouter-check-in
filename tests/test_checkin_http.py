@@ -155,3 +155,37 @@ def test_execute_captcha_check_in_retries_uncertain_ocr(monkeypatch):
 	assert execute_captcha_check_in(client, 'SheApi', provider, {}) is True
 	assert client.captcha_count == 2
 	assert client.submissions == [{'captcha_id': 'id-2', 'captcha_code': '6789'}]
+
+
+def test_execute_captcha_check_in_result_keeps_provider_error(monkeypatch):
+	import json
+
+	from checkin import execute_captcha_check_in_result
+	from utils.config import ProviderConfig
+
+	class Response:
+		def __init__(self, status_code, payload):
+			self.status_code = status_code
+			self._payload = payload
+			self.text = json.dumps(payload)
+
+		def json(self):
+			return self._payload
+
+	class CaptchaClient:
+		def get(self, url, *, headers, timeout):
+			return Response(200, {'data': {'captcha_id': 'id-1', 'image': 'data:image/png;base64,abc'}})
+
+		def post(self, url, *, json, headers, timeout):
+			return Response(200, {'success': False, 'message': '该 IP 签到账号数量过多，请稍后再试'})
+
+	provider = ProviderConfig(name='sheapi', domain='https://www.sheapi.top', checkin_captcha=True)
+	monkeypatch.setattr(
+		'captcha_ocr.base64_captcha.solve_data_url',
+		lambda image: type('OCR', (), {'text': '6789', 'exact': True})(),
+	)
+
+	assert execute_captcha_check_in_result(CaptchaClient(), 'SheApi', provider, {}) == (
+		False,
+		'Check-in failed - 该 IP 签到账号数量过多，请稍后再试',
+	)

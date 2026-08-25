@@ -8,7 +8,9 @@ import hashlib
 import json
 import os
 import sys
+import time
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 if hasattr(sys.stdout, 'reconfigure'):
 	sys.stdout.reconfigure(line_buffering=True)
@@ -45,6 +47,10 @@ load_dotenv()
 
 BALANCE_HASH_FILE = 'balance_hash.txt'
 CAPTCHA_MAX_ATTEMPTS = 4
+CHECK_IN_ERROR_KEY = 'check_in_error'
+DEFAULT_CHECK_IN_TIMEZONE = 'Asia/Shanghai'
+XIAOBAI_MAX_REQUEST_ATTEMPTS = 3
+XIAOBAI_RETRY_STATUS_CODES = (502, 503, 504)
 CAPTCHA_RETRY_KEYWORDS = ('验证码', 'captcha', '过期', 'expired', 'invalid code')
 ALREADY_CHECKED_KEYWORDS = (
 	'已经签到',
@@ -54,6 +60,44 @@ ALREADY_CHECKED_KEYWORDS = (
 	'already signed',
 	'already claimed',
 )
+
+
+def format_check_in_time(now: datetime | None = None) -> str:
+	"""按配置时区格式化执行时间，默认使用北京时间。"""
+	timezone_name = os.getenv('CHECKIN_TIMEZONE', DEFAULT_CHECK_IN_TIMEZONE).strip() or DEFAULT_CHECK_IN_TIMEZONE
+	try:
+		timezone = ZoneInfo(timezone_name)
+	except ZoneInfoNotFoundError:
+		print(f'[WARN] Unknown CHECKIN_TIMEZONE "{timezone_name}", falling back to {DEFAULT_CHECK_IN_TIMEZONE}')
+		timezone = ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)
+
+	if now is None:
+		now = datetime.now(timezone)
+	elif now.tzinfo is None:
+		now = now.replace(tzinfo=timezone)
+	else:
+		now = now.astimezone(timezone)
+	return now.strftime('%Y-%m-%d %H:%M:%S')
+
+
+def attach_check_in_error(user_info: dict | None, error: str | None) -> dict | None:
+	"""把签到接口错误附到用户信息上，避免查询余额成功后覆盖真实失败原因。"""
+	if not error:
+		return user_info
+	result = dict(user_info) if user_info else {'success': False}
+	result[CHECK_IN_ERROR_KEY] = error
+	return result
+
+
+def resolve_check_in_error(user_info_before: dict | None, user_info_after: dict | None) -> str:
+	"""优先返回签到接口错误，再回退到前后用户信息查询错误。"""
+	for user_info in (user_info_after, user_info_before):
+		if not user_info:
+			continue
+		error = user_info.get(CHECK_IN_ERROR_KEY) or user_info.get('error')
+		if error:
+			return str(error)
+	return 'Unknown error'
 
 
 def load_balance_hash():
@@ -377,38 +421,47 @@ async def prepare_cookies(account_name: str, provider_config, user_cookies: dict
 	return {**waf_cookies, **user_cookies}
 
 
-def parse_check_in_response(account_name: str, status_code: int, body: str) -> bool:
-	"""解析签到响应，判断是否成功（含"今日已签到"）。"""
+def parse_check_in_result(account_name: str, status_code: int, body: str) -> tuple[bool, str | None]:
+	"""解析签到响应，同时保留失败原因供通知使用。"""
 	print(f'[RESPONSE] {account_name}: Response status code {status_code}')
 
 	if status_code != 200:
 		error_msg = _response_message(body)
 		if any(keyword in error_msg.lower() for keyword in ALREADY_CHECKED_KEYWORDS):
 			print(f'[SUCCESS] {account_name}: Already checked in today')
-			return True
-		print(f'[FAILED] {account_name}: Check-in failed - HTTP {status_code}')
-		return False
+			return True, None
+		error = f'Check-in failed - HTTP {status_code}'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, error
 
 	try:
 		result = json.loads(body)
 	except json.JSONDecodeError:
 		if 'success' in body.lower():
 			print(f'[SUCCESS] {account_name}: Check-in successful!')
-			return True
-		print(f'[FAILED] {account_name}: Check-in failed - Invalid response format')
-		return False
+			return True, None
+		error = 'Check-in failed - Invalid response format'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, error
 
 	if result.get('ret') == 1 or result.get('code') == 0 or result.get('success'):
 		print(f'[SUCCESS] {account_name}: Check-in successful!')
-		return True
+		return True, None
 
-	error_msg = result.get('msg', result.get('message', 'Unknown error'))
+	error_msg = str(result.get('msg', result.get('message', 'Unknown error')))
 	if any(keyword in error_msg.lower() for keyword in ALREADY_CHECKED_KEYWORDS):
 		print(f'[SUCCESS] {account_name}: Already checked in today')
-		return True
+		return True, None
 
-	print(f'[FAILED] {account_name}: Check-in failed - {error_msg}')
-	return False
+	error = f'Check-in failed - {error_msg}'
+	print(f'[FAILED] {account_name}: {error}')
+	return False, error
+
+
+def parse_check_in_response(account_name: str, status_code: int, body: str) -> bool:
+	"""兼容旧调用方，只返回签到是否成功。"""
+	success, _ = parse_check_in_result(account_name, status_code, body)
+	return success
 
 
 def is_checked_in_status(payload: object) -> bool:
@@ -428,13 +481,16 @@ def _response_message(body: str) -> str:
 	return body
 
 
-def execute_captcha_check_in(client, account_name: str, provider_config, headers: dict) -> bool:
-	"""执行需要 base64Captcha 图片验证码的签到。"""
+def execute_captcha_check_in_result(
+	client, account_name: str, provider_config, headers: dict
+) -> tuple[bool, str | None]:
+	"""执行需要 base64Captcha 图片验证码的签到，并返回明确错误。"""
 	try:
 		from captcha_ocr.base64_captcha import solve_data_url
 	except Exception as exc:
-		print(f'[FAILED] {account_name}: CAPTCHA OCR is unavailable: {exc}')
-		return False
+		error = f'CAPTCHA OCR is unavailable: {exc}'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, error
 
 	checkin_headers = headers.copy()
 	checkin_headers.update({'Accept': 'application/json, text/plain, */*', 'X-Requested-With': 'XMLHttpRequest'})
@@ -445,15 +501,17 @@ def execute_captcha_check_in(client, account_name: str, provider_config, headers
 		try:
 			captcha_response = client.get(captcha_url, headers=checkin_headers, timeout=30)
 			if captcha_response.status_code != 200:
-				print(f'[FAILED] {account_name}: CAPTCHA request failed - HTTP {captcha_response.status_code}')
-				return False
+				error = f'CAPTCHA request failed - HTTP {captcha_response.status_code}'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, error
 			captcha_payload = captcha_response.json()
 			captcha_data = captcha_payload.get('data', captcha_payload) if isinstance(captcha_payload, dict) else {}
 			captcha_id = str(captcha_data.get('captcha_id') or '')
 			image = str(captcha_data.get('image') or '')
 			if not captcha_id or not image:
-				print(f'[FAILED] {account_name}: CAPTCHA response has no captcha_id/image')
-				return False
+				error = 'CAPTCHA response has no captcha_id/image'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, error
 
 			result = solve_data_url(image)
 			if not result.text:
@@ -477,7 +535,7 @@ def execute_captcha_check_in(client, account_name: str, provider_config, headers
 			message = _response_message(body)
 			if any(keyword in message.lower() for keyword in ALREADY_CHECKED_KEYWORDS):
 				print(f'[SUCCESS] {account_name}: Already checked in today')
-				return True
+				return True, None
 			if response.status_code == 200:
 				try:
 					payload = response.json()
@@ -487,17 +545,25 @@ def execute_captcha_check_in(client, account_name: str, provider_config, headers
 					payload.get('success') or payload.get('code') == 0 or payload.get('ret') == 1
 				):
 					print(f'[SUCCESS] {account_name}: Check-in successful!')
-					return True
+					return True, None
 			if any(keyword in message.lower() for keyword in CAPTCHA_RETRY_KEYWORDS):
 				print(f'[WARN] {account_name}: CAPTCHA rejected ({message[:120]}), refreshing image')
 				continue
-			print(f'[FAILED] {account_name}: Check-in failed - {message[:120]}')
-			return False
+			error = f'Check-in failed - {message[:120]}'
+			print(f'[FAILED] {account_name}: {error}')
+			return False, error
 		except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
 			print(f'[WARN] {account_name}: CAPTCHA attempt {attempt} failed - {str(exc)[:120]}')
 
-	print(f'[FAILED] {account_name}: CAPTCHA check-in failed after {CAPTCHA_MAX_ATTEMPTS} attempts')
-	return False
+	error = f'CAPTCHA check-in failed after {CAPTCHA_MAX_ATTEMPTS} attempts'
+	print(f'[FAILED] {account_name}: {error}')
+	return False, error
+
+
+def execute_captcha_check_in(client, account_name: str, provider_config, headers: dict) -> bool:
+	"""兼容旧调用方，只返回验证码签到是否成功。"""
+	success, _ = execute_captcha_check_in_result(client, account_name, provider_config, headers)
+	return success
 
 
 def parse_user_info_response(status_code: int, body: str) -> dict:
@@ -573,65 +639,86 @@ def parse_sub2api_profile_response(status_code: int, body: str) -> dict:
 	}
 
 
-def _sub2api_token_from_response(response, account_name: str) -> tuple[str | None, str | None]:
+def _sub2api_token_result(response, account_name: str) -> tuple[str | None, str | None, str | None]:
+	"""解析 Bearer 登录/刷新响应，并返回可用于通知的认证错误。"""
 	try:
 		payload = response.json()
 	except json.JSONDecodeError:
-		print(f'[FAILED] {account_name}: Authentication returned invalid JSON')
-		return None, None
+		error = 'Authentication returned invalid JSON'
+		print(f'[FAILED] {account_name}: {error}')
+		return None, None, error
 
 	if response.status_code != 200:
 		message = payload.get('message', f'HTTP {response.status_code}') if isinstance(payload, dict) else response.text
-		print(f'[FAILED] {account_name}: Authentication failed - {message}')
-		return None, None
+		error = f'Authentication failed - {message}'
+		print(f'[FAILED] {account_name}: {error}')
+		return None, None, error
 
 	data = unwrap_api_data(payload)
 	if not isinstance(data, dict):
-		print(f'[FAILED] {account_name}: Authentication response has no token data')
-		return None, None
+		error = 'Authentication response has no token data'
+		print(f'[FAILED] {account_name}: {error}')
+		return None, None, error
 	if data.get('requires_2fa'):
-		print(f'[FAILED] {account_name}: This Sub2API account requires 2FA; use refresh_token instead')
-		return None, None
+		error = 'This Sub2API account requires 2FA; use refresh_token instead'
+		print(f'[FAILED] {account_name}: {error}')
+		return None, None, error
 
 	access_token = data.get('access_token')
 	refresh_token = data.get('refresh_token')
-	return (
-		access_token if isinstance(access_token, str) and access_token else None,
-		refresh_token if isinstance(refresh_token, str) and refresh_token else None,
-	)
+	access_token = access_token if isinstance(access_token, str) and access_token else None
+	refresh_token = refresh_token if isinstance(refresh_token, str) and refresh_token else None
+	if not access_token:
+		error = 'Authentication response has no usable access token'
+		print(f'[FAILED] {account_name}: {error}')
+		return None, refresh_token, error
+	return access_token, refresh_token, None
+
+
+def _sub2api_token_from_response(response, account_name: str) -> tuple[str | None, str | None]:
+	"""兼容旧调用方，只返回 access_token 和 refresh_token。"""
+	access_token, refresh_token, _ = _sub2api_token_result(response, account_name)
+	return access_token, refresh_token
 
 
 def _sub2api_refresh_token(
 	client, account_name: str, provider_config, refresh_token: str
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None, str | None]:
 	if not provider_config.auth_refresh_path:
-		return None, None
+		return None, None, 'Authentication refresh path is not configured'
 	response = client.post(
 		f'{provider_config.domain}{provider_config.auth_refresh_path}',
 		json={'refresh_token': refresh_token},
 		timeout=30,
 	)
-	return _sub2api_token_from_response(response, account_name)
+	return _sub2api_token_result(response, account_name)
 
 
-def _xiaobai_response_data(response, account_name: str, action: str) -> dict | None:
+def _xiaobai_response_data(response, account_name: str, action: str) -> tuple[dict | None, str | None]:
 	"""解析小白 Code 的 ``{ok, data}`` 响应，不把认证信息写入日志。"""
 	try:
 		payload = response.json()
 	except json.JSONDecodeError:
-		print(f'[FAILED] {account_name}: {action} returned invalid JSON')
-		return None
+		error = f'{action} returned invalid JSON'
+		print(f'[FAILED] {account_name}: {error}')
+		return None, error
 
 	if response.status_code != 200:
 		message = payload.get('message') if isinstance(payload, dict) else None
-		print(f'[FAILED] {account_name}: {action} failed - {message or f"HTTP {response.status_code}"}')
-		return None
+		error = f'{action} failed - {message or f"HTTP {response.status_code}"}'
+		print(f'[FAILED] {account_name}: {error}')
+		return None, error
 	if isinstance(payload, dict) and payload.get('ok') is False:
-		print(f'[FAILED] {account_name}: {action} failed - {payload.get("message", "unknown error")}')
-		return None
+		error = f'{action} failed - {payload.get("message", "unknown error")}'
+		print(f'[FAILED] {account_name}: {error}')
+		return None, error
 
 	data = payload.get('data') if isinstance(payload, dict) and 'data' in payload else unwrap_api_data(payload)
-	return data if isinstance(data, dict) else None
+	if not isinstance(data, dict):
+		error = f'{action} returned invalid response data'
+		print(f'[FAILED] {account_name}: {error}')
+		return None, error
+	return data, None
 
 
 def run_xiaobai_check_in(
@@ -644,6 +731,8 @@ def run_xiaobai_check_in(
 	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
 	if proxy_url:
 		client_kwargs['proxy'] = proxy_url
+	elif provider_config.use_proxy:
+		print(f'[WARN] {account_name}: Provider requires proxy but CHECKIN_PROXY_URL is not set')
 
 	headers = {
 		'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
@@ -658,10 +747,11 @@ def run_xiaobai_check_in(
 		with httpx.Client(headers=headers, **client_kwargs) as client:
 			access_token = account.access_token
 			refresh_token = account.refresh_token
+			authentication_error: str | None = None
 
 			if not access_token and refresh_token:
 				print(f'[AUTH] {account_name}: Refreshing Bearer access token')
-				access_token, rotated_refresh_token = _sub2api_refresh_token(
+				access_token, rotated_refresh_token, authentication_error = _sub2api_refresh_token(
 					client,
 					account_name,
 					provider_config,
@@ -670,56 +760,75 @@ def run_xiaobai_check_in(
 				refresh_token = rotated_refresh_token or refresh_token
 
 			if not access_token:
-				print(f'[FAILED] {account_name}: Xiaobai requires access_token or refresh_token')
-				return False, None, None
+				error = authentication_error or 'Xiaobai requires access_token or refresh_token'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
 
 			headers['Authorization'] = f'Bearer {access_token}'
 
+			last_authentication_error: str | None = None
+
 			def request(method: str, url: str, *, body: dict | None = None):
-				nonlocal refresh_token
-				if method == 'GET':
-					response = client.get(url, headers=headers, timeout=30)
-				else:
-					response = client.post(url, headers=headers, json=body, timeout=30)
+				nonlocal last_authentication_error, refresh_token
 
-				if response.status_code != 401 or not refresh_token:
-					return response
+				def send():
+					if method == 'GET':
+						return client.get(url, headers=headers, timeout=30)
+					return client.post(url, headers=headers, json=body, timeout=30)
 
-				new_access_token, new_refresh_token = _sub2api_refresh_token(
-					client,
-					account_name,
-					provider_config,
-					refresh_token,
-				)
-				if not new_access_token:
-					return response
+				for attempt in range(1, XIAOBAI_MAX_REQUEST_ATTEMPTS + 1):
+					response = send()
+					if response.status_code == 401 and refresh_token:
+						new_access_token, new_refresh_token, refresh_error = _sub2api_refresh_token(
+							client,
+							account_name,
+							provider_config,
+							refresh_token,
+						)
+						if new_access_token:
+							headers['Authorization'] = f'Bearer {new_access_token}'
+							refresh_token = new_refresh_token or refresh_token
+							response = send()
+						elif refresh_error:
+							last_authentication_error = refresh_error
 
-				headers['Authorization'] = f'Bearer {new_access_token}'
-				refresh_token = new_refresh_token or refresh_token
-				if method == 'GET':
-					return client.get(url, headers=headers, timeout=30)
-				return client.post(url, headers=headers, json=body, timeout=30)
+					if (
+						response.status_code not in XIAOBAI_RETRY_STATUS_CODES
+						or attempt == XIAOBAI_MAX_REQUEST_ATTEMPTS
+					):
+						return response
+
+					print(
+						f'[WARN] {account_name}: {method} {url} returned HTTP {response.status_code}; '
+						f'retrying ({attempt}/{XIAOBAI_MAX_REQUEST_ATTEMPTS - 1})'
+					)
+					time.sleep(attempt)
+
+				raise RuntimeError('Xiaobai request retry loop ended unexpectedly')
 
 			status_url = f'{provider_config.domain}{provider_config.check_in_status_path}'
 			status_response = request('GET', status_url)
-			status = _xiaobai_response_data(status_response, account_name, 'Check-in status request')
+			status, status_error = _xiaobai_response_data(status_response, account_name, 'Check-in status request')
 			if status is None:
-				return False, None, None
+				error = last_authentication_error or status_error or 'Check-in status request failed'
+				return False, None, attach_check_in_error(None, error)
 			if status.get('signedToday') is True:
 				print(f'[SUCCESS] {account_name}: Already checked in today')
 				return True, None, None
 
 			config = status.get('config')
 			if isinstance(config, dict) and config.get('enabled') is False:
-				print(f'[FAILED] {account_name}: Daily check-in is currently disabled')
-				return False, None, None
+				error = 'Daily check-in is currently disabled'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
 
 			print(f'[NETWORK] {account_name}: Executing Xiaobai daily check-in')
 			check_in_url = f'{provider_config.domain}{provider_config.sign_in_path}'
 			check_response = request('POST', check_in_url, body={})
-			result = _xiaobai_response_data(check_response, account_name, 'Daily check-in')
+			result, check_in_error = _xiaobai_response_data(check_response, account_name, 'Daily check-in')
 			if result is None:
-				return False, None, None
+				error = last_authentication_error or check_in_error or 'Daily check-in failed'
+				return False, None, attach_check_in_error(None, error)
 
 			record = result.get('record')
 			result_status = result.get('status')
@@ -731,8 +840,9 @@ def run_xiaobai_check_in(
 				or (isinstance(result_status, dict) and result_status.get('signedToday') is True)
 			)
 			if not success:
-				print(f'[FAILED] {account_name}: Daily check-in returned an unexpected response')
-				return False, None, None
+				error = 'Daily check-in returned an unexpected response'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
 
 			if result.get('alreadyChecked') is True:
 				print(f'[SUCCESS] {account_name}: Already checked in today')
@@ -742,8 +852,9 @@ def run_xiaobai_check_in(
 				print(f'[SUCCESS] {account_name}: Check-in successful!')
 			return True, None, None
 	except Exception as e:
-		print(f'[FAILED] {account_name}: Xiaobai check-in error - {str(e)[:100]}')
-		return False, None, None
+		error = f'Xiaobai check-in error - {str(e)[:100]}'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
 
 
 def run_bearer_check_in(
@@ -773,11 +884,13 @@ def run_bearer_check_in(
 		with httpx.Client(headers=headers, **client_kwargs) as client:
 			access_token = account.access_token
 			refresh_token = account.refresh_token
+			authentication_error: str | None = None
 
 			if account.has_login_credentials():
 				if not provider_config.login_api_path:
-					print(f'[FAILED] {account_name}: Bearer login_api_path is not configured')
-					return False, None, None
+					error = 'Bearer login_api_path is not configured'
+					print(f'[FAILED] {account_name}: {error}')
+					return False, None, attach_check_in_error(None, error)
 				print(f'[AUTH] {account_name}: Logging in through Bearer email/password API')
 				response = client.post(
 					f'{provider_config.domain}{provider_config.login_api_path}',
@@ -785,20 +898,22 @@ def run_bearer_check_in(
 					headers=headers,
 					timeout=30,
 				)
-				access_token, login_refresh_token = _sub2api_token_from_response(response, account_name)
+				access_token, login_refresh_token, authentication_error = _sub2api_token_result(response, account_name)
 				refresh_token = login_refresh_token or refresh_token
 			elif not access_token and refresh_token:
 				print(f'[AUTH] {account_name}: Refreshing Bearer access token')
-				access_token, refresh_token = _sub2api_refresh_token(
+				access_token, rotated_refresh_token, authentication_error = _sub2api_refresh_token(
 					client,
 					account_name,
 					provider_config,
 					refresh_token,
 				)
+				refresh_token = rotated_refresh_token or refresh_token
 
 			if not access_token:
-				print(f'[FAILED] {account_name}: No usable Bearer access token')
-				return False, None, None
+				error = authentication_error or 'No usable Bearer access token'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
 
 			headers['Authorization'] = f'Bearer {access_token}'
 			profile_url = f'{provider_config.domain}{provider_config.user_info_path}'
@@ -812,7 +927,7 @@ def run_bearer_check_in(
 
 			profile_response, user_info_before = get_profile()
 			if profile_response.status_code == 401 and refresh_token:
-				new_access_token, new_refresh_token = _sub2api_refresh_token(
+				new_access_token, new_refresh_token, refresh_error = _sub2api_refresh_token(
 					client,
 					account_name,
 					provider_config,
@@ -822,10 +937,13 @@ def run_bearer_check_in(
 					headers['Authorization'] = f'Bearer {new_access_token}'
 					refresh_token = new_refresh_token or refresh_token
 					_, user_info_before = get_profile()
+				elif refresh_error:
+					authentication_error = refresh_error
 
 			if not user_info_before.get('success'):
-				print(f'[FAILED] {account_name}: {user_info_before.get("error", "Unable to get profile")}')
-				return False, user_info_before, None
+				error = authentication_error or user_info_before.get('error', 'Unable to get profile')
+				print(f'[FAILED] {account_name}: {error}')
+				return False, attach_check_in_error(user_info_before, error), None
 			print(user_info_before['display'])
 
 			status_response = client.get(status_url, headers=headers, timeout=30)
@@ -835,6 +953,7 @@ def run_bearer_check_in(
 			except json.JSONDecodeError:
 				pass
 
+			check_in_error: str | None = None
 			if status_response.status_code == 200 and is_checked_in_status(status_payload):
 				print(f'[SUCCESS] {account_name}: Already checked in today')
 				success = True
@@ -843,18 +962,24 @@ def run_bearer_check_in(
 				and isinstance(status_payload, dict)
 				and status_payload.get('eligible') is False
 			):
-				print(f'[FAILED] {account_name}: Daily check-in is currently not eligible')
+				check_in_error = 'Daily check-in is currently not eligible'
+				print(f'[FAILED] {account_name}: {check_in_error}')
 				success = False
 			else:
 				print(f'[NETWORK] {account_name}: Executing Bearer daily check-in')
 				check_response = client.post(check_in_url, headers=headers, timeout=30)
-				success = parse_check_in_response(account_name, check_response.status_code, check_response.text)
+				success, check_in_error = parse_check_in_result(
+					account_name, check_response.status_code, check_response.text
+				)
 
 			_, user_info_after = get_profile()
+			if not success:
+				user_info_after = attach_check_in_error(user_info_after, check_in_error)
 			return success, user_info_before, user_info_after
 	except Exception as e:
-		print(f'[FAILED] {account_name}: Bearer check-in error - {str(e)[:100]}')
-		return False, None, None
+		error = f'Bearer check-in error - {str(e)[:100]}'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
 
 
 def run_newapi_password_check_in(
@@ -871,6 +996,9 @@ def run_newapi_password_check_in(
 	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
 	if proxy_url:
 		client_kwargs['proxy'] = proxy_url
+		print(f'[INFO] {account_name}: NewAPI HTTP client proxy enabled')
+	elif provider_config.use_proxy:
+		print(f'[WARN] {account_name}: Provider requires proxy but CHECKIN_PROXY_URL is not set')
 
 	base_headers = {
 		'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
@@ -889,17 +1017,20 @@ def run_newapi_password_check_in(
 				timeout=30,
 			)
 			if response.status_code != 200:
-				print(f'[FAILED] {account_name}: Login failed - HTTP {response.status_code}')
-				return False, None, None
+				error = f'Login failed - HTTP {response.status_code}'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
 
 			payload = response.json()
 			if not payload.get('success'):
-				print(f'[FAILED] {account_name}: Login failed - {payload.get("message", "unknown error")}')
-				return False, None, None
+				error = f'Login failed - {payload.get("message", "unknown error")}'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
 			data = payload.get('data') or {}
 			if data.get('requires_2fa'):
-				print(f'[FAILED] {account_name}: Login requires 2FA')
-				return False, None, None
+				error = 'Login requires 2FA'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
 
 			access_token = data.get('access_token')
 			session = data.get('session') or {}
@@ -907,8 +1038,9 @@ def run_newapi_password_check_in(
 			user = data.get('user') or {}
 			api_user = str(user.get('id')) if user.get('id') is not None else None
 			if not access_token:
-				print(f'[FAILED] {account_name}: Login response did not include access token')
-				return False, None, None
+				error = 'Login response did not include access token'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
 
 			headers = {**base_headers, 'Authorization': f'Bearer {access_token}'}
 			if api_user and provider_config.api_user_key:
@@ -925,7 +1057,7 @@ def run_newapi_password_check_in(
 				return False, user_info_before, None
 			print(user_info_before['display'])
 
-			success = execute_check_in(client, account_name, provider_config, headers)
+			success, check_in_error = execute_check_in_result(client, account_name, provider_config, headers)
 			user_info_after = get_user_info(
 				client,
 				headers,
@@ -944,16 +1076,19 @@ def run_newapi_password_check_in(
 				)
 			except Exception:
 				debug_print(f'[WARN] {account_name}: Failed to close temporary login session')
+			if not success:
+				user_info_after = attach_check_in_error(user_info_after, check_in_error)
 			return success, user_info_before, user_info_after
 	except Exception as e:
-		print(f'[FAILED] {account_name}: NewAPI password check-in error - {str(e)[:100]}')
-		return False, None, None
+		error = f'NewAPI password check-in error - {str(e)[:100]}'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
 
 
-def execute_check_in(client, account_name: str, provider_config, headers: dict):
-	"""执行签到请求"""
+def execute_check_in_result(client, account_name: str, provider_config, headers: dict) -> tuple[bool, str | None]:
+	"""执行签到请求并保留失败原因。"""
 	if provider_config.checkin_captcha:
-		return execute_captcha_check_in(client, account_name, provider_config, headers)
+		return execute_captcha_check_in_result(client, account_name, provider_config, headers)
 
 	print(f'[NETWORK] {account_name}: Executing check-in')
 
@@ -967,37 +1102,19 @@ def execute_check_in(client, account_name: str, provider_config, headers: dict):
 	for attempt, variant in enumerate(header_variants):
 		response = client.post(sign_in_url, headers=variant, timeout=30)
 
-		print(f'[RESPONSE] {account_name}: Response status code {response.status_code}')
-
 		# 与用户信息接口保持一致：new-api-user 失效时，退回到 session-only 请求。
 		if response.status_code in (401, 403) and attempt < len(header_variants) - 1:
 			continue
 
-		if response.status_code == 200:
-			try:
-				result = response.json()
-				if result.get('ret') == 1 or result.get('code') == 0 or result.get('success'):
-					print(f'[SUCCESS] {account_name}: Check-in successful!')
-					return True
-				else:
-					error_msg = result.get('msg', result.get('message', 'Unknown error'))
-					already_checked_keywords = ['已经签到', '已签到', '重复签到', 'already checked', 'already signed']
-					if any(keyword in error_msg.lower() for keyword in already_checked_keywords):
-						print(f'[SUCCESS] {account_name}: Already checked in today')
-						return True
-					print(f'[FAILED] {account_name}: Check-in failed - {error_msg}')
-					return False
-			except json.JSONDecodeError:
-				if 'success' in response.text.lower():
-					print(f'[SUCCESS] {account_name}: Check-in successful!')
-					return True
-				print(f'[FAILED] {account_name}: Check-in failed - Invalid response format')
-				return False
+		return parse_check_in_result(account_name, response.status_code, response.text)
 
-		print(f'[FAILED] {account_name}: Check-in failed - HTTP {response.status_code}')
-		return False
+	return False, 'Check-in failed after all header variants'
 
-	return False
+
+def execute_check_in(client, account_name: str, provider_config, headers: dict) -> bool:
+	"""兼容旧调用方，只返回签到是否成功。"""
+	success, _ = execute_check_in_result(client, account_name, provider_config, headers)
+	return success
 
 
 def format_check_in_notification(detail: dict) -> str:
@@ -1079,6 +1196,7 @@ async def run_check_in_in_page(
 			print(f'[WARN] {account_name}: {user_info_before.get("error")}')
 
 		success = True
+		check_in_error: str | None = None
 		if provider_config.needs_manual_check_in():
 			print(f'[NETWORK] {account_name}: Executing check-in')
 			status, body = await request_in_page(
@@ -1087,7 +1205,7 @@ async def run_check_in_in_page(
 				method='POST',
 				headers=headers,
 			)
-			success = parse_check_in_response(account_name, status, body)
+			success, check_in_error = parse_check_in_result(account_name, status, body)
 
 		status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
 		user_info_after = parse_user_info_response(status, body)
@@ -1096,12 +1214,18 @@ async def run_check_in_in_page(
 			success = user_info_after.get('success', False)
 			if success:
 				print(f'[INFO] {account_name}: Check-in completed automatically (triggered by user info request)')
+			else:
+				check_in_error = user_info_after.get('error', 'Auto check-in failed')
+
+		if not success:
+			user_info_after = attach_check_in_error(user_info_after, check_in_error)
 
 		return success, user_info_before, user_info_after
 
 	except Exception as e:
-		print(f'[FAILED] {account_name}: Error during in-page check-in: {e}')
-		return False, None, None
+		error = f'Error during in-page check-in: {str(e)[:100]}'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
 	finally:
 		await browser.close()
 
@@ -1113,8 +1237,9 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 
 	provider_config = app_config.get_provider(account.provider)
 	if not provider_config:
-		print(f'[FAILED] {account_name}: Provider "{account.provider}" not found in configuration')
-		return False, None, None
+		error = f'Provider "{account.provider}" not found in configuration'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
 
@@ -1151,13 +1276,15 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 			if resolved_access_token:
 				auth_method = 'email/password + bearer token'
 		else:
-			print(f'[FAILED] {account_name}: Email/password login failed, will not use stale session cookies')
-			return False, None, None
+			error = 'Email/password login failed; stale session cookies were not used'
+			print(f'[FAILED] {account_name}: {error}')
+			return False, None, attach_check_in_error(None, error)
 	else:
 		user_cookies = parse_cookies(account.cookies) if account.cookies else {}
 		if not user_cookies and not account.has_access_token():
-			print(f'[FAILED] {account_name}: Invalid configuration format')
-			return False, None, None
+			error = 'Invalid account configuration: missing cookies/access_token'
+			print(f'[FAILED] {account_name}: {error}')
+			return False, None, attach_check_in_error(None, error)
 		# request_in_page 会在自己的浏览器上下文里拿 WAF cookie，这里不必再开一次。
 		if provider_config.request_in_page:
 			all_cookies = user_cookies
@@ -1170,7 +1297,8 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 		auth_method = 'bearer token' if account.has_access_token() else 'session cookies'
 
 	if not all_cookies and not account.has_access_token():
-		return False, None, None
+		error = 'Unable to prepare authentication cookies'
+		return False, None, attach_check_in_error(None, error)
 
 	print(f'[AUTH] {account_name}: Using auth method -> {auth_method}')
 
@@ -1283,13 +1411,15 @@ def run_check_in_requests(
 					)
 
 			if provider_config.needs_manual_check_in():
-				success = execute_check_in(client, account_name, provider_config, headers)
+				success, check_in_error = execute_check_in_result(client, account_name, provider_config, headers)
 				user_info_after = get_user_info(
 					client,
 					headers,
 					user_info_url,
 					api_user_key=provider_config.api_user_key,
 				)
+				if not success:
+					user_info_after = attach_check_in_error(user_info_after, check_in_error)
 				return success, user_info_before, user_info_after
 
 			user_info_after = get_user_info(
@@ -1306,8 +1436,9 @@ def run_check_in_requests(
 			return False, user_info_before, user_info_after
 
 	except Exception as e:
-		print(f'[FAILED] {account_name}: Error occurred during check-in process - {str(e)[:50]}...')
-		return False, None, None
+		error = f'Error occurred during check-in process - {str(e)[:100]}'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
 
 
 async def main():
@@ -1323,7 +1454,7 @@ async def main():
 		print('[INFO] Debug mode disabled (set DEBUG_MODE=true to enable screenshots and verbose logs)')
 
 	print('[SYSTEM] AnyRouter.top multi-account auto check-in script started')
-	print(f'[TIME] Execution time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+	print(f'[TIME] Execution time: {format_check_in_time()}')
 
 	app_config = AppConfig.load_from_env()
 	print(f'[INFO] Loaded {len(app_config.providers)} provider configuration(s)')
@@ -1400,9 +1531,7 @@ async def main():
 				if success:
 					notification_content.append(f'✅ {account_name} · 今日已签到')
 				else:
-					error = 'Unknown error'
-					if user_info_after:
-						error = user_info_after.get('error', error)
+					error = resolve_check_in_error(user_info_before, user_info_after)
 					notification_content.append(f'❌ {account_name} · {error}')
 
 		except Exception as e:
@@ -1437,7 +1566,7 @@ async def main():
 			result_icon = '❌'
 		summary = [
 			f'{result_icon} 签到结果：{success_count}/{total_count} 成功',
-			f'🕘 {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+			f'🕘 {format_check_in_time()}',
 		]
 		if failed_count:
 			summary.append(f'❌ 失败：{failed_count} 个')
