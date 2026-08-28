@@ -289,3 +289,23 @@ def test_qingjiu_custom_provider_inherits_browser_request_defaults(monkeypatch):
 
 	assert provider.http2 is False
 	assert provider.request_in_page is True
+
+
+def test_justwoker_provider_uses_pat_and_turnstile(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['justwoker']
+
+	# 与 gorouter 同构的 NewAPI：签到必须带 Turnstile token，且只接受 ?turnstile= 查询参数。
+	assert provider.domain == 'https://api.justwoker.icu'
+	assert provider.login_path == '/console/personal'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.auth_refresh_path == '/api/user/auth/refresh'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.use_proxy is False
+	assert provider.checkin_turnstile is True
+	assert provider.turnstile_site_key == '0x4AAAAAAEQ0v37GMr9cC_Kw'
+	assert provider.persist_profile is True

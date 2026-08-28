@@ -296,9 +296,24 @@ GoRouter（`https://gorouter.app`）是新版 NewAPI，只支持 GitHub OAuth �
 
 请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
 
+### JustWoker
+
+JustWoker（`https://api.justwoker.icu`）与 GoRouter 同为新版 NewAPI，签到接口 `POST /api/user/checkin` 同样带 Cloudflare Turnstile 校验，走完全一致的实现（页内渲染 widget 拿 token → 作为 `?turnstile=` 查询参数提交 → 以 `stats.checked_in_today` 判定成功）。凭据同样用**个人访问令牌（access_token）**：
+
+1. 浏览器登录，打开 <https://api.justwoker.icu/console/personal>
+2. 复制「访问令牌 / Access Token」（如未生成过则点「重新生成」，旧令牌会立刻作废）
+3. 把账号令牌写成一份 JSON，存到 production Environment Secret `EXTRA_ACCOUNTS_17`
+
+```json
+[
+  { "name": "JustWoker-account-1", "provider": "justwoker", "access_token": "xxx" },
+  { "name": "JustWoker-account-2", "provider": "justwoker", "access_token": "xxx" }
+]
+```
+
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 

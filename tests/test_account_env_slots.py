@@ -13,6 +13,7 @@ def _clear(monkeypatch):
 		'EXTRA_ACCOUNTS_3',
 		'EXTRA_ACCOUNTS_10',
 		'EXTRA_ACCOUNTS_15',
+		'EXTRA_ACCOUNTS_17',
 	):
 		monkeypatch.delenv(name, raising=False)
 
@@ -71,3 +72,18 @@ def test_ignores_malformed_suffix(monkeypatch):
 	monkeypatch.setenv('EXTRA_ACCOUNTS_ABC', 'not-json')
 
 	assert [a.name for a in load_accounts_config()] == ['Main']
+
+
+def test_justwoker_slot_is_loaded_last(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv('EXTRA_ACCOUNTS_17', '[]')
+	monkeypatch.setenv('EXTRA_ACCOUNTS_2', '[]')
+	monkeypatch.setenv('EXTRA_ACCOUNTS_15', '[]')
+
+	assert _account_env_names() == [
+		'ANYROUTER_ACCOUNTS',
+		'EXTRA_ACCOUNTS',
+		'EXTRA_ACCOUNTS_2',
+		'EXTRA_ACCOUNTS_15',
+		'EXTRA_ACCOUNTS_17',
+	]
