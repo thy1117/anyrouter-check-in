@@ -30,6 +30,14 @@ def test_request_in_page_inherits_builtin_default(monkeypatch):
 	assert config.providers['futureppo'].request_in_page is True
 
 
+def test_qingjiu_uses_in_page_requests(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+	config = AppConfig.load_from_env()
+
+	assert config.providers['qingjiu'].request_in_page is True
+
+
 def test_request_in_page_opt_in_from_dict():
 	provider = ProviderConfig.from_dict('c', {'domain': 'https://e.com', 'request_in_page': True})
 	assert provider.request_in_page is True
