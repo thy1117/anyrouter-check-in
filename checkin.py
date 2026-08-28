@@ -214,8 +214,15 @@ async def login_with_credentials(
 	provider_name: str,
 	email: str,
 	password: str,
+	*,
+	keep_open: bool = False,
 ) -> BrowserLoginResult | None:
-	"""使用邮箱密码通过浏览器登录，返回 cookies 与拦截到的 api user id。"""
+	"""使用邮箱密码通过浏览器登录，返回 cookies 与拦截到的 api user id。
+
+	keep_open=True 时登录成功后不关闭浏览器，把 context/page 一起放进返回值，
+	供 request_in_page 直接在同一个已登录页面里发请求，省掉第二次开浏览器 +
+	重新过 WAF 的开销（清酒就是在第二次 goto 上超时的）。
+	"""
 	print(f'[PROCESSING] {account_name}: Logging in with email/password...')
 
 	login_url = f'{provider_config.domain}{provider_config.login_path}'
@@ -295,6 +302,15 @@ async def login_with_credentials(
 		if is_debug_enabled() and api_user:
 			success_msg += f', api_user={api_user}'
 		print(success_msg)
+		if keep_open:
+			return BrowserLoginResult(
+				cookies=all_cookies,
+				api_user=api_user,
+				access_token=access_token,
+				session_id=session_id,
+				context=context,
+				page=page,
+			)
 		await context.close()
 		return BrowserLoginResult(
 			cookies=all_cookies,
@@ -1458,44 +1474,64 @@ async def run_check_in_in_page(
 	cookies_override: dict | None = None,
 	api_user_override: str | None = None,
 	access_token_override: str | None = None,
+	page=None,
 ) -> tuple[bool, dict | None, dict | None]:
 	"""在浏览器页面内完成查询与签到。
 
 	机房 IP 上 Cloudflare 会校验 TLS(JA3)/HTTP2 指纹，Python 侧的 httpx 过不去；
 	由页面自己发 fetch，指纹与挑战通过时一致，凭据也直接复用页面 cookie。
-	"""
-	print(f'[PROCESSING] {account_name}: Starting browser for in-page requests...')
 
-	launch_kwargs: dict = {'headless': True}
-	proxy = get_playwright_proxy(use_proxy=provider_config.use_proxy)
-	if proxy:
-		launch_kwargs['proxy'] = proxy
-	browser = await launch_async(**launch_kwargs)
+	传入 page（刚刚完成邮箱密码登录的那个页面）时直接复用，不再开第二个浏览器、
+	不再 goto 登录页重新过 WAF —— 这一步以前是 30s 超时的主要来源。此时 page 的
+	生命周期由调用方负责关闭。
+	"""
+	reuse_page = page is not None
+	browser = None
+
+	if reuse_page:
+		print(f'[PROCESSING] {account_name}: Reusing logged-in page for in-page requests...')
+	else:
+		print(f'[PROCESSING] {account_name}: Starting browser for in-page requests...')
+		launch_kwargs: dict = {'headless': True}
+		proxy = get_playwright_proxy(use_proxy=provider_config.use_proxy)
+		if proxy:
+			launch_kwargs['proxy'] = proxy
+		browser = await launch_async(**launch_kwargs)
 
 	try:
-		page = await browser.new_page()
-		await prepare_browser_page(page)
-		login_url = f'{provider_config.domain}{provider_config.login_path}'
-		await page.goto(login_url, wait_until='domcontentloaded')
-		await wait_for_waf_ready(page)
-		await wait_for_cookies(page, provider_config.waf_cookie_names or [])
-
-		# When email/password login was performed just before this function, the
-		# authenticated cookies live in ``cookies_override`` rather than in the
-		# original account configuration.  Reuse them in the browser context so
-		# providers whose Python client stalls can still use the browser network
-		# stack without losing the login session.
-		user_cookies = cookies_override or (parse_cookies(account.cookies) if account.cookies else {})
-		if user_cookies:
-			# WAF cookies are tied to the runner's current IP/browser fingerprint. Keep the
-			# fresh values obtained above instead of overwriting them with cookies copied
-			# from the user's local browser.
-			waf_cookie_names = set(provider_config.waf_cookie_names or [])
-			user_cookies = {name: value for name, value in user_cookies.items() if name not in waf_cookie_names}
-			domain = provider_config.domain.split('://', 1)[-1]
-			await page.context.add_cookies(
-				[{'name': name, 'value': value, 'domain': domain, 'path': '/'} for name, value in user_cookies.items()]
+		if not reuse_page:
+			settings = load_browser_login_settings(
+				account_name,
+				provider_config.name,
+				persist_profile=provider_config.persist_profile,
 			)
+			timeout_ms = settings.wait_timeout_ms
+			page = await browser.new_page()
+			await prepare_browser_page(page)
+			login_url = f'{provider_config.domain}{provider_config.login_path}'
+			await page.goto(login_url, wait_until='domcontentloaded', timeout=timeout_ms)
+			await wait_for_waf_ready(page, timeout_ms)
+			await wait_for_cookies(page, provider_config.waf_cookie_names or [])
+
+			# When email/password login was performed just before this function, the
+			# authenticated cookies live in ``cookies_override`` rather than in the
+			# original account configuration.  Reuse them in the browser context so
+			# providers whose Python client stalls can still use the browser network
+			# stack without losing the login session.
+			user_cookies = cookies_override or (parse_cookies(account.cookies) if account.cookies else {})
+			if user_cookies:
+				# WAF cookies are tied to the runner's current IP/browser fingerprint. Keep the
+				# fresh values obtained above instead of overwriting them with cookies copied
+				# from the user's local browser.
+				waf_cookie_names = set(provider_config.waf_cookie_names or [])
+				user_cookies = {name: value for name, value in user_cookies.items() if name not in waf_cookie_names}
+				domain = provider_config.domain.split('://', 1)[-1]
+				await page.context.add_cookies(
+					[
+						{'name': name, 'value': value, 'domain': domain, 'path': '/'}
+						for name, value in user_cookies.items()
+					]
+				)
 
 		headers = {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
 		api_user = api_user_override or account.api_user
@@ -1551,7 +1587,9 @@ async def run_check_in_in_page(
 		print(f'[FAILED] {account_name}: {error}')
 		return False, None, attach_check_in_error(None, error)
 	finally:
-		await browser.close()
+		# 复用外部传入的 page 时不关浏览器，交回调用方统一释放。
+		if browser is not None:
+			await browser.close()
 
 
 async def check_in_account(account: AccountConfig, account_index: int, app_config: AppConfig):
@@ -1583,6 +1621,8 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 	resolved_access_token: str | None = None
 	resolved_session_id: str | None = None
 	auth_method = None
+	login_context = None
+	login_page = None
 	if account.has_login_credentials():
 		print(f'[INFO] {account_name}: Attempting email/password login (priority)...')
 		login_identifier = account.get_login_identifier()
@@ -1593,12 +1633,16 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 			account.provider,
 			login_identifier,
 			account.password,
+			# 页内请求的 provider 直接复用登录页面，避免再开一个浏览器重新过 WAF。
+			keep_open=bool(provider_config.request_in_page),
 		)
 		if login_result:
 			all_cookies = login_result.cookies
 			resolved_api_user = login_result.api_user
 			resolved_access_token = login_result.access_token
 			resolved_session_id = login_result.session_id
+			login_context = login_result.context
+			login_page = login_result.page
 			auth_method = 'email/password'
 			if resolved_access_token:
 				auth_method = 'email/password + bearer token'
@@ -1623,32 +1667,38 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 			)
 		auth_method = 'bearer token' if account.has_access_token() else 'session cookies'
 
-	if not all_cookies and not account.has_access_token():
-		error = 'Unable to prepare authentication cookies'
-		return False, None, attach_check_in_error(None, error)
+	try:
+		if not all_cookies and not account.has_access_token():
+			error = 'Unable to prepare authentication cookies'
+			return False, None, attach_check_in_error(None, error)
 
-	print(f'[AUTH] {account_name}: Using auth method -> {auth_method}')
+		print(f'[AUTH] {account_name}: Using auth method -> {auth_method}')
 
-	if provider_config.request_in_page:
-		return await run_check_in_in_page(
+		if provider_config.request_in_page:
+			return await run_check_in_in_page(
+				account,
+				account_name,
+				provider_config,
+				cookies_override=all_cookies,
+				api_user_override=resolved_api_user,
+				access_token_override=resolved_access_token,
+				page=login_page,
+			)
+
+		return run_check_in_requests(
+			all_cookies,
 			account,
 			account_name,
 			provider_config,
-			cookies_override=all_cookies,
 			api_user_override=resolved_api_user,
 			access_token_override=resolved_access_token,
+			session_id_override=resolved_session_id,
+			use_proxy=provider_config.use_proxy,
 		)
-
-	return run_check_in_requests(
-		all_cookies,
-		account,
-		account_name,
-		provider_config,
-		api_user_override=resolved_api_user,
-		access_token_override=resolved_access_token,
-		session_id_override=resolved_session_id,
-		use_proxy=provider_config.use_proxy,
-	)
+	finally:
+		# keep_open 借出的浏览器上下文在这里统一释放。
+		if login_context is not None:
+			await login_context.close()
 
 
 def run_check_in_requests(

@@ -151,6 +151,10 @@ class BrowserLoginResult:
 	api_user: str | None = None
 	access_token: str | None = None
 	session_id: str | None = None
+	# keep_open=True 时把登录用的浏览器上下文/页面一起交出来给调用方复用，
+	# 复用完必须由调用方 close()，否则浏览器进程不会退出。
+	context: object | None = None
+	page: object | None = None
 
 
 @dataclass(frozen=True)
