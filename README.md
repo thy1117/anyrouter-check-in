@@ -311,9 +311,21 @@ JustWoker（`https://api.justwoker.icu`）与 GoRouter 同为新版 NewAPI，签
 ]
 ```
 
+### TaBiToken
+
+TaBiToken（`https://tabitoken.com`，站点名 TaBiAI）同为新版 NewAPI，签到接口与 Turnstile 处理和 GoRouter 完全一致（`/profile` 会 302，签到卡片挂在 `/console/personal`）。凭据用**个人访问令牌（access_token）**，把三个账号写成一份 JSON 存到 production Environment Secret `EXTRA_ACCOUNTS_18`：
+
+```json
+[
+  { "name": "TaBiToken-account-1", "provider": "tabitoken", "access_token": "xxx" },
+  { "name": "TaBiToken-account-2", "provider": "tabitoken", "access_token": "xxx" },
+  { "name": "TaBiToken-account-3", "provider": "tabitoken", "access_token": "xxx" }
+]
+```
+
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 

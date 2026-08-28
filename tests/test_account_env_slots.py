@@ -14,6 +14,7 @@ def _clear(monkeypatch):
 		'EXTRA_ACCOUNTS_10',
 		'EXTRA_ACCOUNTS_15',
 		'EXTRA_ACCOUNTS_17',
+		'EXTRA_ACCOUNTS_18',
 	):
 		monkeypatch.delenv(name, raising=False)
 
@@ -86,4 +87,19 @@ def test_justwoker_slot_is_loaded_last(monkeypatch):
 		'EXTRA_ACCOUNTS_2',
 		'EXTRA_ACCOUNTS_15',
 		'EXTRA_ACCOUNTS_17',
+	]
+
+
+def test_tabitoken_slot_is_loaded_last(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv('EXTRA_ACCOUNTS_18', '[]')
+	monkeypatch.setenv('EXTRA_ACCOUNTS_2', '[]')
+	monkeypatch.setenv('EXTRA_ACCOUNTS_17', '[]')
+
+	assert _account_env_names() == [
+		'ANYROUTER_ACCOUNTS',
+		'EXTRA_ACCOUNTS',
+		'EXTRA_ACCOUNTS_2',
+		'EXTRA_ACCOUNTS_17',
+		'EXTRA_ACCOUNTS_18',
 	]

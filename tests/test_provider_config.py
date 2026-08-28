@@ -309,3 +309,23 @@ def test_justwoker_provider_uses_pat_and_turnstile(monkeypatch):
 	assert provider.checkin_turnstile is True
 	assert provider.turnstile_site_key == '0x4AAAAAAEQ0v37GMr9cC_Kw'
 	assert provider.persist_profile is True
+
+
+def test_tabitoken_provider_uses_pat_and_turnstile(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['tabitoken']
+
+	# 与 gorouter/justwoker 同构的 NewAPI；/profile 会 302，签到卡片只在 /console/personal 挂载。
+	assert provider.domain == 'https://tabitoken.com'
+	assert provider.login_path == '/console/personal'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.auth_refresh_path == '/api/user/auth/refresh'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.use_proxy is False
+	assert provider.checkin_turnstile is True
+	assert provider.turnstile_site_key == '0x4AAAAAAEGV81TArluaPQGB'
+	assert provider.persist_profile is True
