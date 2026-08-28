@@ -329,3 +329,24 @@ def test_tabitoken_provider_uses_pat_and_turnstile(monkeypatch):
 	assert provider.checkin_turnstile is True
 	assert provider.turnstile_site_key == '0x4AAAAAAEGV81TArluaPQGB'
 	assert provider.persist_profile is True
+
+
+def test_simple_newapi_pat_providers_are_builtin(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	providers = AppConfig.load_from_env().providers
+	expected_domains = {
+		'ciyuan': 'https://ai.962831.xyz',
+		'yuecheng': 'https://52ccl.net',
+		'elysiver': 'https://elysiver.h-e.top',
+	}
+
+	for name, domain in expected_domains.items():
+		provider = providers[name]
+		assert provider.domain == domain
+		assert provider.sign_in_path == '/api/user/checkin'
+		assert provider.user_info_path == '/api/user/self'
+		assert provider.auth_refresh_path == '/api/user/auth/refresh'
+		assert provider.api_user_key == 'New-Api-User'
+		assert provider.use_proxy is False
