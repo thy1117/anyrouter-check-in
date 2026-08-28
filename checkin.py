@@ -10,6 +10,7 @@ import os
 import sys
 import time
 from datetime import datetime
+from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -32,7 +33,9 @@ from utils.browser import (
 	prepare_browser_page,
 	read_auth_session,
 	request_in_page,
+	reset_turnstile_in_page,
 	save_login_screenshot,
+	solve_turnstile_in_page,
 	take_pending_screenshots,
 	verify_browser_login,
 	wait_for_cookies,
@@ -49,6 +52,8 @@ BALANCE_HASH_FILE = 'balance_hash.txt'
 CAPTCHA_MAX_ATTEMPTS = 4
 CHECK_IN_ERROR_KEY = 'check_in_error'
 DEFAULT_CHECK_IN_TIMEZONE = 'Asia/Shanghai'
+GOROUTER_TURNSTILE_ATTEMPTS = 3
+GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS = 8
 XIAOBAI_MAX_REQUEST_ATTEMPTS = 3
 XIAOBAI_RETRY_STATUS_CODES = (502, 503, 504)
 CAPTCHA_RETRY_KEYWORDS = ('验证码', 'captcha', '过期', 'expired', 'invalid code')
@@ -586,8 +591,92 @@ def parse_user_info_response(status_code: int, body: str) -> dict:
 		'success': True,
 		'quota': quota,
 		'used_quota': used_quota,
+		'user_id': info.get('id'),
+		'username': info.get('username'),
+		'display_name': info.get('display_name'),
 		'display': f':money: Current balance: ${quota}, Used: ${used_quota}',
 	}
+
+
+def parse_gorouter_refresh_response(status_code: int, body: str) -> tuple[str | None, str | None, str | None]:
+	"""解析 GoRouter/NewAPI 的 refresh 响应，不输出任何认证值。"""
+	if status_code != 200:
+		return None, None, f'Auth refresh failed - HTTP {status_code}'
+
+	try:
+		payload = json.loads(body)
+	except json.JSONDecodeError:
+		return None, None, 'Auth refresh failed - invalid JSON'
+
+	if not isinstance(payload, dict) or not payload.get('success'):
+		message = payload.get('message', 'unknown error') if isinstance(payload, dict) else 'invalid response'
+		return None, None, f'Auth refresh failed - {message}'
+
+	data = payload.get('data')
+	if not isinstance(data, dict):
+		return None, None, 'Auth refresh failed - missing response data'
+
+	access_token = data.get('access_token')
+	if not isinstance(access_token, str) or not access_token:
+		return None, None, 'Auth refresh failed - missing access token'
+
+	session = data.get('session')
+	session_id = session.get('sid') if isinstance(session, dict) else None
+	if not isinstance(session_id, str) or not session_id:
+		session_id = None
+	return access_token, session_id, None
+
+
+def parse_gorouter_checkin_status(status_code: int, body: str) -> tuple[bool, str | None]:
+	"""读取 GoRouter 签到状态，只有嵌套 stats 标志为 true 才确认成功。"""
+	if status_code != 200:
+		return False, f'Check-in status failed - HTTP {status_code}'
+
+	try:
+		payload = json.loads(body)
+	except json.JSONDecodeError:
+		return False, 'Check-in status failed - invalid JSON'
+
+	if not isinstance(payload, dict) or not payload.get('success'):
+		message = payload.get('message', 'unknown error') if isinstance(payload, dict) else 'invalid response'
+		return False, f'Check-in status failed - {message}'
+
+	data = payload.get('data')
+	stats = data.get('stats') if isinstance(data, dict) else None
+	if not isinstance(stats, dict) or 'checked_in_today' not in stats:
+		return False, 'Check-in status failed - missing checked_in_today'
+
+	return stats.get('checked_in_today') is True, None
+
+
+def parse_gorouter_checkin_result(status_code: int, body: str) -> tuple[bool, bool, str | None]:
+	"""解析 ``POST /api/user/checkin`` 结果，返回 (成功, 需要重试 Turnstile, 错误)。
+
+	NewAPI 的 Turnstile 中间件在校验失败时也返回 HTTP 200，只把 ``success``
+	置 false 并在 message 里写 Turnstile，所以必须看 message 而不是状态码。
+	"""
+	try:
+		payload = json.loads(body)
+	except json.JSONDecodeError:
+		return False, False, f'Check-in failed - HTTP {status_code} invalid JSON'
+
+	if not isinstance(payload, dict):
+		return False, False, f'Check-in failed - HTTP {status_code} invalid response'
+
+	message = str(payload.get('message') or '')
+	if payload.get('success'):
+		data = payload.get('data')
+		awarded = data.get('quota_awarded') if isinstance(data, dict) else None
+		if isinstance(awarded, (int, float)):
+			print(f'[REWARD] Check-in awarded ${round(float(awarded) / 500000, 2)}')
+		return True, False, None
+
+	# 与前端 shouldTriggerTurnstile 一致：只有 Turnstile 相关失败才值得换 token 重试。
+	if 'Turnstile' in message:
+		return False, True, f'Check-in failed - {message}'
+	if status_code != 200:
+		return False, False, f'Check-in failed - HTTP {status_code} {message or "unknown error"}'
+	return False, False, f'Check-in failed - {message or "unknown error"}'
 
 
 def unwrap_api_data(payload: object) -> object:
@@ -1139,11 +1228,234 @@ def format_check_in_notification(detail: dict) -> str:
 	return '｜'.join(parts)
 
 
+def _gorouter_status_path(provider_config, month: str) -> str:
+	status_path = provider_config.check_in_status_path or provider_config.sign_in_path
+	separator = '&' if '?' in status_path else '?'
+	return f'{status_path}{separator}month={month}'
+
+
+async def run_gorouter_check_in_in_page(
+	account: AccountConfig,
+	account_name: str,
+	provider_config,
+	*,
+	api_user_override: str | None = None,
+	access_token_override: str | None = None,
+) -> tuple[bool, dict | None, dict | None]:
+	"""使用 GoRouter 官方页面的 Turnstile 流程执行签到。
+
+	凭据优先用 access_token（NewAPI 的 PAT，不过期、无 session 绑定）；只有在
+	没有 PAT 时才退回 ``new_api_refresh`` cookie —— 后者每次刷新都会轮换，重放
+	超过 30 秒宽限期会连带吊销整个会话族，所以用持久化 Profile 保存轮换结果。
+	签到走 ``POST /api/user/checkin?turnstile=<token>``，token 由运行器自己渲染
+	同一个 sitekey 取得，不依赖站点签到卡片的弹窗。结果只认服务端
+	``checked_in_today``。
+	"""
+	print(f'[PROCESSING] {account_name}: Starting browser for GoRouter check-in...')
+	settings = load_browser_login_settings(
+		account_name,
+		provider_config.name,
+		persist_profile=provider_config.persist_profile,
+	)
+	context = None
+
+	try:
+		context = await launch_login_context(settings, use_proxy=provider_config.use_proxy)
+		page = await context.new_page()
+		await prepare_browser_page(page)
+
+		user_cookies = parse_cookies(account.cookies) if account.cookies else {}
+		refresh_cookie = user_cookies.get('new_api_refresh')
+		if not isinstance(refresh_cookie, str) or not refresh_cookie:
+			refresh_cookie = None
+
+		access_token = access_token_override or account.access_token
+		session_id = account.session_id
+		# PAT 是不过期的凭据，有它就完全不用碰会轮换的 refresh cookie。
+		use_refresh_flow = not access_token
+
+		context_cookies = await context.cookies()
+		has_persisted_refresh = any(
+			cookie.get('name') == 'new_api_refresh' and cookie.get('value') for cookie in context_cookies
+		)
+		if not use_refresh_flow:
+			print(f'[AUTH] {account_name}: Using access token from account configuration')
+		elif refresh_cookie and not has_persisted_refresh:
+			domain = provider_config.domain.split('://', 1)[-1].split('/', 1)[0]
+			await context.add_cookies(
+				[
+					{
+						'name': 'new_api_refresh',
+						'value': refresh_cookie,
+						'domain': domain,
+						'path': '/api/user/auth',
+						'httpOnly': True,
+						'secure': True,
+					}
+				]
+			)
+			print(f'[AUTH] {account_name}: Loaded refresh cookie from account configuration')
+		elif has_persisted_refresh:
+			print(f'[AUTH] {account_name}: Reusing refresh cookie from browser profile')
+		else:
+			print(f'[WARN] {account_name}: No refresh cookie found in account or browser profile')
+
+		login_url = f'{provider_config.domain}{provider_config.login_path}'
+		await page.goto(login_url, wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
+		await wait_for_waf_ready(page, settings.wait_timeout_ms)
+
+		headers = {
+			'Accept': 'application/json, text/plain, */*',
+			'Content-Type': 'application/json',
+			'X-Requested-With': 'XMLHttpRequest',
+		}
+
+		if use_refresh_flow and (has_persisted_refresh or refresh_cookie):
+			refresh_status, refresh_body = await request_in_page(
+				page,
+				provider_config.auth_refresh_path,
+				method='POST',
+				headers=headers,
+			)
+			access_token, refreshed_session_id, refresh_error = parse_gorouter_refresh_response(
+				refresh_status,
+				refresh_body,
+			)
+			session_id = refreshed_session_id or session_id
+			if not access_token and refresh_cookie and has_persisted_refresh:
+				# A stale cache must not permanently hide a still-valid Secret cookie.
+				domain = provider_config.domain.split('://', 1)[-1].split('/', 1)[0]
+				await context.add_cookies(
+					[
+						{
+							'name': 'new_api_refresh',
+							'value': refresh_cookie,
+							'domain': domain,
+							'path': '/api/user/auth',
+							'httpOnly': True,
+							'secure': True,
+						}
+					]
+				)
+				refresh_status, refresh_body = await request_in_page(
+					page,
+					provider_config.auth_refresh_path,
+					method='POST',
+					headers=headers,
+				)
+				access_token, refreshed_session_id, refresh_error = parse_gorouter_refresh_response(
+					refresh_status,
+					refresh_body,
+				)
+				session_id = refreshed_session_id or session_id
+			if not access_token:
+				error = refresh_error or 'No usable GoRouter access token'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
+
+		if not access_token:
+			error = 'GoRouter requires new_api_refresh or access_token'
+			print(f'[FAILED] {account_name}: {error}')
+			return False, None, attach_check_in_error(None, error)
+
+		headers['Authorization'] = f'Bearer {access_token}'
+		if session_id:
+			headers['X-Auth-Session'] = session_id
+
+		status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+		user_info_before = parse_user_info_response(status, body)
+		if not user_info_before.get('success'):
+			error = user_info_before.get('error', 'Unable to verify GoRouter identity')
+			print(f'[FAILED] {account_name}: {error}')
+			return False, user_info_before, attach_check_in_error(None, error)
+
+		identity = user_info_before.get('display_name') or user_info_before.get('username')
+		identity_suffix = f' ({identity})' if identity else ''
+		print(f'[SUCCESS] {account_name}: GoRouter identity verified{identity_suffix}')
+		print(user_info_before['display'])
+
+		month = datetime.now(ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)).strftime('%Y-%m')
+		status_path = _gorouter_status_path(provider_config, month)
+		status, body = await request_in_page(page, status_path, headers=headers)
+		checked_today, status_error = parse_gorouter_checkin_status(status, body)
+		if status_error:
+			print(f'[FAILED] {account_name}: {status_error}')
+			return False, user_info_before, attach_check_in_error(user_info_before, status_error)
+
+		if checked_today:
+			print(f'[SUCCESS] {account_name}: Already checked in today')
+			status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+			return True, user_info_before, parse_user_info_response(status, body)
+
+		sign_in_path = provider_config.sign_in_path or provider_config.check_in_status_path
+		last_error = None
+		for attempt in range(1, GOROUTER_TURNSTILE_ATTEMPTS + 1):
+			if attempt > 1:
+				# 连续在同一页面铸 token 会被 Cloudflare 冷处理（停在 before-interactive
+				# 既不回调也不报错），重新加载页面换一个干净的挑战上下文再试。
+				await asyncio.sleep(GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS)
+				try:
+					await page.reload(wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
+					await wait_for_waf_ready(page, settings.wait_timeout_ms)
+				except Exception as exc:
+					debug_print(f'[WARN] {account_name}: Page reload before retry failed: {str(exc)[:80]}')
+
+			token, turnstile_error = await solve_turnstile_in_page(page, provider_config.turnstile_site_key)
+			if not token:
+				last_error = turnstile_error or 'Turnstile token was not obtained'
+				print(f'[WARN] {account_name}: {last_error} (attempt {attempt}/{GOROUTER_TURNSTILE_ATTEMPTS})')
+				await reset_turnstile_in_page(page)
+				continue
+
+			print(f'[NETWORK] {account_name}: Turnstile token minted, submitting check-in')
+			separator = '&' if '?' in sign_in_path else '?'
+			status, body = await request_in_page(
+				page,
+				f'{sign_in_path}{separator}turnstile={quote(token, safe="")}',
+				method='POST',
+				headers=headers,
+			)
+			await reset_turnstile_in_page(page)
+			succeeded, retry_turnstile, checkin_error = parse_gorouter_checkin_result(status, body)
+			if not succeeded:
+				last_error = checkin_error
+				already_checked = any(keyword in (checkin_error or '') for keyword in ALREADY_CHECKED_KEYWORDS)
+				if retry_turnstile and attempt < GOROUTER_TURNSTILE_ATTEMPTS:
+					print(f'[WARN] {account_name}: {checkin_error}, retrying with a fresh token')
+					continue
+				if not already_checked:
+					print(f'[FAILED] {account_name}: {checkin_error}')
+					return False, user_info_before, attach_check_in_error(user_info_before, checkin_error)
+
+			# 服务端 checked_in_today 是唯一的成功判据，POST 的返回值只用于诊断。
+			status, body = await request_in_page(page, status_path, headers=headers)
+			checked_today, status_error = parse_gorouter_checkin_status(status, body)
+			if checked_today:
+				print(f'[SUCCESS] {account_name}: Check-in confirmed by checked_in_today')
+				status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+				return True, user_info_before, parse_user_info_response(status, body)
+			last_error = status_error or last_error or 'Check-in was not reflected by checked_in_today'
+			print(f'[WARN] {account_name}: {last_error} (attempt {attempt}/{GOROUTER_TURNSTILE_ATTEMPTS})')
+
+		error = last_error or 'GoRouter check-in was not confirmed'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, user_info_before, attach_check_in_error(user_info_before, error)
+
+	except Exception as e:
+		error = f'Error during GoRouter check-in: {str(e)[:100]}'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
+	finally:
+		if context is not None:
+			await context.close()
+
+
 async def run_check_in_in_page(
 	account: AccountConfig,
 	account_name: str,
 	provider_config,
 	*,
+	cookies_override: dict | None = None,
 	api_user_override: str | None = None,
 	access_token_override: str | None = None,
 ) -> tuple[bool, dict | None, dict | None]:
@@ -1168,7 +1480,12 @@ async def run_check_in_in_page(
 		await wait_for_waf_ready(page)
 		await wait_for_cookies(page, provider_config.waf_cookie_names or [])
 
-		user_cookies = parse_cookies(account.cookies) if account.cookies else {}
+		# When email/password login was performed just before this function, the
+		# authenticated cookies live in ``cookies_override`` rather than in the
+		# original account configuration.  Reuse them in the browser context so
+		# providers whose Python client stalls can still use the browser network
+		# stack without losing the login session.
+		user_cookies = cookies_override or (parse_cookies(account.cookies) if account.cookies else {})
 		if user_cookies:
 			# WAF cookies are tied to the runner's current IP/browser fingerprint. Keep the
 			# fresh values obtained above instead of overwriting them with cookies copied
@@ -1194,6 +1511,13 @@ async def run_check_in_in_page(
 			print(user_info_before['display'])
 		else:
 			print(f'[WARN] {account_name}: {user_info_before.get("error")}')
+			if status in (401, 403):
+				error = (
+					f'Authentication failed - HTTP {status}; session cookie may be expired. '
+					'Update the cookie or configure username/password for automatic login.'
+				)
+				print(f'[FAILED] {account_name}: {error}')
+				return False, user_info_before, attach_check_in_error(user_info_before, error)
 
 		success = True
 		check_in_error: str | None = None
@@ -1242,6 +1566,9 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 		return False, None, attach_check_in_error(None, error)
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
+
+	if provider_config.checkin_turnstile:
+		return await run_gorouter_check_in_in_page(account, account_name, provider_config)
 
 	if provider_config.api_style == 'xiaobai':
 		return run_xiaobai_check_in(account, account_name, provider_config)
@@ -1307,6 +1634,7 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 			account,
 			account_name,
 			provider_config,
+			cookies_override=all_cookies,
 			api_user_override=resolved_api_user,
 			access_token_override=resolved_access_token,
 		)
@@ -1460,7 +1788,10 @@ async def main():
 	print(f'[INFO] Loaded {len(app_config.providers)} provider configuration(s)')
 	if is_debug_enabled():
 		for provider_name, provider in sorted(app_config.providers.items()):
-			print(f'[INFO] Provider "{provider_name}": use_proxy={provider.use_proxy}')
+			print(
+				f'[INFO] Provider "{provider_name}": use_proxy={provider.use_proxy}, '
+				f'request_in_page={provider.request_in_page}'
+			)
 
 	accounts = load_accounts_config()
 	if not accounts:

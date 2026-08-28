@@ -6,7 +6,14 @@ BASE = json.dumps([{'name': 'Main', 'cookies': {'session': 'a'}, 'api_user': '1'
 
 
 def _clear(monkeypatch):
-	for name in ('ANYROUTER_ACCOUNTS', 'EXTRA_ACCOUNTS', 'EXTRA_ACCOUNTS_2', 'EXTRA_ACCOUNTS_3', 'EXTRA_ACCOUNTS_10'):
+	for name in (
+		'ANYROUTER_ACCOUNTS',
+		'EXTRA_ACCOUNTS',
+		'EXTRA_ACCOUNTS_2',
+		'EXTRA_ACCOUNTS_3',
+		'EXTRA_ACCOUNTS_10',
+		'EXTRA_ACCOUNTS_15',
+	):
 		monkeypatch.delenv(name, raising=False)
 
 
@@ -17,6 +24,21 @@ def test_env_order_is_stable(monkeypatch):
 
 	# 数字后缀按数值排序，EXTRA_ACCOUNTS_10 不能排到 _2 前面。
 	assert _account_env_names() == ['ANYROUTER_ACCOUNTS', 'EXTRA_ACCOUNTS', 'EXTRA_ACCOUNTS_2', 'EXTRA_ACCOUNTS_10']
+
+
+def test_gorouter_slot_is_loaded_after_existing_numbered_slots(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv('EXTRA_ACCOUNTS_15', '[]')
+	monkeypatch.setenv('EXTRA_ACCOUNTS_2', '[]')
+	monkeypatch.setenv('EXTRA_ACCOUNTS_10', '[]')
+
+	assert _account_env_names() == [
+		'ANYROUTER_ACCOUNTS',
+		'EXTRA_ACCOUNTS',
+		'EXTRA_ACCOUNTS_2',
+		'EXTRA_ACCOUNTS_10',
+		'EXTRA_ACCOUNTS_15',
+	]
 
 
 def test_numbered_slot_appends_without_clobbering(monkeypatch):

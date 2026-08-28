@@ -272,9 +272,33 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 该站的账号密码登录带 Turnstile 校验，GitHub Actions 不使用账号密码登录。请把上述 JSON 保存到 production Environment Secret `EXTRA_ACCOUNTS_13`，不要把 token 提交到仓库。
 
+### GoRouter
+
+GoRouter（`https://gorouter.app`）是新版 NewAPI，只支持 GitHub OAuth 登录，签到接口 `POST /api/user/checkin` 带 Cloudflare Turnstile 校验。因为无法在 CI 里跑 OAuth，凭据用**个人访问令牌（access_token）**：
+
+1. 浏览器登录 GoRouter，打开 <https://gorouter.app/console/personal>
+2. 找到「访问令牌 / Access Token」，点「重新生成」并复制（旧令牌会立刻作废，一个账号只有一个令牌位）
+3. 把三个账号的令牌写成一份 JSON，存到 production Environment Secret `EXTRA_ACCOUNTS_15`
+
+```json
+[
+  { "name": "GoRouter-account-1", "provider": "gorouter", "access_token": "xxx" },
+  { "name": "GoRouter-account-2", "provider": "gorouter", "access_token": "xxx" },
+  { "name": "GoRouter-account-3", "provider": "gorouter", "access_token": "xxx" }
+]
+```
+
+实现要点：
+
+- **为什么用 access_token 而不是 cookie**：NewAPI 的登录态是 15 分钟的 JWT 加一个会轮换的 `new_api_refresh` cookie，重放超过 30 秒宽限期会触发防重放并吊销整个会话族，CI 里极易把凭据用死。access_token 是不过期、不绑定会话的凭据，`/api/user/self`、`/api/user/checkin` 都接受它。仍然支持填 `cookies.new_api_refresh` 作为备选（会用持久化浏览器 Profile 保存轮换后的值）。
+- **Turnstile 由运行器自己解**：签到卡片的 widget 挂在 closed shadow root 里，且只在服务端回「Turnstile token 为空」后才弹出。脚本改为在页面里显式渲染同一个 sitekey 的 widget，用真实鼠标事件点勾选框拿到 token，再作为 `?turnstile=` 查询参数提交——服务端 siteverify 同样接受。
+- **成功判据只看服务端**：Turnstile 中间件校验失败时也返回 HTTP 200，只把 `success` 置 false，所以脚本以 `GET /api/user/checkin` 返回的 `stats.checked_in_today` 为唯一成功标准，Turnstile 相关失败会换新 token 重试最多 3 次。
+
+请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
+
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nova`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 

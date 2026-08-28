@@ -56,6 +56,9 @@ EMAIL_TAB_TIMEOUT_MS = 8_000
 WAF_READY_TIMEOUT_MS = 30_000
 WAF_COOKIE_TIMEOUT_MS = 20_000
 SESSION_WAIT_TIMEOUT_MS = 45_000
+TURNSTILE_TIMEOUT_MS = 60_000
+TURNSTILE_POST_CLICK_TIMEOUT_MS = 25_000
+TURNSTILE_CHECKBOX_OFFSET_X = 22
 
 _VISIBLE_CHECK_JS = """
 	const isVisible = (el) => {
@@ -597,6 +600,159 @@ async def request_in_page(
 		{'path': path, 'method': method, 'headers': headers or {}},
 	)
 	return int(result['status']), result.get('body') or ''
+
+
+_TURNSTILE_RENDER_JS = """
+async (siteKey) => {
+	if (!window.turnstile) {
+		await new Promise((resolve, reject) => {
+			const existing = document.getElementById('checkin-turnstile-api');
+			if (existing) {
+				existing.addEventListener('load', () => resolve());
+				existing.addEventListener('error', () => reject(new Error('api.js failed')));
+				return;
+			}
+			const script = document.createElement('script');
+			script.id = 'checkin-turnstile-api';
+			script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+			script.async = true;
+			script.onload = () => resolve();
+			script.onerror = () => reject(new Error('api.js failed'));
+			document.head.appendChild(script);
+		});
+	}
+	document.getElementById('checkin-turnstile-host')?.remove();
+	const host = document.createElement('div');
+	host.id = 'checkin-turnstile-host';
+	host.style.cssText = 'position:fixed;left:24px;top:24px;z-index:2147483647;background:#fff;padding:4px';
+	document.body.appendChild(host);
+	window.__checkinTurnstile = {token: '', error: ''};
+	const widgetId = window.turnstile.render(host, {
+		sitekey: siteKey,
+		callback: (token) => { window.__checkinTurnstile.token = token; },
+		'error-callback': (err) => { window.__checkinTurnstile.error = String(err); },
+		'timeout-callback': () => { window.__checkinTurnstile.error = 'timeout'; },
+	});
+	window.__checkinTurnstile.widgetId = String(widgetId);
+	return String(widgetId);
+}
+"""
+
+_TURNSTILE_POLL_JS = """
+() => {
+	const state = window.__checkinTurnstile || {};
+	let viaApi = '';
+	try {
+		viaApi = (window.turnstile && window.turnstile.getResponse(state.widgetId)) || '';
+	} catch (e) {
+		viaApi = '';
+	}
+	return {token: state.token || viaApi || '', error: state.error || ''};
+}
+"""
+
+_TURNSTILE_CLEANUP_JS = """
+() => {
+	const state = window.__checkinTurnstile || {};
+	try {
+		if (window.turnstile && state.widgetId) window.turnstile.remove(state.widgetId);
+	} catch (e) { /* widget already gone */ }
+	document.getElementById('checkin-turnstile-host')?.remove();
+	window.__checkinTurnstile = {token: '', error: ''};
+}
+"""
+
+
+async def _turnstile_widget_box(page: Page, known_frame_urls: set[str]) -> dict | None:
+	"""找到新出现的 Turnstile challenge iframe 的可见区域。
+
+	widget 挂在 closed shadow root 里，``document.querySelectorAll('iframe')``
+	看不到它，只有 Playwright 的 frame 列表能穿透，所以从 frame 反查元素。
+	"""
+	for frame in page.frames:
+		if 'challenges.cloudflare.com' not in frame.url or frame.url in known_frame_urls:
+			continue
+		try:
+			box = await (await frame.frame_element()).bounding_box()
+		except Exception:  # nosec B112 - frame 可能在轮询间隙被替换
+			continue
+		if box and box['width'] > 100 and box['height'] > 30:
+			return box
+	return None
+
+
+async def solve_turnstile_in_page(
+	page: Page,
+	site_key: str,
+	*,
+	timeout_ms: int = TURNSTILE_TIMEOUT_MS,
+	post_click_timeout_ms: int = TURNSTILE_POST_CLICK_TIMEOUT_MS,
+) -> tuple[str | None, str | None]:
+	"""在当前页面自渲染 Turnstile 并点过交互式挑战，返回 (token, error)。
+
+	不能复用站点自己的 widget：签到卡片只在通过 ``/console/personal`` 打开的
+	Profile 页里挂载，而且它只在收到"Turnstile token 为空"后才弹窗。自渲染同
+	一个 sitekey 拿到的 token 服务端 siteverify 一样接受（已实测）。
+
+	勾选框必须用真实鼠标事件点，``locator.click()`` 进不去 closed shadow root。
+
+	被 Cloudflare 限流时 widget 会停在 ``before-interactive`` 且既不回调也不报
+	错，所以点击后单独用一个较短的超时，让调用方尽快换一个新 widget 重试。
+	"""
+	if not site_key:
+		return None, 'Turnstile site key is empty'
+
+	known_frame_urls = {frame.url for frame in page.frames if 'challenges.cloudflare.com' in frame.url}
+	try:
+		await page.evaluate(_TURNSTILE_RENDER_JS, site_key)
+	except Exception as exc:
+		return None, f'Turnstile render failed - {str(exc)[:80]}'
+
+	deadline = time.monotonic() + timeout_ms / 1000
+	box = None
+	while time.monotonic() < deadline:
+		state = await page.evaluate(_TURNSTILE_POLL_JS)
+		if state['token']:
+			return state['token'], None
+		if state['error']:
+			return None, f'Turnstile failed - {state["error"][:80]}'
+		box = await _turnstile_widget_box(page, known_frame_urls)
+		if box:
+			break
+		await asyncio.sleep(1)
+
+	if not box:
+		return None, 'Turnstile widget did not become interactive'
+
+	# 勾选框在 widget 左侧，先移动再点，纯 click 会被判定为脚本行为。
+	x = box['x'] + TURNSTILE_CHECKBOX_OFFSET_X
+	y = box['y'] + box['height'] / 2
+	await page.mouse.move(x - 150, y - 80)
+	await page.wait_for_timeout(380)
+	await page.mouse.move(x, y, steps=14)
+	await page.wait_for_timeout(260)
+	await page.mouse.down()
+	await page.wait_for_timeout(80)
+	await page.mouse.up()
+
+	# 交互后 Cloudflare 通常 1-2 秒内回调，慢的时候要等挑战跑完。
+	click_deadline = min(deadline, time.monotonic() + post_click_timeout_ms / 1000)
+	while time.monotonic() < click_deadline:
+		await page.wait_for_timeout(1_200)
+		state = await page.evaluate(_TURNSTILE_POLL_JS)
+		if state['token']:
+			return state['token'], None
+		if state['error']:
+			return None, f'Turnstile failed - {state["error"][:80]}'
+	return None, 'Turnstile challenge stalled after click'
+
+
+async def reset_turnstile_in_page(page: Page) -> None:
+	"""清理自渲染的 widget，让下一次重试从干净状态开始。"""
+	try:
+		await page.evaluate(_TURNSTILE_CLEANUP_JS)
+	except Exception as exc:
+		debug_print(f'[WARN] Failed to clean up Turnstile widget: {str(exc)[:80]}')
 
 
 async def wait_for_cookies(

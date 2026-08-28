@@ -5,7 +5,15 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from checkin import attach_check_in_error, format_check_in_time, generate_balance_hash, resolve_check_in_error
+from checkin import (
+	attach_check_in_error,
+	format_check_in_time,
+	generate_balance_hash,
+	parse_gorouter_checkin_result,
+	parse_gorouter_checkin_status,
+	parse_gorouter_refresh_response,
+	resolve_check_in_error,
+)
 
 
 def test_balance_hash_changes_when_quota_changes():
@@ -52,6 +60,58 @@ def test_resolve_check_in_error_falls_back_to_before_profile_error():
 	before = {'success': False, 'error': 'Authentication failed - invalid refresh token'}
 
 	assert resolve_check_in_error(before, None) == 'Authentication failed - invalid refresh token'
+
+
+def test_parse_gorouter_refresh_response_extracts_token_and_session_without_logging():
+	body = '{"success":true,"data":{"access_token":"secret-token","session":{"sid":"sid-1"}}}'
+
+	assert parse_gorouter_refresh_response(200, body) == ('secret-token', 'sid-1', None)
+
+
+def test_parse_gorouter_checkin_status_reads_nested_checked_in_today():
+	body = '{"success":true,"data":{"stats":{"checked_in_today":true}}}'
+
+	assert parse_gorouter_checkin_status(200, body) == (True, None)
+
+
+def test_parse_gorouter_checkin_status_requires_business_confirmation():
+	body = '{"success":true,"data":{"stats":{"checked_in_today":false}}}'
+
+	assert parse_gorouter_checkin_status(200, body) == (False, None)
+
+
+def test_parse_gorouter_checkin_result_reads_awarded_quota():
+	body = '{"success":true,"data":{"quota_awarded":250000,"checkin_date":"2026-08-26"}}'
+
+	assert parse_gorouter_checkin_result(200, body) == (True, False, None)
+
+
+def test_parse_gorouter_checkin_result_flags_turnstile_failure_for_retry():
+	# Turnstile 中间件失败时也返回 HTTP 200，只有 message 能区分。
+	body = '{"success":false,"message":"Turnstile 校验失败，请刷新重试！"}'
+
+	succeeded, retry_turnstile, error = parse_gorouter_checkin_result(200, body)
+
+	assert succeeded is False
+	assert retry_turnstile is True
+	assert 'Turnstile' in error
+
+
+def test_parse_gorouter_checkin_result_does_not_retry_business_failure():
+	body = '{"success":false,"message":"今日已签到"}'
+
+	succeeded, retry_turnstile, error = parse_gorouter_checkin_result(200, body)
+
+	assert succeeded is False
+	assert retry_turnstile is False
+	assert '今日已签到' in error
+
+
+def test_parse_gorouter_checkin_result_handles_non_json_body():
+	succeeded, retry_turnstile, error = parse_gorouter_checkin_result(502, '<html>bad gateway</html>')
+
+	assert (succeeded, retry_turnstile) == (False, False)
+	assert 'HTTP 502' in error
 
 
 def test_format_check_in_notification_unchanged_account_is_compact():

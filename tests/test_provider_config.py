@@ -145,22 +145,6 @@ def test_cun_provider_uses_password_login_over_proxy(monkeypatch):
 	assert provider.use_proxy is True
 
 
-def test_nova_provider_uses_browser_page_for_cloudflare(monkeypatch):
-	monkeypatch.delenv('PROVIDERS', raising=False)
-	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
-
-	config = AppConfig.load_from_env()
-	provider = config.providers['nova']
-
-	assert provider.domain == 'https://nova.vcrauo.com'
-	assert provider.sign_in_path == '/api/user/checkin'
-	assert provider.user_info_path == '/api/user/self'
-	assert provider.waf_cookie_names == ['cf_clearance']
-	assert provider.use_proxy is False
-	assert provider.http2 is False
-	assert provider.request_in_page is True
-
-
 def test_nianhua_provider_uses_password_login(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
@@ -238,3 +222,70 @@ def test_xiaobai_provider_uses_external_check_in_api(monkeypatch):
 	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
 	assert provider.api_user_key == ''
 	assert provider.use_proxy is False
+
+
+def test_gorouter_provider_uses_pat_and_turnstile(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	config = AppConfig.load_from_env()
+	provider = config.providers['gorouter']
+
+	assert provider.domain == 'https://gorouter.app'
+	# /profile 会被 openresty 302 到 /dashboard/overview，签到卡片只在 /console/personal 挂载。
+	assert provider.login_path == '/console/personal'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.auth_refresh_path == '/api/user/auth/refresh'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.checkin_turnstile is True
+	assert provider.turnstile_site_key == '0x4AAAAAAELziOpg1Y2gFtAt'
+	assert provider.persist_profile is True
+
+
+def test_gorouter_provider_flags_can_be_overridden(monkeypatch):
+	monkeypatch.setenv(
+		'EXTRA_PROVIDERS',
+		json.dumps(
+			{
+				'gorouter': {
+					'domain': 'https://example.com',
+					'checkin_turnstile': False,
+					'persist_profile': False,
+					'turnstile_site_key': '0xOVERRIDE',
+				}
+			}
+		),
+	)
+
+	provider = AppConfig.load_from_env().providers['gorouter']
+
+	assert provider.domain == 'https://example.com'
+	assert provider.checkin_turnstile is False
+	assert provider.persist_profile is False
+	assert provider.turnstile_site_key == '0xOVERRIDE'
+
+
+def test_qingjiu_provider_uses_browser_page_for_login_session(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['qingjiu']
+
+	assert provider.domain == 'https://qingjiu.nemodesk.top'
+	assert provider.login_path == '/login'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.http2 is False
+	assert provider.request_in_page is True
+
+
+def test_qingjiu_custom_provider_inherits_browser_request_defaults(monkeypatch):
+	monkeypatch.setenv('PROVIDERS', json.dumps({'qingjiu': {'domain': 'https://qingjiu.nemodesk.top'}}))
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['qingjiu']
+
+	assert provider.http2 is False
+	assert provider.request_in_page is True

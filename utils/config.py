@@ -31,6 +31,8 @@ class ProviderConfig:
 	http2: bool = True
 	request_in_page: bool = False
 	checkin_captcha: bool = False
+	checkin_turnstile: bool = False
+	turnstile_site_key: str = ''
 	captcha_path: str = '/api/captcha?scene=checkin'
 	captcha_code_key: str = 'captcha_code'
 
@@ -63,6 +65,8 @@ class ProviderConfig:
 		default_http2 = defaults.http2 if defaults else True
 		default_request_in_page = defaults.request_in_page if defaults else False
 		default_checkin_captcha = defaults.checkin_captcha if defaults else False
+		default_checkin_turnstile = defaults.checkin_turnstile if defaults else False
+		default_turnstile_site_key = defaults.turnstile_site_key if defaults else ''
 		default_captcha_path = defaults.captcha_path if defaults else '/api/captcha?scene=checkin'
 		default_captcha_code_key = defaults.captcha_code_key if defaults else 'captcha_code'
 		return cls(
@@ -89,6 +93,8 @@ class ProviderConfig:
 			http2=data.get('http2', default_http2),
 			request_in_page=data.get('request_in_page', default_request_in_page),
 			checkin_captcha=data.get('checkin_captcha', default_checkin_captcha),
+			checkin_turnstile=data.get('checkin_turnstile', default_checkin_turnstile),
+			turnstile_site_key=data.get('turnstile_site_key', default_turnstile_site_key),
 			captcha_path=data.get('captcha_path', default_captcha_path),
 			captcha_code_key=data.get('captcha_code_key', default_captcha_code_key),
 		)
@@ -202,16 +208,17 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=True,
 			),
-			'nova': ProviderConfig(
-				name='nova',
-				domain='https://nova.vcrauo.com',
-				login_path='/profile',
+			'qingjiu': ProviderConfig(
+				name='qingjiu',
+				domain='https://qingjiu.nemodesk.top',
+				login_path='/login',
 				sign_in_path='/api/user/checkin',
 				user_info_path='/api/user/self',
+				auth_refresh_path='/api/user/auth/refresh',
 				api_user_key='New-Api-User',
-				bypass_method='waf_cookies',
-				waf_cookie_names=['cf_clearance'],
 				use_proxy=False,
+				# qingjiu occasionally stalls on the Python/httpx connection after a
+				# browser login. Reuse the authenticated browser network stack instead.
 				http2=False,
 				request_in_page=True,
 			),
@@ -272,6 +279,20 @@ class AppConfig:
 				auth_refresh_path='/api/v1/auth/refresh',
 				api_user_key='',
 				use_proxy=False,
+			),
+			'gorouter': ProviderConfig(
+				name='gorouter',
+				domain='https://gorouter.app',
+				login_path='/console/personal',
+				sign_in_path='/api/user/checkin',
+				check_in_status_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				auth_refresh_path='/api/user/auth/refresh',
+				api_user_key='New-Api-User',
+				use_proxy=False,
+				persist_profile=True,
+				checkin_turnstile=True,
+				turnstile_site_key='0x4AAAAAAELziOpg1Y2gFtAt',
 			),
 		}
 
