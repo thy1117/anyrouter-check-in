@@ -310,6 +310,17 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=False,
 			),
+			'windhub': ProviderConfig(
+				name='windhub',
+				domain='https://windhub.cc',
+				login_path='/console/personal',
+				sign_in_path='/api/user/checkin',
+				check_in_status_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				auth_refresh_path='/api/user/auth/refresh',
+				api_user_key='New-Api-User',
+				use_proxy=False,
+			),
 			'gorouter': ProviderConfig(
 				name='gorouter',
 				domain='https://gorouter.app',
