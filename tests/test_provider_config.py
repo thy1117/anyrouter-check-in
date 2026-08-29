@@ -340,6 +340,7 @@ def test_simple_newapi_pat_providers_are_builtin(monkeypatch):
 		'ciyuan': 'https://ai.962831.xyz',
 		'yuecheng': 'https://52ccl.net',
 		'elysiver': 'https://elysiver.h-e.top',
+		'windhub': 'https://windhub.cc',
 	}
 
 	for name, domain in expected_domains.items():
@@ -350,3 +351,26 @@ def test_simple_newapi_pat_providers_are_builtin(monkeypatch):
 		assert provider.auth_refresh_path == '/api/user/auth/refresh'
 		assert provider.api_user_key == 'New-Api-User'
 		assert provider.use_proxy is False
+
+
+def test_windhub_provider_is_builtin(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['windhub']
+
+	# Ark API（https://windhub.cc）是挂在 Cloudflare 后面的新版 NewAPI，但站点
+	# 关掉了 turnstile_check，且 CF 不对 /api 下的接口发起挑战，所以既不需要
+	# Turnstile，也不需要 WAF cookie/页内请求，直接用 httpx + 系统访问令牌即可。
+	assert provider.domain == 'https://windhub.cc'
+	assert provider.login_path == '/console/personal'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.auth_refresh_path == '/api/user/auth/refresh'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.use_proxy is False
+	assert provider.checkin_turnstile is False
+	assert provider.bypass_method is None
+	assert provider.request_in_page is False
+	assert provider.http2 is True
