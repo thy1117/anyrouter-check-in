@@ -363,6 +363,20 @@ class AppConfig:
 				checkin_turnstile=True,
 				turnstile_site_key='0x4AAAAAAEGV81TArluaPQGB',
 			),
+			'laomo': ProviderConfig(
+				name='laomo',
+				domain='https://api.2020111.xyz',
+				login_path='/console/personal',
+				sign_in_path='/api/user/checkin',
+				check_in_status_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				auth_refresh_path='/api/user/auth/refresh',
+				api_user_key='New-Api-User',
+				use_proxy=False,
+				persist_profile=True,
+				checkin_turnstile=True,
+				turnstile_site_key='0x4AAAAAAD5FNNbWZboF0Wzx',
+			),
 		}
 
 		# 依次加载主配置和追加配置。EXTRA_PROVIDERS 用于在无法读取原 Secret 时安全追加站点。

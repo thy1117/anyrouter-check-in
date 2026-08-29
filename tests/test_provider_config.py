@@ -374,3 +374,25 @@ def test_windhub_provider_is_builtin(monkeypatch):
 	assert provider.bypass_method is None
 	assert provider.request_in_page is False
 	assert provider.http2 is True
+
+
+def test_laomo_provider_is_builtin(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['laomo']
+
+	# 老魔公益站（https://api.2020111.xyz）与 gorouter/justwoker/tabitoken 同构：
+	# 站点 turnstile_check 为开启，POST /api/user/checkin 缺 token 时返回
+	# 「Turnstile token 为空」，因此复用页内渲染 widget 取 token 的流程。
+	assert provider.domain == 'https://api.2020111.xyz'
+	assert provider.login_path == '/console/personal'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.auth_refresh_path == '/api/user/auth/refresh'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.use_proxy is False
+	assert provider.checkin_turnstile is True
+	assert provider.turnstile_site_key == '0x4AAAAAAD5FNNbWZboF0Wzx'
+	assert provider.persist_profile is True

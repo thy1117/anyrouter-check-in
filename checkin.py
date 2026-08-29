@@ -1378,6 +1378,12 @@ async def run_gorouter_check_in_in_page(
 		if session_id:
 			headers['X-Auth-Session'] = session_id
 
+		# 部分站点（如老魔公益站）除 Bearer 外还强制要求 New-Api-User，缺失时
+		# 一律返回 401 "New-Api-User header not provided"。
+		api_user = api_user_override or account.api_user
+		if api_user and provider_config.api_user_key:
+			headers[provider_config.api_user_key] = api_user
+
 		status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
 		user_info_before = parse_user_info_response(status, body)
 		if not user_info_before.get('success'):

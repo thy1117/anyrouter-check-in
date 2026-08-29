@@ -1,6 +1,7 @@
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -13,7 +14,9 @@ from checkin import (
 	parse_gorouter_checkin_status,
 	parse_gorouter_refresh_response,
 	resolve_check_in_error,
+	run_gorouter_check_in_in_page,
 )
+from utils.config import AccountConfig, ProviderConfig
 
 
 def test_balance_hash_changes_when_quota_changes():
@@ -112,6 +115,69 @@ def test_parse_gorouter_checkin_result_handles_non_json_body():
 
 	assert (succeeded, retry_turnstile) == (False, False)
 	assert 'HTTP 502' in error
+
+
+async def test_turnstile_flow_sends_api_user_header(monkeypatch):
+	requests = []
+
+	class Page:
+		async def goto(self, *args, **kwargs):
+			return None
+
+	class Context:
+		async def cookies(self):
+			return []
+
+		async def new_page(self):
+			return Page()
+
+		async def close(self):
+			return None
+
+	async def noop(*args, **kwargs):
+		return None
+
+	async def fake_launch_context(*args, **kwargs):
+		return Context()
+
+	async def fake_request(page, path, *, method='GET', headers=None):
+		requests.append((method, path, dict(headers or {})))
+		if path == '/api/user/self':
+			return 200, '{"success":true,"data":{"id":4703,"quota":1000000,"used_quota":0}}'
+		return 200, '{"success":true,"data":{"stats":{"checked_in_today":true}}}'
+
+	monkeypatch.setattr(
+		'checkin.load_browser_login_settings', lambda *args, **kwargs: SimpleNamespace(wait_timeout_ms=1000)
+	)
+	monkeypatch.setattr('checkin.launch_login_context', fake_launch_context)
+	monkeypatch.setattr('checkin.prepare_browser_page', noop)
+	monkeypatch.setattr('checkin.wait_for_waf_ready', noop)
+	monkeypatch.setattr('checkin.request_in_page', fake_request)
+
+	account = AccountConfig(
+		cookies=None,
+		provider='laomo',
+		name='Laomo',
+		access_token='secret-token',
+		api_user='4703',
+	)
+	provider = ProviderConfig(
+		name='laomo',
+		domain='https://api.example.com',
+		login_path='/console/personal',
+		sign_in_path='/api/user/checkin',
+		check_in_status_path='/api/user/checkin',
+		user_info_path='/api/user/self',
+		api_user_key='New-Api-User',
+		checkin_turnstile=True,
+	)
+
+	success, _, _ = await run_gorouter_check_in_in_page(account, 'Laomo', provider)
+
+	assert success is True
+	assert requests
+	assert all(headers['Authorization'] == 'Bearer secret-token' for _, _, headers in requests)
+	assert all(headers['New-Api-User'] == '4703' for _, _, headers in requests)
 
 
 def test_format_check_in_notification_unchanged_account_is_compact():
