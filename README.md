@@ -342,9 +342,22 @@ Ark API（`https://windhub.cc`）是挂在 Cloudflare 后面的新版 NewAPI，�
 - 虽然站点在 Cloudflare 后面，但 `/api` 下的接口不触发挑战，httpx 直连即可拿到 200，因此不用开代理、WAF cookie 或页内请求。
 - 重复签到时接口返回 HTTP 200 + `{"success": false, "message": "今日已签到"}`，脚本的 `ALREADY_CHECKED_KEYWORDS` 已覆盖「今日已签到」，会判定为成功。
 
+### 老魔公益站
+
+老魔公益站（`https://api.2020111.xyz`）与 GoRouter/JustWoker/TaBiToken 同构：新版 NewAPI，签到接口 `POST /api/user/checkin` 带 Cloudflare Turnstile 校验（站点 `turnstile_check` 为开启，缺少 token 时服务端返回「Turnstile token 为空」），走完全一致的实现（页内渲染 widget 拿 token → 作为 `?turnstile=` 查询参数提交 → 以 `stats.checked_in_today` 判定成功）。凭据用**系统访问令牌（access_token）**加**用户 ID（api_user）**：
+
+1. 浏览器登录后打开 <https://api.2020111.xyz/console/personal>
+2. 复制「系统访问令牌 / Access Token」（如未生成过则点「重新生成」，旧令牌会立刻作废）
+3. `api_user` 就是 `/api/user/self` 返回的 `data.id`
+4. 写成一份 JSON 存到 production Environment Secret `EXTRA_ACCOUNTS_23`
+
+```json
+[{ "name": "老魔公益站-thy1117", "provider": "laomo", "access_token": "xxx", "api_user": "4703" }]
+```
+
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 
