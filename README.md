@@ -355,19 +355,6 @@ Ark API（`https://windhub.cc`）是挂在 Cloudflare 后面的新版 NewAPI，�
 [{ "name": "老魔公益站-thy1117", "provider": "laomo", "access_token": "xxx", "api_user": "4703" }]
 ```
 
-### Fate
-
-Fate（`https://fatenewapi.xxxxo.bond`）是新版 NewAPI，签到接口 `POST /api/user/checkin` 带 Cloudflare Turnstile 校验（站点 `turnstile_check` 为开启，缺少 token 时服务端返回「Turnstile token 为空」），复用 GoRouter/JustWoker/TaBiToken/老魔公益站的页内 Turnstile 流程。凭据用**系统访问令牌（access_token）**加**用户 ID（api_user）**：
-
-1. 浏览器登录后打开 <https://fatenewapi.xxxxo.bond/profile>
-2. 复制「系统访问令牌 / Access Token」
-3. `api_user` 就是个人资料页显示的用户 ID，或 `/api/user/self` 返回的 `data.id`
-4. 写成一份 JSON 存到 production Environment Secret `EXTRA_ACCOUNTS_24`
-
-```json
-[{ "name": "Fate-thy1117", "provider": "fate", "access_token": "xxx", "api_user": "742" }]
-```
-
 ### 123NHH
 
 123NHH（`https://api.123nhh.com`）是新版 NewAPI，签到接口为 `POST /api/user/checkin`。站点关闭了 Turnstile，因此直接使用**系统访问令牌（access_token）**加**用户 ID（api_user）**即可：
@@ -396,7 +383,7 @@ SuperAPI（`https://superapi.buzz`）是新版 NewAPI，签到接口为 `POST /a
 
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`fate`、`nhh123`、`superapi` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`nhh123`、`superapi` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 
