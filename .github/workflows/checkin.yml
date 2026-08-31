@@ -1,15 +1,8 @@
 name: AnyRouter 自动签到
 on:
   schedule:
-    # 09:07 and 21:07 Asia/Shanghai (UTC+8); avoid GitHub Actions' top-of-hour congestion
-    - cron: '7 1,13 * * *'
-  workflow_dispatch:
-    inputs:
-      debug:
-        description: 开启调试模式（截图 artifact、详细日志）
-        required: false
-        default: false
-        type: boolean
+    # 09:00 and 21:00 Asia/Shanghai (UTC+8)
+    - cron: '0 1,13 * * *'
 
 jobs:
   checkin:
@@ -19,7 +12,7 @@ jobs:
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: 1
       CHECKIN_TIMEZONE: Asia/Shanghai
-      DEBUG_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug == 'true' && 'true' || 'false' }}
+      DEBUG_MODE: false
     steps:
     - uses: actions/checkout@v6
 
@@ -117,7 +110,6 @@ jobs:
         EXTRA_ACCOUNTS_21: ${{ secrets.EXTRA_ACCOUNTS_21 }}
         EXTRA_ACCOUNTS_22: ${{ secrets.EXTRA_ACCOUNTS_22 }}
         EXTRA_ACCOUNTS_23: ${{ secrets.EXTRA_ACCOUNTS_23 }}
-        EXTRA_ACCOUNTS_24: ${{ secrets.EXTRA_ACCOUNTS_24 }}
         EXTRA_ACCOUNTS_25: ${{ secrets.EXTRA_ACCOUNTS_25 }}
         EXTRA_ACCOUNTS_26: ${{ secrets.EXTRA_ACCOUNTS_26 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}

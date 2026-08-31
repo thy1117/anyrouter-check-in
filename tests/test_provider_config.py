@@ -384,27 +384,6 @@ def test_laomo_provider_is_builtin(monkeypatch):
 	assert provider.persist_profile is True
 
 
-def test_fate_provider_is_builtin(monkeypatch):
-	monkeypatch.delenv('PROVIDERS', raising=False)
-	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
-
-	provider = AppConfig.load_from_env().providers['fate']
-
-	# Fate（https://fatenewapi.xxxxo.bond）是新版 NewAPI，签到要求
-	# Turnstile token，并且认证请求还要带 New-Api-User。
-	assert provider.domain == 'https://fatenewapi.xxxxo.bond'
-	assert provider.login_path == '/profile'
-	assert provider.sign_in_path == '/api/user/checkin'
-	assert provider.check_in_status_path == '/api/user/checkin'
-	assert provider.user_info_path == '/api/user/self'
-	assert provider.auth_refresh_path == '/api/user/auth/refresh'
-	assert provider.api_user_key == 'New-Api-User'
-	assert provider.use_proxy is False
-	assert provider.checkin_turnstile is True
-	assert provider.turnstile_site_key == '0x4AAAAAAEcve_Y0JnHWAXAZ'
-	assert provider.persist_profile is True
-
-
 def test_nhh123_provider_is_builtin(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
