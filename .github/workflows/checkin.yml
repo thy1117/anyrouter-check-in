@@ -3,7 +3,6 @@ on:
   schedule:
     # 09:00 and 21:00 Asia/Shanghai (UTC+8)
     - cron: '0 1,13 * * *'
-  workflow_dispatch:
 
 jobs:
   checkin:
