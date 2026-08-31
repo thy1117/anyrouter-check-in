@@ -131,20 +131,6 @@ def test_kapibala_provider_uses_newapi_refresh_auth(monkeypatch):
 	assert provider.use_proxy is False
 
 
-def test_cun_provider_uses_password_login_over_proxy(monkeypatch):
-	monkeypatch.delenv('PROVIDERS', raising=False)
-	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
-
-	config = AppConfig.load_from_env()
-	provider = config.providers['cun']
-
-	assert provider.domain == 'https://www.cun.ai'
-	assert provider.login_api_path == '/api/user/login'
-	assert provider.sign_in_path == '/api/user/checkin'
-	assert provider.user_info_path == '/api/user/self'
-	assert provider.use_proxy is True
-
-
 def test_nianhua_provider_uses_password_login(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
@@ -428,6 +414,28 @@ def test_nhh123_provider_is_builtin(monkeypatch):
 	# 123NHH 是新版 NewAPI，但站点关闭了 Turnstile；Bearer PAT 与
 	# New-Api-User 头可直接访问用户信息和签到接口。
 	assert provider.domain == 'https://api.123nhh.com'
+	assert provider.login_path == '/profile'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.auth_refresh_path == '/api/user/auth/refresh'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.use_proxy is False
+	assert provider.checkin_turnstile is False
+	assert provider.bypass_method is None
+	assert provider.request_in_page is False
+	assert provider.http2 is True
+
+
+def test_superapi_provider_is_builtin(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['superapi']
+
+	# SuperAPI 是新版 NewAPI，站点关闭了 Turnstile；Bearer PAT 与
+	# New-Api-User 头可直接访问用户信息和签到接口。
+	assert provider.domain == 'https://superapi.buzz'
 	assert provider.login_path == '/profile'
 	assert provider.sign_in_path == '/api/user/checkin'
 	assert provider.check_in_status_path == '/api/user/checkin'
