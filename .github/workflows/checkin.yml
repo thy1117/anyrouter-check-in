@@ -102,7 +102,6 @@ jobs:
         EXTRA_ACCOUNTS_4: ${{ secrets.EXTRA_ACCOUNTS_4 }}
         EXTRA_ACCOUNTS_5: ${{ secrets.EXTRA_ACCOUNTS_5 }}
         EXTRA_ACCOUNTS_6: ${{ secrets.EXTRA_ACCOUNTS_6 }}
-        EXTRA_ACCOUNTS_7: ${{ secrets.EXTRA_ACCOUNTS_7 }}
         EXTRA_ACCOUNTS_9: ${{ secrets.EXTRA_ACCOUNTS_9 }}
         EXTRA_ACCOUNTS_10: ${{ secrets.EXTRA_ACCOUNTS_10 }}
         EXTRA_ACCOUNTS_11: ${{ secrets.EXTRA_ACCOUNTS_11 }}
@@ -120,6 +119,7 @@ jobs:
         EXTRA_ACCOUNTS_23: ${{ secrets.EXTRA_ACCOUNTS_23 }}
         EXTRA_ACCOUNTS_24: ${{ secrets.EXTRA_ACCOUNTS_24 }}
         EXTRA_ACCOUNTS_25: ${{ secrets.EXTRA_ACCOUNTS_25 }}
+        EXTRA_ACCOUNTS_26: ${{ secrets.EXTRA_ACCOUNTS_26 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
