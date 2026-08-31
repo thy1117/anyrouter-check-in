@@ -15,6 +15,7 @@ from checkin import (
 	parse_gorouter_refresh_response,
 	resolve_check_in_error,
 	run_gorouter_check_in_in_page,
+	should_notify_every_run,
 )
 from utils.config import AccountConfig, ProviderConfig
 
@@ -50,6 +51,18 @@ def test_format_check_in_time_converts_utc_to_shanghai(monkeypatch):
 	monkeypatch.setenv('CHECKIN_TIMEZONE', 'Asia/Shanghai')
 
 	assert format_check_in_time(datetime(2026, 8, 25, 1, 59, 28, tzinfo=timezone.utc)) == '2026-08-25 09:59:28'
+
+
+def test_notify_every_run_is_enabled_by_default(monkeypatch):
+	monkeypatch.delenv('NOTIFY_EVERY_RUN', raising=False)
+
+	assert should_notify_every_run() is True
+
+
+def test_notify_every_run_can_be_explicitly_disabled(monkeypatch):
+	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'false')
+
+	assert should_notify_every_run() is False
 
 
 def test_resolve_check_in_error_prefers_explicit_check_in_error():

@@ -7,7 +7,8 @@ def test_checkin_workflow_only_runs_at_beijing_9_and_21():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
 	assert "- cron: '0 1,13 * * *'" in text
-	assert 'workflow_dispatch:' not in text
+	assert 'workflow_dispatch:' in text
+	assert 'NOTIFY_EVERY_RUN: true' in text
 
 
 def test_removed_fate_secret_is_not_wired_into_workflow():

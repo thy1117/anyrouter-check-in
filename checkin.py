@@ -85,6 +85,12 @@ def format_check_in_time(now: datetime | None = None) -> str:
 	return now.strftime('%Y-%m-%d %H:%M:%S')
 
 
+def should_notify_every_run() -> bool:
+	"""是否无条件发送每次签到汇总，默认开启。"""
+	value = os.getenv('NOTIFY_EVERY_RUN', 'true').strip().lower()
+	return value not in {'0', 'false', 'no', 'off'}
+
+
 def attach_check_in_error(user_info: dict | None, error: str | None) -> dict | None:
 	"""把签到接口错误附到用户信息上，避免查询余额成功后覆盖真实失败原因。"""
 	if not error:
@@ -1942,7 +1948,12 @@ async def main():
 	if current_balance_hash:
 		save_balance_hash(current_balance_hash)
 
-	if need_notify and (notification_content or account_check_in_details):
+	notify_every_run = should_notify_every_run()
+	if notify_every_run and not need_notify:
+		print('[NOTIFY] No failures or balance changes, but every-run notification is enabled')
+	need_notify = need_notify or notify_every_run
+
+	if need_notify:
 		failed_count = total_count - success_count
 		if failed_count == 0:
 			result_icon = '✅'
@@ -1980,7 +1991,7 @@ async def main():
 
 		print(notify_content)
 		notify.push_message('AnyRouter Check-in Alert', notify_content, msg_type='text')
-		print('[NOTIFY] Notification sent due to failures or balance changes')
+		print('[NOTIFY] Notification sent after check-in run')
 	else:
 		print('[INFO] All accounts successful and no balance changes detected, notification skipped')
 
