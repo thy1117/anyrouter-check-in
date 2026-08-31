@@ -14,3 +14,10 @@ def test_removed_fate_secret_is_not_wired_into_workflow():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
 	assert 'EXTRA_ACCOUNTS_24' not in text
+
+
+def test_additional_twinkle_account_secrets_are_wired_into_workflow():
+	text = WORKFLOW.read_text(encoding='utf-8')
+
+	assert 'EXTRA_ACCOUNTS_27: ${{ secrets.EXTRA_ACCOUNTS_27 }}' in text
+	assert 'EXTRA_ACCOUNTS_28: ${{ secrets.EXTRA_ACCOUNTS_28 }}' in text
