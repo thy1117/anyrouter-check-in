@@ -391,6 +391,17 @@ class AppConfig:
 				checkin_turnstile=True,
 				turnstile_site_key='0x4AAAAAAEcve_Y0JnHWAXAZ',
 			),
+			'nhh123': ProviderConfig(
+				name='nhh123',
+				domain='https://api.123nhh.com',
+				login_path='/profile',
+				sign_in_path='/api/user/checkin',
+				check_in_status_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				auth_refresh_path='/api/user/auth/refresh',
+				api_user_key='New-Api-User',
+				use_proxy=False,
+			),
 		}
 
 		# 依次加载主配置和追加配置。EXTRA_PROVIDERS 用于在无法读取原 Secret 时安全追加站点。

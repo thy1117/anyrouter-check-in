@@ -368,9 +368,22 @@ Fate（`https://fatenewapi.xxxxo.bond`）是新版 NewAPI，签到接口 `POST /
 [{ "name": "Fate-thy1117", "provider": "fate", "access_token": "xxx", "api_user": "742" }]
 ```
 
+### 123NHH
+
+123NHH（`https://api.123nhh.com`）是新版 NewAPI，签到接口为 `POST /api/user/checkin`。站点关闭了 Turnstile，因此直接使用**系统访问令牌（access_token）**加**用户 ID（api_user）**即可：
+
+1. 浏览器登录后打开 <https://api.123nhh.com/profile>
+2. 复制「系统访问令牌 / Access Token」
+3. `api_user` 就是个人资料页显示的用户 ID，或 `/api/user/self` 返回的 `data.id`
+4. 写成一份 JSON 存到 production Environment Secret `EXTRA_ACCOUNTS_25`
+
+```json
+[{ "name": "123NHH-thy1117", "provider": "nhh123", "access_token": "xxx", "api_user": "3813" }]
+```
+
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`fate` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`cun`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`fate`、`nhh123` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 

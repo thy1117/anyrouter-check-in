@@ -417,3 +417,25 @@ def test_fate_provider_is_builtin(monkeypatch):
 	assert provider.checkin_turnstile is True
 	assert provider.turnstile_site_key == '0x4AAAAAAEcve_Y0JnHWAXAZ'
 	assert provider.persist_profile is True
+
+
+def test_nhh123_provider_is_builtin(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['nhh123']
+
+	# 123NHH 是新版 NewAPI，但站点关闭了 Turnstile；Bearer PAT 与
+	# New-Api-User 头可直接访问用户信息和签到接口。
+	assert provider.domain == 'https://api.123nhh.com'
+	assert provider.login_path == '/profile'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.auth_refresh_path == '/api/user/auth/refresh'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.use_proxy is False
+	assert provider.checkin_turnstile is False
+	assert provider.bypass_method is None
+	assert provider.request_in_page is False
+	assert provider.http2 is True
