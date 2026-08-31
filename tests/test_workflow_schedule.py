@@ -23,3 +23,5 @@ def test_additional_twinkle_account_secrets_are_wired_into_workflow():
 	assert 'EXTRA_ACCOUNTS_28: ${{ secrets.EXTRA_ACCOUNTS_28 }}' in text
 	assert 'EXTRA_ACCOUNTS_29: ${{ secrets.EXTRA_ACCOUNTS_29 }}' in text
 	assert 'EXTRA_ACCOUNTS_30: ${{ secrets.EXTRA_ACCOUNTS_30 }}' in text
+	assert 'EXTRA_ACCOUNTS_31: ${{ secrets.EXTRA_ACCOUNTS_31 }}' in text
+	assert 'EXTRA_ACCOUNTS_32: ${{ secrets.EXTRA_ACCOUNTS_32 }}' in text
