@@ -1,8 +1,8 @@
 name: AnyRouter 自动签到
 on:
   schedule:
-    # 09:00 and 21:00 Asia/Shanghai (UTC+8)
-    - cron: '0 1,13 * * *'
+    # 09:07 and 21:07 Asia/Shanghai (UTC+8); avoid GitHub's top-of-hour scheduler congestion
+    - cron: '7 1,13 * * *'
 
 jobs:
   checkin:
