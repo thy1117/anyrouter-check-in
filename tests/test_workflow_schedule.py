@@ -17,12 +17,9 @@ def test_removed_fate_secret_is_not_wired_into_workflow():
 	assert 'EXTRA_ACCOUNTS_24' not in text
 
 
-def test_additional_twinkle_account_secrets_are_wired_into_workflow():
+def test_only_remaining_additional_twinkle_secret_is_wired_into_workflow():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
-	assert 'EXTRA_ACCOUNTS_27: ${{ secrets.EXTRA_ACCOUNTS_27 }}' in text
 	assert 'EXTRA_ACCOUNTS_28: ${{ secrets.EXTRA_ACCOUNTS_28 }}' in text
-	assert 'EXTRA_ACCOUNTS_29: ${{ secrets.EXTRA_ACCOUNTS_29 }}' in text
-	assert 'EXTRA_ACCOUNTS_30: ${{ secrets.EXTRA_ACCOUNTS_30 }}' in text
-	assert 'EXTRA_ACCOUNTS_31: ${{ secrets.EXTRA_ACCOUNTS_31 }}' in text
-	assert 'EXTRA_ACCOUNTS_32: ${{ secrets.EXTRA_ACCOUNTS_32 }}' in text
+	for removed_slot in (27, 29, 30, 31, 32):
+		assert f'EXTRA_ACCOUNTS_{removed_slot}' not in text
