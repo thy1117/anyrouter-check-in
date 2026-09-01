@@ -1,8 +1,11 @@
 name: AnyRouter 自动签到
 on:
   schedule:
-    # 09:07 and 21:07 Asia/Shanghai (UTC+8); avoid GitHub's top-of-hour scheduler congestion
-    - cron: '7 1,13 * * *'
+    # 03:07, 09:07, 15:07, 21:07 Asia/Shanghai (UTC+8).
+    # GitHub 的 schedule 只是尽力而为，fork 仓库优先级最低，经常延迟数小时甚至丢任务；
+    # 一天跑四次是为了提高「至少有一次按时跑到」的概率。签到接口对重复调用是幂等的，
+    # 已签到会返回「今日已签到」并按成功处理，所以多跑不会有副作用。
+    - cron: '7 1,7,13,19 * * *'
 
 jobs:
   checkin:
