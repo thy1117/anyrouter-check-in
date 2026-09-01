@@ -3,7 +3,6 @@ on:
   schedule:
     # 09:07 and 21:07 Asia/Shanghai (UTC+8); avoid GitHub's top-of-hour scheduler congestion
     - cron: '7 1,13 * * *'
-  workflow_dispatch:
 
 jobs:
   checkin:
