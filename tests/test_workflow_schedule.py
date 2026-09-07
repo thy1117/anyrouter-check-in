@@ -31,3 +31,9 @@ def test_gemai_secret_is_wired_into_workflow():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
 	assert 'EXTRA_ACCOUNTS_34: ${{ secrets.EXTRA_ACCOUNTS_34 }}' in text
+
+
+def test_motomoto_secret_is_wired_into_workflow():
+	text = WORKFLOW.read_text(encoding='utf-8')
+
+	assert 'EXTRA_ACCOUNTS_35: ${{ secrets.EXTRA_ACCOUNTS_35 }}' in text
