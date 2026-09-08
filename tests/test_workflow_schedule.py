@@ -7,7 +7,7 @@ def test_checkin_workflow_runs_four_times_daily_at_beijing_07_past():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
 	assert "- cron: '7 1,7,13,19 * * *'" in text
-	assert 'workflow_dispatch:' not in text
+	assert 'workflow_dispatch:' in text
 	assert 'NOTIFY_EVERY_RUN: true' in text
 
 
