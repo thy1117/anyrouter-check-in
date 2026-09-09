@@ -398,9 +398,19 @@ Gemai（<https://api.gemai.cc/profile>）使用 NewAPI，签到接口为 `POST /
 
 令牌仅存入 GitHub Secret，不要写进仓库。账号沿用现有每天四次的定时任务，重复签到按成功处理。
 
+### MotoMoto
+
+MotoMoto（<https://motomoto.lol/console/personal>）使用 NewAPI，签到接口 `POST /api/user/checkin` 带 Cloudflare Turnstile 校验。凭据使用**个人访问令牌（access_token）**加**用户 ID（api_user）**。账号单独存入 production Environment Secret `EXTRA_ACCOUNTS_36`，避免覆盖其他账号：
+
+```json
+[{ "name": "MotoMoto-thy1117", "provider": "motomoto", "access_token": "替换成个人访问令牌", "api_user": "5032" }]
+```
+
+脚本会在真实浏览器页面中渲染站点同一 sitekey 的 Turnstile widget，取得 token 后再提交签到，并以 `checked_in_today` 二次确认结果。令牌仅存入 GitHub Secret，不要写进仓库。
+
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`nhh123`、`superapi`、`gemai` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`nhh123`、`superapi`、`gemai`、`motomoto` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 
