@@ -32,6 +32,7 @@ def test_justwoker_secret_is_wired_into_workflow():
 
 	assert 'EXTRA_ACCOUNTS_17: ${{ secrets.EXTRA_ACCOUNTS_17 }}' in text
 	assert 'EXTRA_ACCOUNTS_35: ${{ secrets.EXTRA_ACCOUNTS_35 }}' in text
+	assert 'EXTRA_ACCOUNTS_36: ${{ secrets.EXTRA_ACCOUNTS_36 }}' in text
 
 
 def test_gemai_secret_is_wired_into_workflow():
