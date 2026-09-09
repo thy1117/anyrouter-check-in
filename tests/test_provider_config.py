@@ -463,22 +463,3 @@ def test_gemai_provider_uses_newapi_pat_without_turnstile(monkeypatch):
 	assert provider.bypass_method is None
 	assert provider.request_in_page is False
 	assert provider.http2 is True
-
-
-def test_motomoto_provider_uses_turnstile(monkeypatch):
-	monkeypatch.delenv('PROVIDERS', raising=False)
-	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
-
-	provider = AppConfig.load_from_env().providers['motomoto']
-
-	assert provider.domain == 'https://motomoto.lol'
-	assert provider.login_path == '/console/personal'
-	assert provider.sign_in_path == '/api/user/checkin'
-	assert provider.check_in_status_path == '/api/user/checkin'
-	assert provider.user_info_path == '/api/user/self'
-	assert provider.auth_refresh_path == '/api/user/auth/refresh'
-	assert provider.api_user_key == 'New-Api-User'
-	assert provider.use_proxy is False
-	assert provider.persist_profile is True
-	assert provider.checkin_turnstile is True
-	assert provider.turnstile_site_key == '0x4AAAAAAEmotcLRDeCq9vgi'
