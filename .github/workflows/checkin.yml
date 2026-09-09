@@ -1,6 +1,5 @@
 name: AnyRouter 自动签到
 on:
-  workflow_dispatch:
   schedule:
     # 03:07, 09:07, 15:07, 21:07 Asia/Shanghai (UTC+8).
     # GitHub 的 schedule 只是尽力而为，fork 仓库优先级最低，经常延迟数小时甚至丢任务；
