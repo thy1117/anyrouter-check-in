@@ -29,6 +29,9 @@ if ! curl --fail --silent --show-error \
 	--proxy "${PROXY_URL}" \
 	--connect-timeout 15 \
 	--max-time 30 \
+	--retry 3 \
+	--retry-delay 5 \
+	--retry-all-errors \
 	"${PROXY_TEST_URL}" \
 	--output /dev/null; then
 	echo "[FAILED] Residential SOCKS proxy health check failed for ${PROXY_TEST_URL}"
