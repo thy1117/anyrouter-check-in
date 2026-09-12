@@ -2,7 +2,7 @@
 # 通过 mihomo 拉取订阅、启动本地代理并探测可用节点。
 # 环境变量:
 #   PROXY_SUBSCRIPTION_URL  Clash/Mihomo 订阅链接
-#   PROXY_NODES             换行分隔的 vless:// 或 vmess:// 节点（私有 Secret）
+#   PROXY_NODES             换行分隔的 vless://、vmess:// 或 socks:// 节点（私有 Secret）
 #   PROXY_TEST_URL          探测目标，默认 https://www.google.com/generate_204
 #   PROXY_REQUIRED          true 时探测失败则退出 1
 #   PROXY_PORT              本地 mixed-port，默认 7890
@@ -87,6 +87,30 @@ def vless_node(url, index):
 	return node
 
 
+def socks_node(url, index):
+	p = urlparse(url)
+	encoded_auth = unquote(p.username or '')
+	encoded_auth += '=' * (-len(encoded_auth) % 4)
+	try:
+		auth = base64.urlsafe_b64decode(encoded_auth).decode('utf-8')
+	except Exception as exc:
+		raise SystemExit(f'invalid SOCKS credentials at line {index}: {exc}') from exc
+	if ':' not in auth:
+		raise SystemExit(f'invalid SOCKS credentials at line {index}')
+	username, password = auth.split(':', 1)
+	if not p.hostname or not p.port:
+		raise SystemExit(f'invalid SOCKS endpoint at line {index}')
+	return {
+		'name': unquote(p.fragment) or f'socks-{index}',
+		'type': 'socks5',
+		'server': p.hostname,
+		'port': p.port,
+		'username': username,
+		'password': password,
+		'udp': True,
+	}
+
+
 def vmess_node(url, index):
 	payload = decode_vmess(url)
 	name = payload.get('ps') or f'vmess-{index}'
@@ -121,6 +145,8 @@ for index, raw in enumerate(os.environ['PROXY_NODES'].splitlines(), 1):
 		nodes.append(vless_node(raw, index))
 	elif raw.startswith('vmess://'):
 		nodes.append(vmess_node(raw, index))
+	elif raw.startswith('socks://'):
+		nodes.append(socks_node(raw, index))
 	else:
 		raise SystemExit(f'unsupported proxy node scheme at line {index}')
 
