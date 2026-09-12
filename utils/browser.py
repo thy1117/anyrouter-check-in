@@ -33,12 +33,13 @@ EMAIL_LOGIN_ENTRY_SELECTORS = (
 	'button:has(.semi-icon-mail):not(form.semi-form button)',
 )
 LOGIN_PAGE_READY_SELECTORS = (
+	'input[name="uid_field"]',
 	'.semi-card button:has(.semi-icon-mail)',
 	'.semi-card',
 	'button:has(.semi-icon-mail)',
 )
 LOGIN_FORM_SELECTOR = 'form.semi-form'
-USERNAME_SELECTORS = ('#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]')
+USERNAME_SELECTORS = ('#username', 'input[name="username"]', 'input[name="uid_field"]', 'input[name="email"]', 'input[type="email"]')
 PASSWORD_SELECTORS = ('#password', 'input[name="password"]', 'input[type="password"]')  # nosec B105
 SUBMIT_SELECTORS = (
 	f'{LOGIN_FORM_SELECTOR} button[type="submit"]',
@@ -85,7 +86,8 @@ _SITE_READY_JS = f"""() => {{
 		const rect = wafBlockers.getBoundingClientRect?.();
 		if (rect && rect.width > 0 && rect.height > 0) return false;
 	}}
-	if (/\\/login/.test(location.pathname)) {{
+	if (/\\/login|\\/sign-in|\\/if\\/flow/.test(location.pathname)) {{
+		if (countVisible('input[name="uid_field"]') > 0) return true;
 		return countVisible('.semi-card') > 0 || countVisible('#username') > 0 || countVisible('button') >= 2;
 	}}
 	return countVisible('a') > 0 || countVisible('button') > 0;
@@ -96,6 +98,7 @@ _LOGIN_SHELL_READY_JS = f"""() => {{
 	const text = document.body?.innerText || '';
 	const blocked = /请进行验证|为了更好的访问体验|访问受限|Access denied|verify you are human/i.test(text);
 	if (blocked) return false;
+	if (countVisible('input[name="uid_field"]') > 0) return true;
 	return countVisible('.semi-card') > 0 || countVisible('#username') > 0 || countVisible('button') >= 2;
 }}"""
 
@@ -408,9 +411,9 @@ async def _parse_user_self_response(response) -> dict | None:
 async def is_logged_in(page: Page) -> bool:
 	"""快速判断：是否在 /console，或仍停留在登录页。"""
 	url = page.url.lower()
-	if CONSOLE_PATH in url:
+	if CONSOLE_PATH in url or '/dashboard' in url:
 		return True
-	if '/login' in url or '/signin' in url or '/sign-in' in url:
+	if '/login' in url or '/signin' in url or '/sign-in' in url or '/if/flow' in url or 'auth.rua.chat' in url:
 		return False
 
 	try:
@@ -480,7 +483,7 @@ async def verify_browser_login(page: Page, console_url: str, timeout_ms: int) ->
 			print('[INFO] Login verified')
 		return captured_profile
 
-	if CONSOLE_PATH in page.url.lower():
+	if CONSOLE_PATH in page.url.lower() or '/dashboard' in page.url.lower():
 		print(f'[WARN] Reached {CONSOLE_PATH} but {USER_SELF_API_SUFFIX} returned no user profile')
 	else:
 		debug_print(f'[WARN] Login verification failed: current URL={page.url}')
