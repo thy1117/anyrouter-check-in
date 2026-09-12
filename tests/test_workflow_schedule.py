@@ -41,6 +41,12 @@ def test_gemai_secret_is_wired_into_workflow():
 	assert 'EXTRA_ACCOUNTS_34: ${{ secrets.EXTRA_ACCOUNTS_34 }}' in text
 
 
+def test_ruachat_secret_is_wired_into_workflow():
+	text = WORKFLOW.read_text(encoding='utf-8')
+
+	assert 'EXTRA_ACCOUNTS_37: ${{ secrets.EXTRA_ACCOUNTS_37 }}' in text
+
+
 def test_checkin_workflow_pins_residential_proxy_node():
 	text = WORKFLOW.read_text(encoding='utf-8')
 

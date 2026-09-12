@@ -18,6 +18,7 @@ def _clear(monkeypatch):
 		'EXTRA_ACCOUNTS_34',
 		'EXTRA_ACCOUNTS_35',
 		'EXTRA_ACCOUNTS_36',
+		'EXTRA_ACCOUNTS_37',
 	):
 		monkeypatch.delenv(name, raising=False)
 
@@ -168,3 +169,28 @@ def test_motomoto_slot_appends_account_without_clobbering(monkeypatch):
 	assert [account.name for account in accounts] == ['JustWoker-13751', 'MotoMoto']
 	assert accounts[1].provider == 'motomoto'
 	assert accounts[1].api_user == '5032'
+
+
+def test_ruachat_slot_accepts_username_password_account(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_37',
+		json.dumps(
+			[
+				{
+					'name': 'rua-chat',
+					'provider': 'ruachat',
+					'username': 'temporary-user',
+					'password': 'temporary-password',
+				}
+			]
+		),
+	)
+
+	accounts = load_accounts_config()
+
+	assert _account_env_names()[-1] == 'EXTRA_ACCOUNTS_37'
+	assert len(accounts) == 1
+	assert accounts[0].provider == 'ruachat'
+	assert accounts[0].username == 'temporary-user'
+	assert accounts[0].password == 'temporary-password'

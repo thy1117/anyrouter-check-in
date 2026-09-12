@@ -408,9 +408,41 @@ MotoMoto（<https://motomoto.lol/console/personal>）使用 NewAPI，签到接�
 
 脚本会在真实浏览器页面中渲染站点同一 sitekey 的 Turnstile widget，取得 token 后再提交签到，并以 `checked_in_today` 二次确认结果。令牌仅存入 GitHub Secret，不要写进仓库。
 
+### rua.chat
+
+`api.rua.chat` 使用新版 NewAPI 接口，并通过 Authentik 进行登录（站内密码登录已关闭）。签到接口为 `POST /api/user/checkin`，用户信息接口为 `GET /api/user/self`，不需要额外的 Turnstile 或 WAF 配置。
+
+推荐将账号保存到 production Environment Secret `EXTRA_ACCOUNTS_37`。可以使用用户名密码让运行器在浏览器中完成 Authentik 登录：
+
+```json
+[
+  {
+    "name": "rua-chat-account-1",
+    "provider": "ruachat",
+    "username": "你的用户名",
+    "password": "你的密码"
+  }
+]
+```
+
+如果已经有可用的访问令牌，也可以直接使用令牌（可选填用户 ID）；不过访问令牌通常是短时令牌，长期运行更推荐上面的 Authentik 用户名密码方式：
+
+```json
+[
+  {
+    "name": "rua-chat-account-1",
+    "provider": "ruachat",
+    "access_token": "你的访问令牌",
+    "api_user": "你的用户 ID"
+  }
+]
+```
+
+不要把真实用户名、密码或访问令牌提交到仓库；只保存到 GitHub 的 `production` Environment Secret。截图中的临时密码也不应写入代码，建议先在站点修改后再配置 Secret。
+
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`nhh123`、`superapi`、`gemai`、`motomoto` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`nhh123`、`superapi`、`gemai`、`motomoto`、`ruachat` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 
