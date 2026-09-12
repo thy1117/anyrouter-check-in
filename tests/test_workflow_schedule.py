@@ -7,7 +7,7 @@ def test_checkin_workflow_runs_four_times_daily_at_beijing_07_past():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
 	assert "- cron: '7 1,7,13,19 * * *'" in text
-	assert 'workflow_dispatch:' not in text
+	assert 'workflow_dispatch:' in text
 	assert 'NOTIFY_EVERY_RUN: true' in text
 
 
@@ -47,11 +47,11 @@ def test_ruachat_secret_is_wired_into_workflow():
 	assert 'EXTRA_ACCOUNTS_37: ${{ secrets.EXTRA_ACCOUNTS_37 }}' in text
 
 
-def test_checkin_workflow_pins_residential_proxy_node():
+def test_checkin_workflow_pins_oracle_sg_proxy_node():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
 	assert 'PROXY_NODES: ${{ secrets.PROXY_NODES }}' in text
-	assert 'PROXY_NODE_NAME: jiakuan' in text
+	assert 'PROXY_NODE_NAME: Oracle-SG' in text
 	assert 'run: bash scripts/setup_mihomo_proxy.sh' in text
 	assert 'run: bash scripts/stop_mihomo_proxy.sh' in text
-	assert 'PROXY_NODE_NAME: Oracle-SG' not in text
+	assert 'PROXY_NODE_NAME: jiakuan' not in text

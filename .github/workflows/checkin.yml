@@ -1,5 +1,6 @@
 name: AnyRouter 自动签到
 on:
+  workflow_dispatch:
   schedule:
     # 03:07, 09:07, 15:07, 21:07 Asia/Shanghai (UTC+8).
     # GitHub 的 schedule 只是尽力而为，fork 仓库优先级最低，经常延迟数小时甚至丢任务；
@@ -76,13 +77,13 @@ jobs:
         restore-keys: |
           browser-profiles-${{ runner.os }}-
 
-    - name: 配置家宽代理
+    - name: 配置 Oracle SG 代理
       env:
         PROXY_NODES: ${{ secrets.PROXY_NODES }}
         PROXY_TEST_URL: https://www.sheapi.top/api/status
         MIHOMO_VERSION: v1.19.27
         PROXY_REQUIRED: true
-        PROXY_NODE_NAME: jiakuan
+        PROXY_NODE_NAME: Oracle-SG
       run: bash scripts/setup_mihomo_proxy.sh
 
     - name: 执行签到
