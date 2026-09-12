@@ -39,3 +39,12 @@ def test_gemai_secret_is_wired_into_workflow():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
 	assert 'EXTRA_ACCOUNTS_34: ${{ secrets.EXTRA_ACCOUNTS_34 }}' in text
+
+
+def test_checkin_workflow_uses_residential_socks_secret():
+	text = WORKFLOW.read_text(encoding='utf-8')
+
+	assert 'CHECKIN_SOCKS_PROXY_URL: ${{ secrets.CHECKIN_SOCKS_PROXY_URL }}' in text
+	assert 'run: bash scripts/setup_socks_proxy.sh' in text
+	assert 'PROXY_NODE_NAME: Oracle-SG' not in text
+	assert 'PROXY_NODES: ${{ secrets.PROXY_NODES }}' not in text
