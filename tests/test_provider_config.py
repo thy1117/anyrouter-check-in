@@ -131,7 +131,7 @@ def test_kapibala_provider_uses_newapi_refresh_auth(monkeypatch):
 	assert provider.use_proxy is False
 
 
-def test_nianhua_provider_uses_password_login(monkeypatch):
+def test_nianhua_provider_uses_turnstile_checkin(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
 
@@ -139,9 +139,12 @@ def test_nianhua_provider_uses_password_login(monkeypatch):
 	provider = config.providers['nianhua']
 
 	assert provider.domain == 'https://us-3.nianhuaapi.com'
-	assert provider.login_api_path == '/api/user/login'
 	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
 	assert provider.user_info_path == '/api/user/self'
+	assert provider.checkin_turnstile is True
+	assert provider.turnstile_site_key == '0x4AAAAAAEwhg3PtOuQNLdRd'
+	assert provider.persist_profile is True
 	assert provider.use_proxy is False
 
 
