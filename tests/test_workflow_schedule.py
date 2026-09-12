@@ -50,8 +50,8 @@ def test_ruachat_secret_is_wired_into_workflow():
 def test_checkin_workflow_pins_oracle_sg_proxy_node():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
-	assert 'PROXY_NODES: ${{ secrets.PROXY_NODES }}' in text
-	assert 'PROXY_NODE_NAME: Oracle-SG' in text
+	assert 'PROXY_NODES: ${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}' in text
+	assert 'PROXY_NODE_NAME:' not in text
 	assert 'run: bash scripts/setup_mihomo_proxy.sh' in text
 	assert 'run: bash scripts/stop_mihomo_proxy.sh' in text
 	assert 'PROXY_NODE_NAME: jiakuan' not in text

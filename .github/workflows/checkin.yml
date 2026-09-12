@@ -79,11 +79,10 @@ jobs:
 
     - name: 配置 Oracle SG 代理
       env:
-        PROXY_NODES: ${{ secrets.PROXY_NODES }}
+        PROXY_NODES: ${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}
         PROXY_TEST_URL: https://www.sheapi.top/api/status
         MIHOMO_VERSION: v1.19.27
         PROXY_REQUIRED: true
-        PROXY_NODE_NAME: Oracle-SG
       run: bash scripts/setup_mihomo_proxy.sh
 
     - name: 执行签到
