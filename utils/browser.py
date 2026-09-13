@@ -39,11 +39,12 @@ LOGIN_PAGE_READY_SELECTORS = (
 	'button:has(.semi-icon-mail)',
 )
 LOGIN_FORM_SELECTOR = 'form.semi-form'
-USERNAME_SELECTORS = ('#username', 'input[name="username"]', 'input[name="uid_field"]', 'input[name="email"]', 'input[type="email"]')
+USERNAME_SELECTORS = ('#username', 'input[name="username"]', 'input[name="uidField"]', 'input[name="uid_field"]', 'input[name="email"]', 'input[type="email"]')
 PASSWORD_SELECTORS = ('#password', 'input[name="password"]', 'input[type="password"]')  # nosec B105
 SUBMIT_SELECTORS = (
 	f'{LOGIN_FORM_SELECTOR} button[type="submit"]',
 	'button[type="submit"]',
+	'button:has-text("Log in")',
 )
 SESSION_COOKIE_NAME = 'session'
 REFRESH_COOKIE_NAME = 'new_api_refresh'
@@ -98,7 +99,14 @@ _LOGIN_SHELL_READY_JS = f"""() => {{
 	const text = document.body?.innerText || '';
 	const blocked = /请进行验证|为了更好的访问体验|访问受限|Access denied|verify you are human/i.test(text);
 	if (blocked) return false;
-	if (countVisible('input[name="uid_field"]') > 0) return true;
+	function queryAllDeep(selector, root = document) {{
+		let results = [...root.querySelectorAll(selector)];
+		for (const el of root.querySelectorAll('*')) {{
+			if (el.shadowRoot) results.push(...queryAllDeep(selector, el.shadowRoot));
+		}}
+		return results;
+	}}
+	if (queryAllDeep('input[name="uidField"], input[name="uid_field"]').length > 0) return true;
 	return countVisible('.semi-card') > 0 || countVisible('#username') > 0 || countVisible('button') >= 2;
 }}"""
 
@@ -326,11 +334,15 @@ async def _settle_page(page: Page, delay_seconds: float, networkidle_timeout_ms:
 
 async def _wait_for_login_shell(page: Page, timeout_ms: int) -> bool:
 	shell_timeout = min(timeout_ms, 60_000)
-	try:
-		await page.wait_for_function(_LOGIN_SHELL_READY_JS, timeout=shell_timeout)
-		return True
-	except Exception:  # nosec B110
-		return False
+	deadline = time.monotonic() + shell_timeout / 1000
+	while time.monotonic() < deadline:
+		try:
+			if await page.evaluate(_LOGIN_SHELL_READY_JS):
+				return True
+		except Exception:
+			pass
+		await asyncio.sleep(1)
+	return False
 
 
 async def navigate_login_page(
@@ -471,6 +483,29 @@ async def verify_browser_login(page: Page, console_url: str, timeout_ms: int) ->
 				await asyncio.wait_for(verified.wait(), timeout=verify_timeout / 1000)
 			except TimeoutError:
 				pass
+		if captured_profile is None:
+			try:
+				in_page_user = await page.evaluate(
+					"""async () => {
+						try {
+							const ref = await fetch('/api/user/auth/refresh', {method: 'POST', credentials: 'include'});
+							if (ref.status === 200) {
+								const d = await ref.json();
+								if (d && d.success && d.data && d.data.user) return d.data.user;
+							}
+							const res = await fetch('/api/user/self', {credentials: 'include'});
+							if (res.status === 200) {
+								const d = await res.json();
+								if (d && d.success && d.data) return d.data;
+							}
+						} catch(e) {}
+						return null;
+					}"""
+				)
+				if in_page_user and isinstance(in_page_user, dict) and in_page_user.get('id'):
+					captured_profile = in_page_user
+			except Exception:
+				pass
 	finally:
 		page.remove_listener('response', on_response)
 
@@ -563,6 +598,28 @@ async def read_auth_session(page: Page) -> tuple[str | None, str | None]:
 	cookie 轮换；轮换时前端会带上会话 sid（``X-Auth-Session``）。
 	"""
 	payload = await _read_auth_session_payload(page)
+	if payload is None:
+		try:
+			refresh_data = await page.evaluate(
+				"""async () => {
+					try {
+						const res = await fetch('/api/user/auth/refresh', {
+							method: 'POST',
+							credentials: 'include',
+						});
+						if (res.status === 200) {
+							const json = await res.json();
+							if (json && json.success && json.data) return json.data;
+						}
+					} catch(e) {}
+					return null;
+				}"""
+			)
+			if isinstance(refresh_data, dict):
+				payload = refresh_data
+		except Exception as exc:
+			debug_print(f'[WARN] In-page refresh fallback failed: {exc}')
+
 	if payload is None:
 		return None, None
 

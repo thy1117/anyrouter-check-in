@@ -397,10 +397,12 @@ def newapi_quota_pair(info: dict) -> tuple[float, float]:
 	``quota`` 会把 243 元的余额报成 0.14 元；更糟的是签到奖励若落在赠送额度
 	里，前后差值恒为 0，通知会被误判成「签到无变化」。没有 ``gift_quota``
 	的站点该字段缺省为 0，行为与原来一致。
+	新版分支将额度放在 ``account`` 嵌套对象中（recharge_available, grant_available, total_usage）。
 	"""
-	quota = _number(info.get('quota'))
-	gift_quota = _number(info.get('gift_quota'))
-	used_quota = _number(info.get('used_quota'))
+	acct = info.get('account') if isinstance(info.get('account'), dict) else {}
+	quota = _number(info.get('quota') or acct.get('recharge_available'))
+	gift_quota = _number(info.get('gift_quota') or acct.get('grant_available'))
+	used_quota = _number(info.get('used_quota') or acct.get('total_usage'))
 	return (
 		round((quota + gift_quota) / NEWAPI_QUOTA_PER_UNIT, 2),
 		round(used_quota / NEWAPI_QUOTA_PER_UNIT, 2),
