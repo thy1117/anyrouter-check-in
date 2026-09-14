@@ -396,7 +396,7 @@ Gemai（<https://api.gemai.cc/profile>）使用 NewAPI，签到接口为 `POST /
 [{ "name": "Gemai-account-1", "provider": "gemai", "access_token": "替换成系统访问令牌", "api_user": "替换成用户 ID" }]
 ```
 
-令牌仅存入 GitHub Secret，不要写进仓库。账号沿用现有每天四次的定时任务，重复签到按成功处理。
+令牌仅存入 GitHub Secret，不要写进仓库。账号沿用现有每天两次的定时任务，重复签到按成功处理。
 
 ### MotoMoto
 
