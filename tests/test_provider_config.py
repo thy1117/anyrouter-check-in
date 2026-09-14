@@ -442,7 +442,7 @@ def test_superapi_provider_is_builtin(monkeypatch):
 	assert provider.use_proxy is False
 	assert provider.checkin_turnstile is False
 	assert provider.bypass_method is None
-	assert provider.request_in_page is False
+	assert provider.request_in_page is True
 	assert provider.http2 is True
 
 

@@ -394,6 +394,7 @@ class AppConfig:
 				auth_refresh_path='/api/user/auth/refresh',
 				api_user_key='New-Api-User',
 				use_proxy=False,
+				request_in_page=True,
 			),
 			'gemai': ProviderConfig(
 				name='gemai',
