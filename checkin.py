@@ -56,6 +56,7 @@ GOROUTER_TURNSTILE_ATTEMPTS = 3
 GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS = 8
 XIAOBAI_MAX_REQUEST_ATTEMPTS = 3
 XIAOBAI_RETRY_STATUS_CODES = (502, 503, 504)
+BEARER_LOGIN_MAX_ATTEMPTS = 3
 CAPTCHA_RETRY_KEYWORDS = ('验证码', 'captcha', '过期', 'expired', 'invalid code')
 ALREADY_CHECKED_KEYWORDS = (
 	'已经签到',
@@ -989,6 +990,29 @@ def run_xiaobai_check_in(
 		return False, None, attach_check_in_error(None, error)
 
 
+def _bearer_login(client, account: AccountConfig, account_name: str, provider_config, headers: dict):
+	"""只重试登录的临时网络错误，不重放签到或可能轮换的 refresh token。"""
+	for attempt in range(1, BEARER_LOGIN_MAX_ATTEMPTS + 1):
+		try:
+			return client.post(
+				f'{provider_config.domain}{provider_config.login_api_path}',
+				json={'email': account.email, 'password': account.password},
+				headers=headers,
+				timeout=30,
+			)
+		except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+			reason = type(exc).__name__
+			if attempt == BEARER_LOGIN_MAX_ATTEMPTS:
+				raise RuntimeError(f'Bearer login failed after {attempt} attempts ({reason})') from exc
+			delay = 2**attempt
+			print(
+				f'[WARN] {account_name}: Bearer login {reason}; '
+				f'retrying in {delay}s ({attempt}/{BEARER_LOGIN_MAX_ATTEMPTS - 1})'
+			)
+			time.sleep(delay)
+	raise RuntimeError('Bearer login retry loop ended unexpectedly')
+
+
 def run_bearer_check_in(
 	account: AccountConfig,
 	account_name: str,
@@ -1024,12 +1048,7 @@ def run_bearer_check_in(
 					print(f'[FAILED] {account_name}: {error}')
 					return False, None, attach_check_in_error(None, error)
 				print(f'[AUTH] {account_name}: Logging in through Bearer email/password API')
-				response = client.post(
-					f'{provider_config.domain}{provider_config.login_api_path}',
-					json={'email': account.email, 'password': account.password},
-					headers=headers,
-					timeout=30,
-				)
+				response = _bearer_login(client, account, account_name, provider_config, headers)
 				access_token, login_refresh_token, authentication_error = _sub2api_token_result(response, account_name)
 				refresh_token = login_refresh_token or refresh_token
 			elif not access_token and refresh_token:
