@@ -55,3 +55,10 @@ def test_checkin_workflow_pins_oracle_sg_proxy_node():
 	assert 'run: bash scripts/setup_mihomo_proxy.sh' in text
 	assert 'run: bash scripts/stop_mihomo_proxy.sh' in text
 	assert 'PROXY_NODE_NAME: jiakuan' not in text
+
+
+def test_second_sheapi_secret_is_wired_without_removing_existing_secret():
+	text = WORKFLOW.read_text(encoding='utf-8')
+
+	assert 'EXTRA_ACCOUNTS_10: ${{ secrets.EXTRA_ACCOUNTS_10 }}' in text
+	assert 'EXTRA_ACCOUNTS_38: ${{ secrets.EXTRA_ACCOUNTS_38 }}' in text

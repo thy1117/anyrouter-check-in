@@ -19,6 +19,7 @@ def _clear(monkeypatch):
 		'EXTRA_ACCOUNTS_35',
 		'EXTRA_ACCOUNTS_36',
 		'EXTRA_ACCOUNTS_37',
+		'EXTRA_ACCOUNTS_38',
 	):
 		monkeypatch.delenv(name, raising=False)
 
@@ -194,3 +195,41 @@ def test_ruachat_slot_accepts_username_password_account(monkeypatch):
 	assert accounts[0].provider == 'ruachat'
 	assert accounts[0].username == 'temporary-user'
 	assert accounts[0].password == 'temporary-password'
+
+
+def test_second_sheapi_slot_appends_account_without_clobbering(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv('ANYROUTER_ACCOUNTS', BASE)
+	for slot, name, username, password in (
+		(10, 'SheApi', 'first-test-user', 'first-test-password'),
+		(38, 'SheApi-account-2', 'second-test-user', 'second-test-password'),
+	):
+		monkeypatch.setenv(
+			f'EXTRA_ACCOUNTS_{slot}',
+			json.dumps([{'name': name, 'provider': 'sheapi', 'username': username, 'password': password}]),
+		)
+
+	accounts = load_accounts_config()
+
+	assert _account_env_names()[-2:] == ['EXTRA_ACCOUNTS_10', 'EXTRA_ACCOUNTS_38']
+	assert [account.name for account in accounts] == ['Main', 'SheApi', 'SheApi-account-2']
+	assert [account.provider for account in accounts[1:]] == ['sheapi', 'sheapi']
+	assert [account.username for account in accounts[1:]] == ['first-test-user', 'second-test-user']
+	assert [account.password for account in accounts[1:]] == ['first-test-password', 'second-test-password']
+	assert all(account.has_login_credentials() for account in accounts[1:])
+
+
+def test_unconfigured_second_sheapi_slot_preserves_existing_account(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_10',
+		json.dumps([{'name': 'SheApi', 'provider': 'sheapi', 'username': 'test-user', 'password': 'test-password'}]),
+	)
+	monkeypatch.setenv('EXTRA_ACCOUNTS_38', '')
+
+	accounts = load_accounts_config()
+
+	assert len(accounts) == 1
+	assert accounts[0].name == 'SheApi'
+	assert accounts[0].provider == 'sheapi'
+	assert accounts[0].username == 'test-user'
