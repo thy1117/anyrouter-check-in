@@ -8,9 +8,9 @@ SCRIPT = Path(__file__).parent.parent / 'scripts' / 'setup_mihomo_proxy.sh'
 
 def _conversion_script() -> str:
 	text = SCRIPT.read_text(encoding='utf-8')
-	start_marker = "PROXY_NODES=\"${PROXY_NODES}\" python3 - > subscription.yaml <<'PY'\n"
+	start_marker = 'PROXY_NODES="${PROXY_NODES}" python3 - > subscription.yaml <<\'PY\'\n'
 	start = text.index(start_marker) + len(start_marker)
-	end = text.index("\nPY\n", start)
+	end = text.index('\nPY\n', start)
 	return text[start:end]
 
 

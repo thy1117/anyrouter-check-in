@@ -27,6 +27,7 @@ class ProviderConfig:
 	bypass_method: Literal['waf_cookies'] | None = None
 	waf_cookie_names: List[str] | None = None
 	use_proxy: bool = False
+	proxy_node: str | None = None
 	persist_profile: bool = False
 	http2: bool = True
 	request_in_page: bool = False
@@ -61,6 +62,7 @@ class ProviderConfig:
 		- 完整: {"domain": "https://example.com", "login_path": "/login", "use_proxy": true, ...}
 		"""
 		default_use_proxy = defaults.use_proxy if defaults else False
+		default_proxy_node = defaults.proxy_node if defaults else None
 		default_persist_profile = defaults.persist_profile if defaults else False
 		default_http2 = defaults.http2 if defaults else True
 		default_request_in_page = defaults.request_in_page if defaults else False
@@ -89,6 +91,7 @@ class ProviderConfig:
 			bypass_method=data.get('bypass_method', defaults.bypass_method if defaults else None),
 			waf_cookie_names=data.get('waf_cookie_names', defaults.waf_cookie_names if defaults else None),
 			use_proxy=data.get('use_proxy', default_use_proxy),
+			proxy_node=data.get('proxy_node', default_proxy_node),
 			persist_profile=data.get('persist_profile', default_persist_profile),
 			http2=data.get('http2', default_http2),
 			request_in_page=data.get('request_in_page', default_request_in_page),
@@ -487,12 +490,18 @@ class AccountConfig:
 	username: str | None = None
 	email: str | None = None
 	password: str | None = None
+	proxy_node: str | None = None
 
 	@classmethod
 	def from_dict(cls, data: dict, index: int) -> 'AccountConfig':
 		"""从字典创建 AccountConfig"""
 		provider = data.get('provider', 'anyrouter')
 		name = data.get('name', f'Account {index + 1}')
+		proxy_node = data.get('proxy_node') or data.get('proxyNode')
+		if not proxy_node and isinstance(data.get('proxy'), str):
+			raw_proxy = data['proxy'].strip()
+			if raw_proxy and not raw_proxy.startswith(('http://', 'https://', 'socks5://', 'socks://')):
+				proxy_node = raw_proxy
 
 		return cls(
 			cookies=data.get('cookies'),
@@ -505,6 +514,7 @@ class AccountConfig:
 			username=data.get('username'),
 			email=data.get('email'),
 			password=data.get('password'),
+			proxy_node=proxy_node,
 		)
 
 	def has_login_credentials(self) -> bool:

@@ -44,7 +44,7 @@ from utils.browser import (
 from utils.config import AccountConfig, AppConfig, load_accounts_config
 from utils.debug import debug_print, is_debug_enabled
 from utils.notify import notify
-from utils.proxy import get_playwright_proxy, get_proxy_server
+from utils.proxy import active_proxy_node, get_playwright_proxy, get_proxy_server
 
 load_dotenv()
 
@@ -1657,6 +1657,12 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
 
+	target_proxy_node = account.proxy_node or provider_config.proxy_node
+	with active_proxy_node(target_proxy_node, account_name=account_name):
+		return await _run_account_checkin(account, account_name, provider_config)
+
+
+async def _run_account_checkin(account: AccountConfig, account_name: str, provider_config):
 	if provider_config.checkin_turnstile:
 		return await run_gorouter_check_in_in_page(account, account_name, provider_config)
 

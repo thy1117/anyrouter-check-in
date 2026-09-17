@@ -39,7 +39,14 @@ LOGIN_PAGE_READY_SELECTORS = (
 	'button:has(.semi-icon-mail)',
 )
 LOGIN_FORM_SELECTOR = 'form.semi-form'
-USERNAME_SELECTORS = ('#username', 'input[name="username"]', 'input[name="uidField"]', 'input[name="uid_field"]', 'input[name="email"]', 'input[type="email"]')
+USERNAME_SELECTORS = (
+	'#username',
+	'input[name="username"]',
+	'input[name="uidField"]',
+	'input[name="uid_field"]',
+	'input[name="email"]',
+	'input[type="email"]',
+)
 PASSWORD_SELECTORS = ('#password', 'input[name="password"]', 'input[type="password"]')  # nosec B105
 SUBMIT_SELECTORS = (
 	f'{LOGIN_FORM_SELECTOR} button[type="submit"]',
