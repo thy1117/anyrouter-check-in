@@ -61,9 +61,9 @@ jobs:
       uses: actions/cache@v5
       with:
         path: balance_hash.txt
-        key: balance-hash-${{ github.ref_name }}-${{ github.run_id }}
+        key: balance-hash-${ github.ref_name }}-${ github.run_id }}
         restore-keys: |
-          balance-hash-${{ github.ref_name }}-
+          balance-hash-${ github.ref_name }}-
           balance-hash-
 
     - name: 准备浏览器 Profile 目录
@@ -73,9 +73,9 @@ jobs:
       uses: actions/cache@v5
       with:
         path: .browser_profiles
-        key: browser-profiles-${{ runner.os }}-${{ github.run_id }}
+        key: browser-profiles-${ runner.os }}-${ github.run_id }}
         restore-keys: |
-          browser-profiles-${{ runner.os }}-
+          browser-profiles-${ runner.os }}-
 
     - name: 配置 Oracle SG 代理
       env:
@@ -115,6 +115,7 @@ jobs:
         EXTRA_ACCOUNTS_37: ${{ secrets.EXTRA_ACCOUNTS_37 }}
         EXTRA_ACCOUNTS_38: ${{ secrets.EXTRA_ACCOUNTS_38 }}
         EXTRA_ACCOUNTS_39: ${{ secrets.EXTRA_ACCOUNTS_39 }}
+        EXTRA_ACCOUNTS_40: ${{ secrets.EXTRA_ACCOUNTS_40 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
@@ -144,7 +145,7 @@ jobs:
         HTTPS_PROXY: ''
       uses: actions/upload-artifact@v4
       with:
-        name: checkin-screenshots-${{ github.run_id }}
+        name: checkin-screenshots-${ github.run_id }}
         path: checkin_screenshots/
         if-no-files-found: warn
         include-hidden-files: true
@@ -161,6 +162,6 @@ jobs:
         echo "签到任务执行完成"
         echo "时间: $(date)"
         if [ "${DEBUG_MODE}" = "true" ] && [ -d checkin_screenshots ] && [ "$(ls -A checkin_screenshots 2>/dev/null)" ]; then
-          echo "调试截图已上传为 artifact: checkin-screenshots-${{ github.run_id }}"
+          echo "调试截图已上传为 artifact: checkin-screenshots-${ github.run_id }}"
           ls -la checkin_screenshots/
         fi
