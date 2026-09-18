@@ -27,6 +27,13 @@ def test_removed_account_secrets_are_not_wired_into_workflow():
 		assert f'EXTRA_ACCOUNTS_{removed_slot}: ' not in text
 
 
+def test_aiaiai_secret_is_wired_into_workflow():
+	text = WORKFLOW.read_text(encoding='utf-8')
+
+	assert 'EXTRA_ACCOUNTS_11: ${{ secrets.EXTRA_ACCOUNTS_11 }}' in text
+	assert 'EXTRA_ACCOUNTS_40: ${{ secrets.EXTRA_ACCOUNTS_40 }}' in text
+
+
 def test_motomoto_secret_is_wired_into_workflow():
 	text = WORKFLOW.read_text(encoding='utf-8')
 

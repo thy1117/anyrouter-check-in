@@ -21,6 +21,7 @@ def _clear(monkeypatch):
 		'EXTRA_ACCOUNTS_37',
 		'EXTRA_ACCOUNTS_38',
 		'EXTRA_ACCOUNTS_39',
+		'EXTRA_ACCOUNTS_40',
 	):
 		monkeypatch.delenv(name, raising=False)
 
@@ -111,6 +112,32 @@ def test_gemai_slot_appends_pat_account_without_clobbering(monkeypatch):
 	assert accounts[1].api_user == '12345'
 	assert accounts[1].access_token == 'test-token'
 	assert accounts[1].cookies is None
+
+
+def test_aiaiai_slot_appends_account_without_clobbering(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv('ANYROUTER_ACCOUNTS', BASE)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_40',
+		json.dumps(
+			[
+				{
+					'name': 'AIAIAI-account-2',
+					'provider': 'aiaiai',
+					'cookies': {'web_device_id': 'test-device', 'session': 'test-session'},
+					'api_user': '67890',
+				}
+			]
+		),
+	)
+
+	accounts = load_accounts_config()
+
+	assert _account_env_names()[-1] == 'EXTRA_ACCOUNTS_40'
+	assert [account.name for account in accounts] == ['Main', 'AIAIAI-account-2']
+	assert accounts[1].provider == 'aiaiai'
+	assert accounts[1].cookies == {'web_device_id': 'test-device', 'session': 'test-session'}
+	assert accounts[1].api_user == '67890'
 
 
 def test_motomoto_slot_appends_account_without_clobbering(monkeypatch):

@@ -386,6 +386,23 @@ SuperAPI（`https://superapi.buzz`）是新版 NewAPI，签到接口为 `POST /a
 [{ "name": "SuperAPI-thy1117", "provider": "superapi", "access_token": "xxx", "api_user": "8831" }]
 ```
 
+### AIAIAI
+
+AIAIAI（<https://api.aiaiai001.com>）使用 Cookie 登录态。新增账号建议单独保存到 `production` Environment Secret `EXTRA_ACCOUNTS_40`，不要覆盖已有的 `EXTRA_ACCOUNTS_11`。
+
+1. 登录 AIAIAI 后打开浏览器开发者工具（F12）。
+2. 在 **Application/存储 → Cookies** 中复制 `web_device_id` 和 `session` 两个 Cookie 的值。
+3. 在 **Network → Fetch/XHR** 中找到 AIAIAI 的 `/api/user/self` 或签到请求；`New-Api-User` 请求头的值就是 `api_user`。也可以使用 `/api/user/self` 返回的 `data.id`。
+4. 在 GitHub 仓库进入 **Settings → Environments → production → Environment secrets**，新建 Secret：
+   - Name：`EXTRA_ACCOUNTS_40`
+   - Value：下面的 JSON（替换占位符；保持为合法 JSON）
+
+```json
+[{"name":"AIAIAI-account-2","provider":"aiaiai","cookies":{"web_device_id":"替换成 Cookie 值","session":"替换成 Cookie 值"},"api_user":"替换成用户 ID"}]
+```
+
+不要把真实 Cookie 或用户 ID 发到聊天、提交到仓库或写进 Issue；Cookie 失效后重新获取并更新该 Secret 即可。
+
 ### Gemai（哈基米 API 站）
 
 Gemai（<https://api.gemai.cc/profile>）使用 NewAPI，签到接口为 `POST /api/user/checkin`。站点关闭了 Turnstile，使用**系统访问令牌（access_token）**加**用户 ID（api_user）**即可，无需浏览器验证。
