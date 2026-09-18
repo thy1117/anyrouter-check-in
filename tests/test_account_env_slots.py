@@ -81,32 +81,15 @@ def test_ignores_malformed_suffix(monkeypatch):
 	assert [a.name for a in load_accounts_config()] == ['Main']
 
 
-def test_justwoker_slot_is_loaded_last(monkeypatch):
-	_clear(monkeypatch)
-	monkeypatch.setenv('EXTRA_ACCOUNTS_17', '[]')
-	monkeypatch.setenv('EXTRA_ACCOUNTS_2', '[]')
-	monkeypatch.setenv('EXTRA_ACCOUNTS_15', '[]')
-
-	assert _account_env_names() == [
-		'ANYROUTER_ACCOUNTS',
-		'EXTRA_ACCOUNTS',
-		'EXTRA_ACCOUNTS_2',
-		'EXTRA_ACCOUNTS_15',
-		'EXTRA_ACCOUNTS_17',
-	]
-
-
 def test_tabitoken_slot_is_loaded_last(monkeypatch):
 	_clear(monkeypatch)
 	monkeypatch.setenv('EXTRA_ACCOUNTS_18', '[]')
 	monkeypatch.setenv('EXTRA_ACCOUNTS_2', '[]')
-	monkeypatch.setenv('EXTRA_ACCOUNTS_17', '[]')
 
 	assert _account_env_names() == [
 		'ANYROUTER_ACCOUNTS',
 		'EXTRA_ACCOUNTS',
 		'EXTRA_ACCOUNTS_2',
-		'EXTRA_ACCOUNTS_17',
 		'EXTRA_ACCOUNTS_18',
 	]
 
@@ -130,45 +113,18 @@ def test_gemai_slot_appends_pat_account_without_clobbering(monkeypatch):
 	assert accounts[1].cookies is None
 
 
-def test_second_justwoker_slot_appends_account_without_clobbering(monkeypatch):
-	_clear(monkeypatch)
-	monkeypatch.setenv(
-		'EXTRA_ACCOUNTS_17',
-		json.dumps(
-			[{'name': 'JustWoker-13397', 'provider': 'justwoker', 'access_token': 'first-token', 'api_user': '13397'}]
-		),
-	)
-	monkeypatch.setenv(
-		'EXTRA_ACCOUNTS_35',
-		json.dumps(
-			[{'name': 'JustWoker-13751', 'provider': 'justwoker', 'access_token': 'second-token', 'api_user': '13751'}]
-		),
-	)
-
-	accounts = load_accounts_config()
-
-	assert _account_env_names()[-2:] == ['EXTRA_ACCOUNTS_17', 'EXTRA_ACCOUNTS_35']
-	assert [account.name for account in accounts] == ['JustWoker-13397', 'JustWoker-13751']
-	assert [account.api_user for account in accounts] == ['13397', '13751']
-
-
 def test_motomoto_slot_appends_account_without_clobbering(monkeypatch):
 	_clear(monkeypatch)
-	monkeypatch.setenv(
-		'EXTRA_ACCOUNTS_35',
-		json.dumps(
-			[{'name': 'JustWoker-13751', 'provider': 'justwoker', 'access_token': 'first-token', 'api_user': '13751'}]
-		),
-	)
+	monkeypatch.setenv('ANYROUTER_ACCOUNTS', BASE)
 	monkeypatch.setenv(
 		'EXTRA_ACCOUNTS_36',
-		json.dumps([{'name': 'MotoMoto', 'provider': 'motomoto', 'access_token': 'second-token', 'api_user': '5032'}]),
+		json.dumps([{'name': 'MotoMoto', 'provider': 'motomoto', 'access_token': 'test-token', 'api_user': '5032'}]),
 	)
 
 	accounts = load_accounts_config()
 
-	assert _account_env_names()[-2:] == ['EXTRA_ACCOUNTS_35', 'EXTRA_ACCOUNTS_36']
-	assert [account.name for account in accounts] == ['JustWoker-13751', 'MotoMoto']
+	assert _account_env_names()[-1] == 'EXTRA_ACCOUNTS_36'
+	assert [account.name for account in accounts] == ['Main', 'MotoMoto']
 	assert accounts[1].provider == 'motomoto'
 	assert accounts[1].api_user == '5032'
 
@@ -255,5 +211,9 @@ def test_third_sheapi_slot_appends_account_without_clobbering(monkeypatch):
 	assert [account.name for account in accounts] == ['Main', 'SheApi', 'SheApi-account-2', 'SheApi-thy1119']
 	assert [account.provider for account in accounts[1:]] == ['sheapi', 'sheapi', 'sheapi']
 	assert [account.username for account in accounts[1:]] == ['first-test-user', 'second-test-user', 'thy1119']
-	assert [account.password for account in accounts[1:]] == ['first-test-password', 'second-test-password', 'third-test-password']
+	assert [account.password for account in accounts[1:]] == [
+		'first-test-password',
+		'second-test-password',
+		'third-test-password',
+	]
 	assert all(account.has_login_credentials() for account in accounts[1:])
