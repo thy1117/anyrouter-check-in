@@ -20,6 +20,7 @@ def _clear(monkeypatch):
 		'EXTRA_ACCOUNTS_36',
 		'EXTRA_ACCOUNTS_37',
 		'EXTRA_ACCOUNTS_38',
+		'EXTRA_ACCOUNTS_39',
 	):
 		monkeypatch.delenv(name, raising=False)
 
@@ -233,3 +234,26 @@ def test_unconfigured_second_sheapi_slot_preserves_existing_account(monkeypatch)
 	assert accounts[0].name == 'SheApi'
 	assert accounts[0].provider == 'sheapi'
 	assert accounts[0].username == 'test-user'
+
+
+def test_third_sheapi_slot_appends_account_without_clobbering(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv('ANYROUTER_ACCOUNTS', BASE)
+	for slot, name, username, password in (
+		(10, 'SheApi', 'first-test-user', 'first-test-password'),
+		(38, 'SheApi-account-2', 'second-test-user', 'second-test-password'),
+		(39, 'SheApi-thy1119', 'thy1119', 'third-test-password'),
+	):
+		monkeypatch.setenv(
+			f'EXTRA_ACCOUNTS_{slot}',
+			json.dumps([{'name': name, 'provider': 'sheapi', 'username': username, 'password': password}]),
+		)
+
+	accounts = load_accounts_config()
+
+	assert _account_env_names()[-3:] == ['EXTRA_ACCOUNTS_10', 'EXTRA_ACCOUNTS_38', 'EXTRA_ACCOUNTS_39']
+	assert [account.name for account in accounts] == ['Main', 'SheApi', 'SheApi-account-2', 'SheApi-thy1119']
+	assert [account.provider for account in accounts[1:]] == ['sheapi', 'sheapi', 'sheapi']
+	assert [account.username for account in accounts[1:]] == ['first-test-user', 'second-test-user', 'thy1119']
+	assert [account.password for account in accounts[1:]] == ['first-test-password', 'second-test-password', 'third-test-password']
+	assert all(account.has_login_credentials() for account in accounts[1:])
