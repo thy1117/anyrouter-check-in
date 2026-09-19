@@ -28,6 +28,7 @@ class ProviderConfig:
 	waf_cookie_names: List[str] | None = None
 	use_proxy: bool = False
 	proxy_node: str | None = None
+	proxy_nodes: List[str] | None = None
 	persist_profile: bool = False
 	http2: bool = True
 	request_in_page: bool = False
@@ -38,6 +39,20 @@ class ProviderConfig:
 	captcha_code_key: str = 'captcha_code'
 
 	def __post_init__(self):
+		if isinstance(self.proxy_nodes, str):
+			self.proxy_nodes = [self.proxy_nodes]
+		if self.proxy_nodes is not None:
+			self.proxy_nodes = [
+				node.strip() for node in self.proxy_nodes if isinstance(node, str) and node.strip()
+			]
+
+		if self.proxy_node:
+			self.proxy_node = self.proxy_node.strip() or None
+
+		# 配了固定节点就必须实际走本地 Mihomo；否则虽然切了节点，网络请求仍会直连。
+		if self.proxy_node or self.proxy_nodes:
+			self.use_proxy = True
+
 		required_waf_cookies = set()
 		if self.waf_cookie_names and isinstance(self.waf_cookie_names, List):
 			for item in self.waf_cookie_names:
@@ -63,6 +78,7 @@ class ProviderConfig:
 		"""
 		default_use_proxy = defaults.use_proxy if defaults else False
 		default_proxy_node = defaults.proxy_node if defaults else None
+		default_proxy_nodes = defaults.proxy_nodes if defaults else None
 		default_persist_profile = defaults.persist_profile if defaults else False
 		default_http2 = defaults.http2 if defaults else True
 		default_request_in_page = defaults.request_in_page if defaults else False
@@ -92,6 +108,7 @@ class ProviderConfig:
 			waf_cookie_names=data.get('waf_cookie_names', defaults.waf_cookie_names if defaults else None),
 			use_proxy=data.get('use_proxy', default_use_proxy),
 			proxy_node=data.get('proxy_node', default_proxy_node),
+			proxy_nodes=data.get('proxy_nodes', default_proxy_nodes),
 			persist_profile=data.get('persist_profile', default_persist_profile),
 			http2=data.get('http2', default_http2),
 			request_in_page=data.get('request_in_page', default_request_in_page),
@@ -208,7 +225,9 @@ class AppConfig:
 				user_info_path='/api/user/self',
 				auth_refresh_path='/api/user/auth/refresh',
 				api_user_key='New-Api-User',
-				use_proxy=False,
+				use_proxy=True,
+				# 三个清酒账号按加载顺序固定到三个独立出口，避免同一 IP 多账号签到。
+				proxy_nodes=['家宽', 'oracle-sg', 'railway-sg'],
 				# qingjiu occasionally stalls on the Python/httpx connection after a
 				# browser login. Reuse the authenticated browser network stack instead.
 				http2=False,

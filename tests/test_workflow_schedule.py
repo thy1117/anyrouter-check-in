@@ -55,7 +55,9 @@ def test_ruachat_secret_is_wired_into_workflow():
 def test_checkin_workflow_pins_oracle_sg_proxy_node():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
-	assert 'PROXY_NODES: ${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}' in text
+	assert 'PROXY_NODES:' in text
+	assert '${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}' in text
+	assert '${{ secrets.PROXY_NODE_RAILWAY }}' in text
 	assert 'PROXY_NODE_NAME:' not in text
 	assert 'run: bash scripts/setup_mihomo_proxy.sh' in text
 	assert 'run: bash scripts/stop_mihomo_proxy.sh' in text
@@ -68,3 +70,4 @@ def test_sheapi_secrets_are_wired_without_removing_existing_secrets():
 	assert 'EXTRA_ACCOUNTS_10: ${{ secrets.EXTRA_ACCOUNTS_10 }}' in text
 	assert 'EXTRA_ACCOUNTS_38: ${{ secrets.EXTRA_ACCOUNTS_38 }}' in text
 	assert 'EXTRA_ACCOUNTS_39: ${{ secrets.EXTRA_ACCOUNTS_39 }}' in text
+	assert 'EXTRA_ACCOUNTS_41: ${{ secrets.EXTRA_ACCOUNTS_41 }}' in text

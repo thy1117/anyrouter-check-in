@@ -268,6 +268,8 @@ def test_qingjiu_provider_uses_browser_page_for_login_session(monkeypatch):
 	assert provider.user_info_path == '/api/user/self'
 	assert provider.http2 is False
 	assert provider.request_in_page is True
+	assert provider.use_proxy is True
+	assert provider.proxy_nodes == ['家宽', 'oracle-sg', 'railway-sg']
 
 
 def test_qingjiu_custom_provider_inherits_browser_request_defaults(monkeypatch):

@@ -22,6 +22,7 @@ def _clear(monkeypatch):
 		'EXTRA_ACCOUNTS_38',
 		'EXTRA_ACCOUNTS_39',
 		'EXTRA_ACCOUNTS_40',
+		'EXTRA_ACCOUNTS_41',
 	):
 		monkeypatch.delenv(name, raising=False)
 
@@ -244,3 +245,29 @@ def test_third_sheapi_slot_appends_account_without_clobbering(monkeypatch):
 		'third-test-password',
 	]
 	assert all(account.has_login_credentials() for account in accounts[1:])
+
+
+def test_third_qingjiu_slot_appends_account_without_clobbering(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv('ANYROUTER_ACCOUNTS', BASE)
+	for slot, name, username, password in (
+		(4, '清酒-thy1117', 'thy1117', 'first-test-password'),
+		(16, '清酒-thy1118', 'thy1118', 'second-test-password'),
+		(41, '清酒-thy1119', 'thy1119', 'third-test-password'),
+	):
+		monkeypatch.setenv(
+			f'EXTRA_ACCOUNTS_{slot}',
+			json.dumps([{'name': name, 'provider': 'qingjiu', 'username': username, 'password': password}]),
+		)
+
+	accounts = load_accounts_config()
+
+	assert _account_env_names()[-3:] == ['EXTRA_ACCOUNTS_4', 'EXTRA_ACCOUNTS_16', 'EXTRA_ACCOUNTS_41']
+	qingjiu = [account for account in accounts if account.provider == 'qingjiu']
+	assert [account.name for account in qingjiu] == ['清酒-thy1117', '清酒-thy1118', '清酒-thy1119']
+	assert [account.username for account in qingjiu] == ['thy1117', 'thy1118', 'thy1119']
+	assert [account.password for account in qingjiu] == [
+		'first-test-password',
+		'second-test-password',
+		'third-test-password',
+	]

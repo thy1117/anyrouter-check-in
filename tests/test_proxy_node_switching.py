@@ -1,8 +1,12 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from checkin import resolve_account_proxy_node
 from utils.config import AccountConfig, ProviderConfig
 from utils.proxy import (
+	ProxyNodeSwitchError,
 	active_proxy_node,
 	get_current_mihomo_node,
 	switch_mihomo_node,
@@ -29,6 +33,41 @@ def test_account_config_parses_proxy_node():
 def test_provider_config_parses_proxy_node():
 	p = ProviderConfig.from_dict('custom', {'domain': 'https://example.com', 'proxy_node': '家宽'})
 	assert p.proxy_node == '家宽'
+	assert p.use_proxy is True
+
+	p = ProviderConfig.from_dict(
+		'custom',
+		{'domain': 'https://example.com', 'use_proxy': False, 'proxy_nodes': [' 家宽 ', 'oracle-sg']},
+	)
+	assert p.proxy_nodes == ['家宽', 'oracle-sg']
+	assert p.use_proxy is True
+
+
+def test_provider_proxy_nodes_are_assigned_by_provider_account_order():
+	provider = ProviderConfig(
+		name='qingjiu',
+		domain='https://qingjiu.example.com',
+		proxy_nodes=['家宽', 'oracle-sg', 'railway-sg'],
+	)
+	accounts = [
+		AccountConfig(cookies=None, provider='qingjiu', name='清酒-thy1117'),
+		AccountConfig(cookies=None, provider='qingjiu', name='清酒-thy1118'),
+		AccountConfig(cookies=None, provider='qingjiu', name='清酒-thy1119'),
+	]
+
+	assert [resolve_account_proxy_node(account, provider, index) for index, account in enumerate(accounts)] == [
+		'家宽',
+		'oracle-sg',
+		'railway-sg',
+	]
+
+
+def test_provider_proxy_nodes_fail_when_accounts_exceed_dedicated_nodes():
+	provider = ProviderConfig(name='qingjiu', domain='https://qingjiu.example.com', proxy_nodes=['家宽'])
+	account = AccountConfig(cookies=None, provider='qingjiu', name='清酒-extra')
+
+	with pytest.raises(ValueError, match='has no dedicated proxy node'):
+		resolve_account_proxy_node(account, provider, 1)
 
 
 def test_get_current_mihomo_node_success():
@@ -84,12 +123,11 @@ def test_active_proxy_node_noop_when_node_empty():
 		mock_switch.assert_not_called()
 
 
-def test_active_proxy_node_handles_switch_failure_gracefully():
+def test_active_proxy_node_fails_closed_when_switch_fails():
 	with (
 		patch('utils.proxy.get_current_mihomo_node', return_value=None),
 		patch('utils.proxy.switch_mihomo_node', return_value=False),
 	):
-		executed = False
-		with active_proxy_node('家宽'):
-			executed = True
-		assert executed is True
+		with pytest.raises(ProxyNodeSwitchError, match='Failed to switch proxy node'):
+			with active_proxy_node('家宽'):
+				pytest.fail('签到 must not run after a proxy-node switch failure')

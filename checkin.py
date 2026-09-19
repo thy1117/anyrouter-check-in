@@ -44,7 +44,7 @@ from utils.browser import (
 from utils.config import AccountConfig, AppConfig, load_accounts_config
 from utils.debug import debug_print, is_debug_enabled
 from utils.notify import notify
-from utils.proxy import active_proxy_node, get_playwright_proxy, get_proxy_server
+from utils.proxy import ProxyNodeSwitchError, active_proxy_node, get_playwright_proxy, get_proxy_server
 
 load_dotenv()
 
@@ -1644,7 +1644,29 @@ async def run_check_in_in_page(
 			await browser.close()
 
 
-async def check_in_account(account: AccountConfig, account_index: int, app_config: AppConfig):
+def resolve_account_proxy_node(account: AccountConfig, provider_config, provider_account_index: int) -> str | None:
+	"""解析账号节点：账号显式配置 > provider 固定节点 > provider 顺序节点池。"""
+	if account.proxy_node:
+		return account.proxy_node
+	if provider_config.proxy_node:
+		return provider_config.proxy_node
+	if provider_config.proxy_nodes is None:
+		return None
+	if provider_account_index >= len(provider_config.proxy_nodes):
+		raise ValueError(
+			f'Provider "{account.provider}" account #{provider_account_index + 1} has no dedicated proxy node '
+			f'(configured: {len(provider_config.proxy_nodes)})'
+		)
+	return provider_config.proxy_nodes[provider_account_index]
+
+
+async def check_in_account(
+	account: AccountConfig,
+	account_index: int,
+	app_config: AppConfig,
+	*,
+	provider_account_index: int = 0,
+):
 	"""为单个账号执行签到操作"""
 	account_name = account.get_display_name(account_index)
 	print(f'\n[PROCESSING] Starting to process {account_name}')
@@ -1657,9 +1679,20 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
 
-	target_proxy_node = account.proxy_node or provider_config.proxy_node
-	with active_proxy_node(target_proxy_node, account_name=account_name):
-		return await _run_account_checkin(account, account_name, provider_config)
+	try:
+		target_proxy_node = resolve_account_proxy_node(account, provider_config, provider_account_index)
+	except ValueError as exc:
+		error = str(exc)
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
+
+	try:
+		with active_proxy_node(target_proxy_node, account_name=account_name):
+			return await _run_account_checkin(account, account_name, provider_config)
+	except ProxyNodeSwitchError as exc:
+		error = str(exc)
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
 
 
 async def _run_account_checkin(account: AccountConfig, account_name: str, provider_config):
@@ -1918,11 +1951,19 @@ async def main():
 	account_check_in_details = {}
 	need_notify = False
 	balance_changed = False
+	provider_account_counts: dict[str, int] = {}
 
 	for i, account in enumerate(accounts):
 		account_key = f'account_{i + 1}'
+		provider_account_index = provider_account_counts.get(account.provider, 0)
+		provider_account_counts[account.provider] = provider_account_index + 1
 		try:
-			success, user_info_before, user_info_after = await check_in_account(account, i, app_config)
+			success, user_info_before, user_info_after = await check_in_account(
+				account,
+				i,
+				app_config,
+				provider_account_index=provider_account_index,
+			)
 			if success:
 				success_count += 1
 

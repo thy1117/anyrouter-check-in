@@ -12,6 +12,10 @@ from typing import Generator
 from utils.debug import debug_print
 
 
+class ProxyNodeSwitchError(RuntimeError):
+	"""Mihomo 未能切到账号指定节点时抛出，防止账号误用其他出口。"""
+
+
 def get_proxy_server(*, use_proxy: bool = True) -> str | None:
 	"""按平台配置读取 CHECKIN_PROXY_URL；use_proxy=False 时不返回代理地址。"""
 	if not use_proxy:
@@ -83,7 +87,7 @@ def active_proxy_node(node_name: str | None, *, account_name: str = '') -> Gener
 	if switched:
 		print(f'[INFO] {prefix}Switched proxy node to "{node_name}"')
 	else:
-		debug_print(f'[WARN] {prefix}Failed to switch proxy node to "{node_name}"')
+		raise ProxyNodeSwitchError(f'{prefix}Failed to switch proxy node to "{node_name}"')
 
 	try:
 		yield
