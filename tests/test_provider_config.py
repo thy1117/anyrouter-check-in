@@ -510,3 +510,4 @@ def test_ruachat_provider_uses_newapi_checkin_without_turnstile(monkeypatch):
 	assert provider.bypass_method is None
 	assert provider.request_in_page is False
 	assert provider.http2 is True
+	assert provider.persist_profile is True

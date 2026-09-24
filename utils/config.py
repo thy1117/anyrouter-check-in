@@ -455,6 +455,8 @@ class AppConfig:
 				auth_refresh_path='/api/user/auth/refresh',
 				api_user_key='New-Api-User',
 				use_proxy=False,
+				# Reuse the Authentik login across runs; a fresh login each run exhausts AUTH_SESSION_LIMIT.
+				persist_profile=True,
 			),
 		}
 
