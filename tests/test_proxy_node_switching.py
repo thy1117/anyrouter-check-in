@@ -70,6 +70,31 @@ def test_provider_proxy_nodes_fail_when_accounts_exceed_dedicated_nodes():
 		resolve_account_proxy_node(account, provider, 1)
 
 
+def test_sheapi_proxy_node_assigns_oracle_sg_to_sheapi_5550():
+	provider = ProviderConfig(
+		name='sheapi',
+		domain='https://www.sheapi.top',
+		proxy_nodes=['railway-sg', '家宽', 'oracle-sg'],
+	)
+	acc1 = AccountConfig(cookies=None, provider='sheapi', name='SheAPI-112581647', proxy_node='railway-sg')
+	acc2 = AccountConfig(cookies=None, provider='sheapi', name='SheApi-5496', proxy_node='家宽')
+	acc3 = AccountConfig(cookies=None, provider='sheapi', name='SheApi-5550', proxy_node='railway-sg')
+
+	assert resolve_account_proxy_node(acc1, provider, 0) == 'railway-sg'
+	assert resolve_account_proxy_node(acc2, provider, 1) == '家宽'
+	# SheApi-5550 is redirected to oracle-sg to avoid same-IP rate limiting
+	assert resolve_account_proxy_node(acc3, provider, 2) == 'oracle-sg'
+
+
+def test_resolve_account_proxy_node_normalizes_aliases():
+	provider = ProviderConfig(name='custom', domain='https://example.com')
+	acc_oracle = AccountConfig(cookies=None, provider='custom', name='A1', proxy_node='oracle')
+	acc_railway = AccountConfig(cookies=None, provider='custom', name='A2', proxy_node='railway')
+
+	assert resolve_account_proxy_node(acc_oracle, provider, 0) == 'oracle-sg'
+	assert resolve_account_proxy_node(acc_railway, provider, 1) == 'railway-sg' 
+
+
 def test_get_current_mihomo_node_success():
 	fake_response = MagicMock()
 	fake_response.status = 200

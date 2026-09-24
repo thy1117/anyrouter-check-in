@@ -1644,12 +1644,26 @@ async def run_check_in_in_page(
 			await browser.close()
 
 
+NODE_ALIASES = {
+	'oracle': 'oracle-sg',
+	'oracle_sg': 'oracle-sg',
+	'oraclesg': 'oracle-sg',
+	'railway': 'railway-sg',
+	'railway_sg': 'railway-sg',
+	'railwaysg': 'railway-sg',
+}
+
+
 def resolve_account_proxy_node(account: AccountConfig, provider_config, provider_account_index: int) -> str | None:
 	"""解析账号节点：账号显式配置 > provider 固定节点 > provider 顺序节点池。"""
-	if account.proxy_node:
-		return account.proxy_node
-	if provider_config.proxy_node:
-		return provider_config.proxy_node
+	# SheApi 多账号出口保护：SheApi-5550 若误配为 railway-sg 则修正为 oracle-sg，避免与 SheAPI-112581647 撞车
+	if account.provider == 'sheapi' and account.name == 'SheApi-5550' and account.proxy_node in ('railway-sg', 'railway', None):
+		return 'oracle-sg'
+
+	raw_node = account.proxy_node or provider_config.proxy_node
+	if raw_node:
+		return NODE_ALIASES.get(raw_node, raw_node)
+
 	if provider_config.proxy_nodes is None:
 		return None
 	if provider_account_index >= len(provider_config.proxy_nodes):
@@ -1657,7 +1671,8 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 			f'Provider "{account.provider}" account #{provider_account_index + 1} has no dedicated proxy node '
 			f'(configured: {len(provider_config.proxy_nodes)})'
 		)
-	return provider_config.proxy_nodes[provider_account_index]
+	node = provider_config.proxy_nodes[provider_account_index]
+	return NODE_ALIASES.get(node, node)
 
 
 async def check_in_account(
@@ -1737,6 +1752,20 @@ async def _run_account_checkin(account: AccountConfig, account_name: str, provid
 			auth_method = 'email/password'
 			if resolved_access_token:
 				auth_method = 'email/password + bearer token'
+		elif account.cookies or account.has_access_token():
+			print(f'[WARN] {account_name}: Email/password login failed; falling back to configured cookies/token')
+			user_cookies = parse_cookies(account.cookies) if account.cookies else {}
+			if provider_config.request_in_page:
+				all_cookies = user_cookies
+			else:
+				all_cookies = (
+					await get_waf_cookies_with_browser(account_name, provider_config, user_cookies=user_cookies)
+					if provider_config.bypass_method == 'waf_cookies'
+					else user_cookies
+				)
+			resolved_api_user = account.api_user
+			resolved_access_token = account.access_token
+			auth_method = 'cookies/token (fallback)'
 		else:
 			error = 'Email/password login failed; stale session cookies were not used'
 			print(f'[FAILED] {account_name}: {error}')

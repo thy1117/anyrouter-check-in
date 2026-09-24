@@ -162,6 +162,7 @@ def test_sheapi_provider_uses_local_captcha_ocr(monkeypatch):
 	assert provider.checkin_captcha is True
 	assert provider.captcha_path == '/api/captcha?scene=checkin'
 	assert provider.use_proxy is True
+	assert provider.proxy_nodes == ['railway-sg', '家宽', 'oracle-sg']
 
 
 def test_aiaiai_provider_uses_cookie_auth(monkeypatch):

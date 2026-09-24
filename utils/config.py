@@ -258,6 +258,8 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=True,
 				checkin_captcha=True,
+				# 三个 SheApi 账号按加载顺序分别使用独立出口，避免同一 IP 多账号签到。
+				proxy_nodes=['railway-sg', '家宽', 'oracle-sg'],
 			),
 			'aiaiai': ProviderConfig(
 				name='aiaiai',
