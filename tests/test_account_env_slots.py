@@ -271,3 +271,38 @@ def test_third_qingjiu_slot_appends_account_without_clobbering(monkeypatch):
 		'second-test-password',
 		'third-test-password',
 	]
+
+
+def test_disabled_provider_skips_legacy_qingjiu_accounts_without_clobbering_other_sites(monkeypatch):
+	_clear(monkeypatch)
+	monkeypatch.setenv('CHECKIN_DISABLED_PROVIDERS', ' qingjiu ')
+	monkeypatch.setenv(
+		'ANYROUTER_ACCOUNTS',
+		json.dumps(
+			[
+				{'name': 'AnyRouter', 'cookies': {'session': 'keep'}, 'api_user': '1'},
+				{'name': '清酒-thy1117', 'provider': 'qingjiu', 'username': 'a', 'password': 'secret'},
+				{'name': '清酒-thy1118', 'provider': 'qingjiu', 'username': 'b', 'password': 'secret'},
+			]
+		),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_4',
+		json.dumps([{'name': '清酒-thy1117', 'provider': 'qingjiu', 'username': 'a', 'password': 'updated'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_16',
+		json.dumps([{'name': '小白Code-1', 'provider': 'xiaobai', 'access_token': 'test-access-1'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_41',
+		json.dumps([{'name': '清酒-thy1119', 'provider': 'qingjiu', 'username': 'c', 'password': 'secret'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_42',
+		json.dumps([{'name': '小白Code-2', 'provider': 'xiaobai', 'access_token': 'test-access-2'}]),
+	)
+
+	accounts = load_accounts_config()
+	assert [account.name for account in accounts] == ['AnyRouter', '小白Code-1', '小白Code-2']
+	assert [account.provider for account in accounts] == ['anyrouter', 'xiaobai', 'xiaobai']

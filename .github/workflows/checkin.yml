@@ -16,6 +16,7 @@ jobs:
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: 1
       CHECKIN_TIMEZONE: Asia/Shanghai
+      CHECKIN_DISABLED_PROVIDERS: qingjiu
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
     steps:

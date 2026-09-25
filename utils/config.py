@@ -600,12 +600,20 @@ def load_accounts_config() -> list[AccountConfig] | None:
 		return None
 
 	try:
+		disabled_providers = {
+			name.strip().lower() for name in os.getenv('CHECKIN_DISABLED_PROVIDERS', '').split(',') if name.strip()
+		}
 		merged_account_sources = []
 		account_indexes_by_name = {}
 		for account_dict in account_sources:
 			if not isinstance(account_dict, dict):
 				print('ERROR: Account configuration format is incorrect')
 				return None
+
+			provider = account_dict.get('provider', 'anyrouter')
+			if isinstance(provider, str) and provider.strip().lower() in disabled_providers:
+				print(f'[INFO] Skipping account from disabled provider "{provider}"')
+				continue
 
 			name = account_dict.get('name')
 			if name and name in account_indexes_by_name:
