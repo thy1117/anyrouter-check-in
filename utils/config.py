@@ -186,7 +186,8 @@ class AppConfig:
 				domain='https://big-model.smart-agi.com',
 				api_style='sub2api',
 				login_path='/login',
-				login_api_path='/api/v1/auth/login',
+				# 登录已迁到 v2，refresh/profile/daily-checkin 仍在 v1。
+				login_api_path='/api/v2/auth/login',
 				sign_in_path='/api/v1/user/daily-checkin',
 				user_info_path='/api/v1/user/profile',
 				auth_refresh_path='/api/v1/auth/refresh',

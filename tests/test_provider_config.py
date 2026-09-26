@@ -95,7 +95,7 @@ def test_twinkle_sub2api_provider_is_built_in(monkeypatch):
 
 	assert provider.api_style == 'sub2api'
 	assert provider.domain == 'https://big-model.smart-agi.com'
-	assert provider.login_api_path == '/api/v1/auth/login'
+	assert provider.login_api_path == '/api/v2/auth/login'
 	assert provider.sign_in_path == '/api/v1/user/daily-checkin'
 	assert provider.user_info_path == '/api/v1/user/profile'
 	assert provider.use_proxy is True
