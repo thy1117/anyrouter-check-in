@@ -42,9 +42,7 @@ class ProviderConfig:
 		if isinstance(self.proxy_nodes, str):
 			self.proxy_nodes = [self.proxy_nodes]
 		if self.proxy_nodes is not None:
-			self.proxy_nodes = [
-				node.strip() for node in self.proxy_nodes if isinstance(node, str) and node.strip()
-			]
+			self.proxy_nodes = [node.strip() for node in self.proxy_nodes if isinstance(node, str) and node.strip()]
 
 		if self.proxy_node:
 			self.proxy_node = self.proxy_node.strip() or None
@@ -259,8 +257,8 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=True,
 				checkin_captcha=True,
-				# 三个 SheApi 账号按加载顺序分别使用独立出口，避免同一 IP 多账号签到。
-				proxy_nodes=['railway-sg', '家宽', 'oracle-sg'],
+				# SheApi 账号按加载顺序分别使用独立出口，避免同一 IP 多账号签到。
+				proxy_nodes=['railway-sg', '家宽', 'oracle-sg', 'railway-sg', '家宽'],
 			),
 			'aiaiai': ProviderConfig(
 				name='aiaiai',

@@ -74,7 +74,7 @@ def test_sheapi_proxy_node_assigns_oracle_sg_to_sheapi_5550():
 	provider = ProviderConfig(
 		name='sheapi',
 		domain='https://www.sheapi.top',
-		proxy_nodes=['railway-sg', '家宽', 'oracle-sg'],
+		proxy_nodes=['railway-sg', '家宽', 'oracle-sg', 'railway-sg', '家宽'],
 	)
 	acc1 = AccountConfig(cookies=None, provider='sheapi', name='SheAPI-112581647', proxy_node='railway-sg')
 	acc2 = AccountConfig(cookies=None, provider='sheapi', name='SheApi-5496', proxy_node='家宽')
@@ -92,7 +92,7 @@ def test_resolve_account_proxy_node_normalizes_aliases():
 	acc_railway = AccountConfig(cookies=None, provider='custom', name='A2', proxy_node='railway')
 
 	assert resolve_account_proxy_node(acc_oracle, provider, 0) == 'oracle-sg'
-	assert resolve_account_proxy_node(acc_railway, provider, 1) == 'railway-sg' 
+	assert resolve_account_proxy_node(acc_railway, provider, 1) == 'railway-sg'
 
 
 def test_get_current_mihomo_node_success():
