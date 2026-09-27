@@ -2041,6 +2041,8 @@ async def main():
 
 					account_check_in_details[account_key] = {
 						'name': account.get_display_name(i),
+						'provider': account.provider,
+						'index': i,
 						'before_quota': before_quota,
 						'before_used': before_used,
 						'after_quota': after_quota,
@@ -2106,7 +2108,13 @@ async def main():
 			summary.extend(['', '✅ 独立签到成功', '\n'.join(check_in_success_content)])
 		balance_lines = [
 			format_check_in_notification(account_check_in_details[key])
-			for key in sorted(account_check_in_details, key=lambda value: int(value.split('_')[1]))
+			for key in sorted(
+				account_check_in_details,
+				key=lambda k: (
+					account_check_in_details[k].get('provider', ''),
+					account_check_in_details[k].get('index', 0),
+				),
+			)
 		]
 		if balance_lines:
 			summary.extend(['', '💰 余额明细', '\n'.join(balance_lines)])
