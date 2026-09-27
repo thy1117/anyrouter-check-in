@@ -257,8 +257,8 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=True,
 				checkin_captcha=True,
-				# SheApi 账号分配 5 个来自订阅的不同独立出口节点，彻底避免同一 IP 签到受限
-				proxy_nodes=['Fast-B1-1', 'US-D1-1', 'JP-Dedicated-B1-1', 'TW-IPv6-P1-1', 'Balancer-B1-1'],
+				# SheApi 账号按加载顺序自动分配 glados 独立出口节点，彻底避免同一 IP 限制
+				proxy_nodes=['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1'],
 			),
 			'aiaiai': ProviderConfig(
 				name='aiaiai',
@@ -294,10 +294,9 @@ class AppConfig:
 				user_info_path='/api/v1/auth/me',
 				auth_refresh_path='/auth/refresh',
 				api_user_key='',
-				# token.dialoguedui.com returns 502 through the default oracle-sg
-				# exit; pin Xiaobai traffic to the railway-sg node instead.
+				# token.dialoguedui.com 使用 glados 独立节点池，5个账号自动分配5个不同出口
 				use_proxy=True,
-				proxy_node='railway-sg',
+				proxy_nodes=['JP-Dedicated-B1-1', 'Fast-B1-3', 'US-D1-2', 'Balancer-B1-2', 'TW-IPv6-P1-2'],
 			),
 			'ciyuan': ProviderConfig(
 				name='ciyuan',
