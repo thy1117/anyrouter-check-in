@@ -942,18 +942,21 @@ def run_xiaobai_check_in(
 			status_url = f'{provider_config.domain}{provider_config.check_in_status_path}'
 			status_response = request('GET', status_url)
 			status, status_error = _xiaobai_response_data(status_response, account_name, 'Check-in status request')
-			if status is None:
-				error = last_authentication_error or status_error or 'Check-in status request failed'
-				return False, None, attach_check_in_error(None, error)
-			if status.get('signedToday') is True:
+			if status is not None and status.get('signedToday') is True:
 				print(f'[SUCCESS] {account_name}: Already checked in today')
 				return True, None, None
 
-			config = status.get('config')
-			if isinstance(config, dict) and config.get('enabled') is False:
-				error = 'Daily check-in is currently disabled'
-				print(f'[FAILED] {account_name}: {error}')
-				return False, None, attach_check_in_error(None, error)
+			if status is not None:
+				config = status.get('config')
+				if isinstance(config, dict) and config.get('enabled') is False:
+					error = 'Daily check-in is currently disabled'
+					print(f'[FAILED] {account_name}: {error}')
+					return False, None, attach_check_in_error(None, error)
+			elif status_error:
+				# Status is only an optimization. The web page treats the POST as
+				# authoritative and idempotent, so a transient GET 502 must not
+				# prevent the actual check-in attempt.
+				print(f'[WARN] {account_name}: Status lookup failed; attempting check-in directly')
 
 			print(f'[NETWORK] {account_name}: Executing Xiaobai daily check-in')
 			check_in_url = f'{provider_config.domain}{provider_config.sign_in_path}'
