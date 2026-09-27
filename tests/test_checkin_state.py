@@ -193,7 +193,24 @@ async def test_turnstile_flow_sends_api_user_header(monkeypatch):
 	assert all(headers['New-Api-User'] == '4703' for _, _, headers in requests)
 
 
-def test_format_check_in_notification_unchanged_account_is_compact():
+def test_balance_lines_grouped_by_provider():
+	from checkin import format_check_in_notification
+	details = {
+		'account_1': {'name': 'Twinkle-1', 'provider': 'twinkle', 'index': 0, 'after_quota': 10, 'check_in_reward': 0, 'usage_increase': 0},
+		'account_2': {'name': 'Xiaobai-1', 'provider': 'xiaobai', 'index': 1, 'after_quota': 5, 'check_in_reward': 0, 'usage_increase': 0},
+		'account_3': {'name': 'Twinkle-2', 'provider': 'twinkle', 'index': 2, 'after_quota': 20, 'check_in_reward': 0, 'usage_increase': 0},
+		'account_4': {'name': 'Xiaobai-2', 'provider': 'xiaobai', 'index': 3, 'after_quota': 15, 'check_in_reward': 0, 'usage_increase': 0},
+	}
+	sorted_keys = sorted(
+		details,
+		key=lambda k: (details[k].get('provider', ''), details[k].get('index', 0)),
+	)
+	lines = [format_check_in_notification(details[k]) for k in sorted_keys]
+	assert lines[0].startswith('✅ Twinkle-1')
+	assert lines[1].startswith('✅ Twinkle-2')
+	assert lines[2].startswith('✅ Xiaobai-1')
+	assert lines[3].startswith('✅ Xiaobai-2')
+
 	from checkin import format_check_in_notification
 
 	message = format_check_in_notification(
