@@ -212,6 +212,7 @@ def test_xiaobai_provider_uses_external_check_in_api(monkeypatch):
 	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
 	assert provider.api_user_key == ''
 	assert provider.use_proxy is True
+	assert provider.proxy_node == 'railway-sg'
 
 
 def test_gorouter_provider_uses_pat_and_turnstile(monkeypatch):

@@ -295,9 +295,10 @@ class AppConfig:
 				user_info_path='/api/v1/auth/me',
 				auth_refresh_path='/api/v1/auth/refresh',
 				api_user_key='',
-				# token.dialoguedui.com returns 502/403 from GitHub Actions' direct egress;
-				# route the independent check-in API through the workflow's Mihomo proxy.
+				# token.dialoguedui.com returns 502 through the default oracle-sg
+				# exit; pin Xiaobai traffic to the railway-sg node instead.
 				use_proxy=True,
+				proxy_node='railway-sg',
 			),
 			'ciyuan': ProviderConfig(
 				name='ciyuan',
