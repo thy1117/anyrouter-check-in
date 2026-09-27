@@ -2016,7 +2016,7 @@ async def main():
 				need_notify = True
 				account_name = account.get_display_name(i)
 				print(f'[NOTIFY] {account_name} failed, will send notification')
-			elif account.provider in ('xiaobai', 'sheapi'):
+			elif account.provider in ('xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle'):
 				check_in_success_content.append(f'✅ {account.get_display_name(i)} · 今日已签到')
 
 			if user_info_after and user_info_after.get('success'):
@@ -2113,7 +2113,8 @@ async def main():
 					account_check_in_details[k].get('index', 0),
 				),
 			)
-			if account_check_in_details[key].get('provider') != 'sheapi'
+			if account_check_in_details[key].get('provider')
+			not in ('xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle')
 		]
 		if balance_lines:
 			summary.extend(['', '💰 余额明细', '\n'.join(balance_lines)])

@@ -195,11 +195,40 @@ async def test_turnstile_flow_sends_api_user_header(monkeypatch):
 
 def test_balance_lines_grouped_by_provider():
 	from checkin import format_check_in_notification
+
 	details = {
-		'account_1': {'name': 'Twinkle-1', 'provider': 'twinkle', 'index': 0, 'after_quota': 10, 'check_in_reward': 0, 'usage_increase': 0},
-		'account_2': {'name': 'Xiaobai-1', 'provider': 'xiaobai', 'index': 1, 'after_quota': 5, 'check_in_reward': 0, 'usage_increase': 0},
-		'account_3': {'name': 'Twinkle-2', 'provider': 'twinkle', 'index': 2, 'after_quota': 20, 'check_in_reward': 0, 'usage_increase': 0},
-		'account_4': {'name': 'Xiaobai-2', 'provider': 'xiaobai', 'index': 3, 'after_quota': 15, 'check_in_reward': 0, 'usage_increase': 0},
+		'account_1': {
+			'name': 'Twinkle-1',
+			'provider': 'twinkle',
+			'index': 0,
+			'after_quota': 10,
+			'check_in_reward': 0,
+			'usage_increase': 0,
+		},
+		'account_2': {
+			'name': 'Xiaobai-1',
+			'provider': 'xiaobai',
+			'index': 1,
+			'after_quota': 5,
+			'check_in_reward': 0,
+			'usage_increase': 0,
+		},
+		'account_3': {
+			'name': 'Twinkle-2',
+			'provider': 'twinkle',
+			'index': 2,
+			'after_quota': 20,
+			'check_in_reward': 0,
+			'usage_increase': 0,
+		},
+		'account_4': {
+			'name': 'Xiaobai-2',
+			'provider': 'xiaobai',
+			'index': 3,
+			'after_quota': 15,
+			'check_in_reward': 0,
+			'usage_increase': 0,
+		},
 	}
 	sorted_keys = sorted(
 		details,
