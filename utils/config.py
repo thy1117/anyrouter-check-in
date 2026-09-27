@@ -258,7 +258,7 @@ class AppConfig:
 				use_proxy=True,
 				checkin_captcha=True,
 				# SheApi 账号按加载顺序自动分配 glados 独立出口节点，彻底避免同一 IP 限制
-				proxy_nodes=['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'JP-Dedicated-B1-2'],
+				proxy_nodes=['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'US-D1-3'],
 			),
 			'aiaiai': ProviderConfig(
 				name='aiaiai',

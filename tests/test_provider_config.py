@@ -162,7 +162,7 @@ def test_sheapi_provider_uses_local_captcha_ocr(monkeypatch):
 	assert provider.checkin_captcha is True
 	assert provider.captcha_path == '/api/captcha?scene=checkin'
 	assert provider.use_proxy is True
-	assert provider.proxy_nodes == ['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'JP-Dedicated-B1-2']
+	assert provider.proxy_nodes == ['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'US-D1-3']
 
 
 def test_aiaiai_provider_uses_cookie_auth(monkeypatch):

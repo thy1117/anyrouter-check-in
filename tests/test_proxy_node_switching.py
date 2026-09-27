@@ -74,7 +74,7 @@ def test_sheapi_proxy_nodes_assigned_in_order():
 	provider = ProviderConfig(
 		name='sheapi',
 		domain='https://www.sheapi.top',
-		proxy_nodes=['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'JP-Dedicated-B1-2'],
+		proxy_nodes=['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'US-D1-3'],
 	)
 	accs = [
 		AccountConfig(cookies=None, provider='sheapi', name=f'SheApi-{name}')
