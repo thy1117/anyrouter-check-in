@@ -295,7 +295,9 @@ class AppConfig:
 				user_info_path='/api/v1/auth/me',
 				auth_refresh_path='/api/v1/auth/refresh',
 				api_user_key='',
-				use_proxy=False,
+				# token.dialoguedui.com returns 502/403 from GitHub Actions' direct egress;
+				# route the independent check-in API through the workflow's Mihomo proxy.
+				use_proxy=True,
 			),
 			'ciyuan': ProviderConfig(
 				name='ciyuan',

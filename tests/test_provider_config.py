@@ -211,7 +211,7 @@ def test_xiaobai_provider_uses_external_check_in_api(monkeypatch):
 	assert provider.check_in_status_path == '/checkin/api/status'
 	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
 	assert provider.api_user_key == ''
-	assert provider.use_proxy is False
+	assert provider.use_proxy is True
 
 
 def test_gorouter_provider_uses_pat_and_turnstile(monkeypatch):
