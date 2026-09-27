@@ -207,9 +207,10 @@ def test_xiaobai_provider_uses_external_check_in_api(monkeypatch):
 
 	assert provider.api_style == 'xiaobai'
 	assert provider.domain == 'https://token.dialoguedui.com'
+	assert provider.login_api_path == '/auth/login'
 	assert provider.sign_in_path == '/checkin/api/checkin'
 	assert provider.check_in_status_path == '/checkin/api/status'
-	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
+	assert provider.auth_refresh_path == '/auth/refresh'
 	assert provider.api_user_key == ''
 	assert provider.use_proxy is True
 	assert provider.proxy_node == 'railway-sg'

@@ -35,7 +35,7 @@ class FakeClient:
 		self.calls.append(
 			{'method': 'POST', 'url': url, 'headers': (headers or {}).copy(), 'json': json, 'timeout': timeout}
 		)
-		if url.endswith('/api/v1/auth/refresh'):
+		if url.endswith('/auth/refresh'):
 			return next(self.refresh_responses)
 		return next(self.checkin_responses)
 
@@ -118,7 +118,7 @@ def test_401_refreshes_access_token_and_retries_status(monkeypatch):
 	)
 
 	assert result == (True, None, None)
-	assert client.calls[1]['url'] == 'https://token.dialoguedui.com/api/v1/auth/refresh'
+	assert client.calls[1]['url'] == 'https://token.dialoguedui.com/auth/refresh'
 	assert client.calls[2]['headers']['Authorization'] == 'Bearer rotated-access'
 
 
@@ -137,7 +137,7 @@ def test_refresh_token_only_can_start_check_in(monkeypatch):
 	result = run_xiaobai_check_in(account(refresh_token='refresh-secret'), '小白Code', provider())
 
 	assert result == (True, None, None)
-	assert client.calls[0]['url'] == 'https://token.dialoguedui.com/api/v1/auth/refresh'
+	assert client.calls[0]['url'] == 'https://token.dialoguedui.com/auth/refresh'
 	assert client.calls[1]['headers']['Authorization'] == 'Bearer rotated-access'
 
 

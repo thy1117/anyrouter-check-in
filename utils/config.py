@@ -289,11 +289,12 @@ class AppConfig:
 				domain='https://token.dialoguedui.com',
 				api_style='xiaobai',
 				login_path='/login',
-				login_api_path='/api/v1/auth/login',
+				# The current Xiaobai frontend uses the shared Sub2API login endpoint.
+				login_api_path='/auth/login',
 				sign_in_path='/checkin/api/checkin',
 				check_in_status_path='/checkin/api/status',
 				user_info_path='/api/v1/auth/me',
-				auth_refresh_path='/api/v1/auth/refresh',
+				auth_refresh_path='/auth/refresh',
 				api_user_key='',
 				# token.dialoguedui.com returns 502 through the default oracle-sg
 				# exit; pin Xiaobai traffic to the railway-sg node instead.
