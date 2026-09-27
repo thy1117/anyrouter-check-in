@@ -1669,22 +1669,27 @@ NODE_ALIASES = {
 
 
 def resolve_account_proxy_node(account: AccountConfig, provider_config, provider_account_index: int) -> str | None:
-	"""解析账号节点：账号显式配置 > provider 固定节点 > provider 顺序节点池。"""
-	# SheApi 多账号出口保护：按 provider_account_index 顺序自动分配专用出口
+	"""解析账号节点：账号显式配置 > provider 固定节点 > provider 顺序节点池 > 全局 GLaDOS 节点池。"""
+	from utils.config import DEFAULT_GLADOS_PROXY_NODES
 
 	raw_node = account.proxy_node or provider_config.proxy_node
 	if raw_node:
 		return NODE_ALIASES.get(raw_node, raw_node)
 
-	if provider_config.proxy_nodes is None:
-		return None
-	if provider_account_index >= len(provider_config.proxy_nodes):
-		raise ValueError(
-			f'Provider "{account.provider}" account #{provider_account_index + 1} has no dedicated proxy node '
-			f'(configured: {len(provider_config.proxy_nodes)})'
-		)
-	node = provider_config.proxy_nodes[provider_account_index]
-	return NODE_ALIASES.get(node, node)
+	if provider_config.proxy_nodes is not None:
+		if provider_account_index >= len(provider_config.proxy_nodes):
+			raise ValueError(
+				f'Provider "{account.provider}" account #{provider_account_index + 1} has no dedicated proxy node '
+				f'(configured: {len(provider_config.proxy_nodes)})'
+			)
+		node = provider_config.proxy_nodes[provider_account_index]
+		return NODE_ALIASES.get(node, node)
+
+	# 默认：如果同站点多账号（provider_account_index > 0），自动分配不同 GLaDOS 节点
+	if provider_account_index > 0:
+		node = DEFAULT_GLADOS_PROXY_NODES[provider_account_index % len(DEFAULT_GLADOS_PROXY_NODES)]
+		return NODE_ALIASES.get(node, node)
+	return None
 
 
 async def check_in_account(
@@ -2016,7 +2021,7 @@ async def main():
 				need_notify = True
 				account_name = account.get_display_name(i)
 				print(f'[NOTIFY] {account_name} failed, will send notification')
-			elif account.provider in ('xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle'):
+			elif account.provider in ('xiaobai', 'sheapi', 'superapi', 'aiaiai', 'nianhua', 'twinkle'):
 				check_in_success_items.append(
 					{
 						'provider': account.provider,
@@ -2110,7 +2115,7 @@ async def main():
 			summary.extend(['', '❌ 失败详情', '\n'.join(notification_content)])
 		if check_in_success_items:
 			summary.extend(['', '✅ 独立签到成功'])
-			provider_order = ['xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle']
+			provider_order = ['xiaobai', 'sheapi', 'superapi', 'aiaiai', 'nianhua', 'twinkle']
 			grouped_items = {}
 			for item in check_in_success_items:
 				p = item['provider']
@@ -2139,7 +2144,7 @@ async def main():
 				),
 			)
 			if account_check_in_details[key].get('provider')
-			not in ('xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle')
+			not in ('xiaobai', 'sheapi', 'superapi', 'aiaiai', 'nianhua', 'twinkle')
 		]
 		if balance_lines:
 			summary.extend(['', '💰 余额明细', '\n'.join(balance_lines)])
