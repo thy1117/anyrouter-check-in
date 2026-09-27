@@ -2021,6 +2021,7 @@ async def main():
 					{
 						'provider': account.provider,
 						'name': account.get_display_name(i),
+						'account_key': account_key,
 					}
 				)
 
@@ -2109,12 +2110,11 @@ async def main():
 			summary.extend(['', '❌ 失败详情', '\n'.join(notification_content)])
 		if check_in_success_items:
 			summary.extend(['', '✅ 独立签到成功'])
-			# 按站点顺序分组：小白Code、SheApi、AIAIAI、Nianhua、Twinkle 或其他
 			provider_order = ['xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle']
 			grouped_items = {}
 			for item in check_in_success_items:
 				p = item['provider']
-				grouped_items.setdefault(p, []).append(item['name'])
+				grouped_items.setdefault(p, []).append(item)
 
 			sorted_providers = sorted(
 				grouped_items.keys(), key=lambda x: provider_order.index(x) if x in provider_order else 999
@@ -2123,8 +2123,12 @@ async def main():
 				if idx > 0:
 					summary.append('')
 				# 站内账号自然排序
-				for acc_name in sorted(grouped_items[p]):
-					summary.append(f'✅ {acc_name} · 今日已签到')
+				for item in sorted(grouped_items[p], key=lambda x: x['name']):
+					acc_key = item.get('account_key')
+					if acc_key and acc_key in account_check_in_details:
+						summary.append(format_check_in_notification(account_check_in_details[acc_key]))
+					else:
+						summary.append(f'✅ {item["name"]} · 今日已签到')
 		balance_lines = [
 			format_check_in_notification(account_check_in_details[key])
 			for key in sorted(
