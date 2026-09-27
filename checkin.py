@@ -913,8 +913,10 @@ def run_xiaobai_check_in(
 				for attempt in range(1, XIAOBAI_MAX_REQUEST_ATTEMPTS + 1):
 					response = send()
 					if (
-						response.status_code == 401 or response.status_code in XIAOBAI_RETRY_STATUS_CODES
-					) and refresh_token and not refresh_attempted:
+						(response.status_code == 401 or response.status_code in XIAOBAI_RETRY_STATUS_CODES)
+						and refresh_token
+						and not refresh_attempted
+					):
 						# The Xiaobai gateway sometimes reports an expired/invalid Bearer
 						# token as 502 instead of 401. Rotate once before retrying the
 						# request so old accounts do not fail indefinitely with a gateway error.
@@ -1668,9 +1670,7 @@ NODE_ALIASES = {
 
 def resolve_account_proxy_node(account: AccountConfig, provider_config, provider_account_index: int) -> str | None:
 	"""解析账号节点：账号显式配置 > provider 固定节点 > provider 顺序节点池。"""
-	# SheApi 多账号出口保护：SheApi-5550 若误配为 railway-sg 则修正为 oracle-sg，避免与 SheAPI-112581647 撞车
-	if account.provider == 'sheapi' and account.name == 'SheApi-5550' and account.proxy_node in ('railway-sg', 'railway', None):
-		return 'oracle-sg'
+	# SheApi 多账号出口保护：按 provider_account_index 顺序自动分配专用出口
 
 	raw_node = account.proxy_node or provider_config.proxy_node
 	if raw_node:
