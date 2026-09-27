@@ -900,9 +900,10 @@ def run_xiaobai_check_in(
 			headers['Authorization'] = f'Bearer {access_token}'
 
 			last_authentication_error: str | None = None
+			refresh_attempted = False
 
 			def request(method: str, url: str, *, body: dict | None = None):
-				nonlocal last_authentication_error, refresh_token
+				nonlocal last_authentication_error, refresh_token, refresh_attempted
 
 				def send():
 					if method == 'GET':
@@ -911,7 +912,15 @@ def run_xiaobai_check_in(
 
 				for attempt in range(1, XIAOBAI_MAX_REQUEST_ATTEMPTS + 1):
 					response = send()
-					if response.status_code == 401 and refresh_token:
+					if (
+						response.status_code == 401 or response.status_code in XIAOBAI_RETRY_STATUS_CODES
+					) and refresh_token and not refresh_attempted:
+						# The Xiaobai gateway sometimes reports an expired/invalid Bearer
+						# token as 502 instead of 401. Rotate once before retrying the
+						# request so old accounts do not fail indefinitely with a gateway error.
+						refresh_attempted = True
+						if response.status_code != 401:
+							print(f'[AUTH] {account_name}: Refreshing Bearer token after HTTP {response.status_code}')
 						new_access_token, new_refresh_token, refresh_error = _sub2api_refresh_token(
 							client,
 							account_name,
@@ -1979,6 +1988,7 @@ async def main():
 	success_count = 0
 	total_count = len(accounts)
 	notification_content = []
+	check_in_success_content = []
 	current_balances = {}
 	account_check_in_details = {}
 	need_notify = False
@@ -2006,6 +2016,10 @@ async def main():
 				need_notify = True
 				account_name = account.get_display_name(i)
 				print(f'[NOTIFY] {account_name} failed, will send notification')
+			elif account.provider == 'xiaobai':
+				# Xiaobai's independent API has no compatible dollar-balance
+				# response, so show successful accounts in a separate section.
+				check_in_success_content.append(f'✅ {account.get_display_name(i)} · 今日已签到')
 
 			if user_info_after and user_info_after.get('success'):
 				current_quota = user_info_after['quota']
@@ -2088,6 +2102,8 @@ async def main():
 			summary.append(f'❌ 失败：{failed_count} 个')
 		if notification_content:
 			summary.extend(['', '❌ 失败详情', '\n'.join(notification_content)])
+		if check_in_success_content:
+			summary.extend(['', '✅ 独立签到成功', '\n'.join(check_in_success_content)])
 		balance_lines = [
 			format_check_in_notification(account_check_in_details[key])
 			for key in sorted(account_check_in_details, key=lambda value: int(value.split('_')[1]))

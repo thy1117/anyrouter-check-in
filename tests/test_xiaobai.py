@@ -177,6 +177,32 @@ def test_status_502_retries_and_reports_final_error(monkeypatch):
 	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'GET', 'POST', 'POST', 'POST']
 
 
+def test_status_502_refreshes_token_and_retries_status(monkeypatch):
+	client = FakeClient(
+		get_responses=[
+			FakeResponse(502, {}),
+			FakeResponse(200, {'ok': True, 'data': {'signedToday': True}}),
+		],
+		refresh_responses=[
+			FakeResponse(
+				200,
+				{'code': 0, 'data': {'access_token': 'rotated-access', 'refresh_token': 'rotated-refresh'}},
+			)
+		],
+	)
+	install_client(monkeypatch, client)
+
+	result = run_xiaobai_check_in(
+		account(access_token='stale-access', refresh_token='refresh-secret'),
+		'小白Code',
+		provider(),
+	)
+
+	assert result == (True, None, None)
+	assert [call['method'] for call in client.calls] == ['GET', 'POST', 'GET']
+	assert client.calls[2]['headers']['Authorization'] == 'Bearer rotated-access'
+
+
 def test_status_502_still_attempts_idempotent_check_in(monkeypatch):
 	client = FakeClient(
 		get_responses=[FakeResponse(502, {}), FakeResponse(502, {}), FakeResponse(502, {})],
