@@ -1,5 +1,3 @@
-
-
 def test_independent_list_inclusion():
 	target_providers = ('xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle')
 	for provider in target_providers:
