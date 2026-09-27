@@ -70,20 +70,18 @@ def test_provider_proxy_nodes_fail_when_accounts_exceed_dedicated_nodes():
 		resolve_account_proxy_node(account, provider, 1)
 
 
-def test_sheapi_proxy_node_assigns_oracle_sg_to_sheapi_5550():
+def test_sheapi_proxy_nodes_assigned_in_order():
 	provider = ProviderConfig(
 		name='sheapi',
 		domain='https://www.sheapi.top',
-		proxy_nodes=['railway-sg', '家宽', 'oracle-sg', 'railway-sg', '家宽'],
+		proxy_nodes=['Fast-B1-1', 'US-D1-1', 'JP-Dedicated-B1-1', 'TW-IPv6-P1-1', 'Balancer-B1-1'],
 	)
-	acc1 = AccountConfig(cookies=None, provider='sheapi', name='SheAPI-112581647', proxy_node='railway-sg')
-	acc2 = AccountConfig(cookies=None, provider='sheapi', name='SheApi-5496', proxy_node='家宽')
-	acc3 = AccountConfig(cookies=None, provider='sheapi', name='SheApi-5550', proxy_node='railway-sg')
-
-	assert resolve_account_proxy_node(acc1, provider, 0) == 'railway-sg'
-	assert resolve_account_proxy_node(acc2, provider, 1) == '家宽'
-	# SheApi-5550 is redirected to oracle-sg to avoid same-IP rate limiting
-	assert resolve_account_proxy_node(acc3, provider, 2) == 'oracle-sg'
+	accs = [
+		AccountConfig(cookies=None, provider='sheapi', name=f'SheApi-{name}')
+		for name in ('112581647', 'thy1118', 'thy1119', 'thy1120', 'thy1121')
+	]
+	for idx, acc in enumerate(accs):
+		assert resolve_account_proxy_node(acc, provider, idx) == provider.proxy_nodes[idx]
 
 
 def test_resolve_account_proxy_node_normalizes_aliases():
