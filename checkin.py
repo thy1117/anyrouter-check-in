@@ -2016,9 +2016,7 @@ async def main():
 				need_notify = True
 				account_name = account.get_display_name(i)
 				print(f'[NOTIFY] {account_name} failed, will send notification')
-			elif account.provider == 'xiaobai':
-				# Xiaobai's independent API has no compatible dollar-balance
-				# response, so show successful accounts in a separate section.
+			elif account.provider in ('xiaobai', 'sheapi'):
 				check_in_success_content.append(f'✅ {account.get_display_name(i)} · 今日已签到')
 
 			if user_info_after and user_info_after.get('success'):
@@ -2115,6 +2113,7 @@ async def main():
 					account_check_in_details[k].get('index', 0),
 				),
 			)
+			if account_check_in_details[key].get('provider') != 'sheapi'
 		]
 		if balance_lines:
 			summary.extend(['', '💰 余额明细', '\n'.join(balance_lines)])
