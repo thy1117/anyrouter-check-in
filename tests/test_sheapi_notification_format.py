@@ -27,7 +27,7 @@ def test_independent_list_grouping_and_ordering_with_balance():
 
 	summary = []
 	summary.extend(['', '✅ 独立签到成功'])
-	provider_order = ['xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle']
+	provider_order = ['xiaobai', 'sheapi', 'superapi', 'aiaiai', 'nianhua', 'twinkle']
 	grouped_items = {}
 	for item in check_in_success_items:
 		p = item['provider']

@@ -9,6 +9,25 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Literal
 
+DEFAULT_GLADOS_PROXY_NODES = [
+	'Fast-B1-1',
+	'Balancer-B1-1',
+	'US-D1-1',
+	'TW-IPv6-P1-1',
+	'US-Balancer-N1-1',
+	'US-Netflix-N2-1',
+	'US-Dedicated-B1-1',
+	'JP-Dedicated-B1-1',
+	'US-X1-1',
+	'TW-X1-1',
+	'Fast-B1-2',
+	'Balancer-B1-2',
+	'US-D1-2',
+	'TW-IPv6-P1-2',
+	'US-Balancer-N1-2',
+	'US-Netflix-N2-2',
+]
+
 
 @dataclass
 class ProviderConfig:
@@ -26,7 +45,7 @@ class ProviderConfig:
 	api_user_key: str = 'new-api-user'
 	bypass_method: Literal['waf_cookies'] | None = None
 	waf_cookie_names: List[str] | None = None
-	use_proxy: bool = False
+	use_proxy: bool = True
 	proxy_node: str | None = None
 	proxy_nodes: List[str] | None = None
 	persist_profile: bool = False

@@ -306,3 +306,22 @@ def test_disabled_provider_skips_legacy_qingjiu_accounts_without_clobbering_othe
 	accounts = load_accounts_config()
 	assert [account.name for account in accounts] == ['AnyRouter', '小白Code-1', '小白Code-2']
 	assert [account.provider for account in accounts] == ['anyrouter', 'xiaobai', 'xiaobai']
+
+
+def test_superapi_second_slot_appends_account_without_clobbering(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_26',
+		json.dumps([{'name': 'SuperAPI-thy1117', 'provider': 'superapi', 'access_token': 't1', 'api_user': '8831'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_46',
+		json.dumps([{'name': 'SuperAPI-thy1118', 'provider': 'superapi', 'access_token': 't2', 'api_user': '12762'}]),
+	)
+
+	accounts = load_accounts_config()
+
+	assert [account.name for account in accounts] == ['SuperAPI-thy1117', 'SuperAPI-thy1118']
+	assert accounts[0].access_token == 't1'
+	assert accounts[1].access_token == 't2'
