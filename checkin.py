@@ -1988,7 +1988,7 @@ async def main():
 	success_count = 0
 	total_count = len(accounts)
 	notification_content = []
-	check_in_success_content = []
+	check_in_success_items = []
 	current_balances = {}
 	account_check_in_details = {}
 	need_notify = False
@@ -2017,7 +2017,12 @@ async def main():
 				account_name = account.get_display_name(i)
 				print(f'[NOTIFY] {account_name} failed, will send notification')
 			elif account.provider in ('xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle'):
-				check_in_success_content.append(f'✅ {account.get_display_name(i)} · 今日已签到')
+				check_in_success_items.append(
+					{
+						'provider': account.provider,
+						'name': account.get_display_name(i),
+					}
+				)
 
 			if user_info_after and user_info_after.get('success'):
 				current_quota = user_info_after['quota']
@@ -2102,8 +2107,24 @@ async def main():
 			summary.append(f'❌ 失败：{failed_count} 个')
 		if notification_content:
 			summary.extend(['', '❌ 失败详情', '\n'.join(notification_content)])
-		if check_in_success_content:
-			summary.extend(['', '✅ 独立签到成功', '\n'.join(check_in_success_content)])
+		if check_in_success_items:
+			summary.extend(['', '✅ 独立签到成功'])
+			# 按站点顺序分组：小白Code、SheApi、AIAIAI、Nianhua、Twinkle 或其他
+			provider_order = ['xiaobai', 'sheapi', 'aiaiai', 'nianhua', 'twinkle']
+			grouped_items = {}
+			for item in check_in_success_items:
+				p = item['provider']
+				grouped_items.setdefault(p, []).append(item['name'])
+
+			sorted_providers = sorted(
+				grouped_items.keys(), key=lambda x: provider_order.index(x) if x in provider_order else 999
+			)
+			for idx, p in enumerate(sorted_providers):
+				if idx > 0:
+					summary.append('')
+				# 站内账号自然排序
+				for acc_name in sorted(grouped_items[p]):
+					summary.append(f'✅ {acc_name} · 今日已签到')
 		balance_lines = [
 			format_check_in_notification(account_check_in_details[key])
 			for key in sorted(
