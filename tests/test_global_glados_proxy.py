@@ -1,18 +1,40 @@
-from checkin import resolve_account_proxy_node
-from utils.config import DEFAULT_GLADOS_PROXY_NODES, AccountConfig, ProviderConfig
+from datetime import datetime, timedelta, timezone
+
+from utils.proxy import ProxyNodeAllocator
 
 
-def test_multi_account_provider_without_explicit_nodes_gets_distinct_glados_nodes():
-	provider = ProviderConfig(name='any_provider', domain='https://any.example.com')
-	acc1 = AccountConfig(cookies=None, provider='any_provider', name='acc-1')
-	acc2 = AccountConfig(cookies=None, provider='any_provider', name='acc-2')
-	acc3 = AccountConfig(cookies=None, provider='any_provider', name='acc-3')
+def test_same_provider_accounts_get_distinct_nodes_for_rolling_24_hours(tmp_path):
+	now = datetime(2026, 9, 28, 1, 0, tzinfo=timezone.utc)
+	state_file = tmp_path / 'proxy-assignments.json'
+	allocator = ProxyNodeAllocator(['g1', 'g2', 'g3'], state_file=state_file, now=lambda: now)
 
-	node1 = resolve_account_proxy_node(acc1, provider, 0)
-	node2 = resolve_account_proxy_node(acc2, provider, 1)
-	node3 = resolve_account_proxy_node(acc3, provider, 2)
+	first = allocator.assign('sheapi', 'account-1')
+	second = allocator.assign('sheapi', 'account-2')
+	assert first != second
 
-	assert node1 == DEFAULT_GLADOS_PROXY_NODES[0]
-	assert node2 == DEFAULT_GLADOS_PROXY_NODES[1]
-	assert node3 == DEFAULT_GLADOS_PROXY_NODES[2]
-	assert len({node1, node2, node3}) == 3
+	reloaded = ProxyNodeAllocator(['g1', 'g2', 'g3'], state_file=state_file, now=lambda: now + timedelta(hours=23))
+	assert reloaded.assign('sheapi', 'account-1') == first
+	assert reloaded.assign('sheapi', 'account-3') not in {first, second}
+
+
+def test_failed_node_is_not_reused_by_same_provider_within_24_hours(tmp_path):
+	now = datetime(2026, 9, 28, 1, 0, tzinfo=timezone.utc)
+	state_file = tmp_path / 'proxy-assignments.json'
+	allocator = ProxyNodeAllocator(['g1', 'g2', 'g3'], state_file=state_file, now=lambda: now)
+
+	failed = allocator.assign('sheapi', 'account-1')
+	replacement = allocator.replace('sheapi', 'account-1', failed)
+	other = allocator.assign('sheapi', 'account-2')
+
+	assert replacement != failed
+	assert other not in {failed, replacement}
+
+
+def test_expired_reservations_can_be_reused_after_24_hours(tmp_path):
+	now = datetime(2026, 9, 28, 1, 0, tzinfo=timezone.utc)
+	state_file = tmp_path / 'proxy-assignments.json'
+	allocator = ProxyNodeAllocator(['g1'], state_file=state_file, now=lambda: now)
+	assert allocator.assign('sheapi', 'account-1') == 'g1'
+
+	reloaded = ProxyNodeAllocator(['g1'], state_file=state_file, now=lambda: now + timedelta(hours=24, seconds=1))
+	assert reloaded.assign('sheapi', 'account-2') == 'g1'
