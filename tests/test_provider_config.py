@@ -513,3 +513,14 @@ def test_ruachat_provider_uses_newapi_checkin_without_turnstile(monkeypatch):
 	assert provider.request_in_page is False
 	assert provider.http2 is True
 	assert provider.persist_profile is True
+
+
+def test_xiaojimao_provider_config_is_registered_by_default():
+	config = AppConfig.load_from_env()
+	provider = config.get_provider('xiaojimao')
+
+	assert provider is not None
+	assert provider.domain == 'https://api.ark717.com'
+	assert provider.login_api_path == '/api/user/login'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
