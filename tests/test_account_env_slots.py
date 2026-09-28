@@ -487,3 +487,27 @@ def test_guyscode_fifth_slot_appends_account_without_clobbering(monkeypatch):
 	assert accounts[4].access_token == 't_guys5'
 	assert accounts[4].refresh_token == 'rt_guys5'
 	assert accounts[4].provider == 'guyscode'
+
+
+def test_superapi_third_slot_appends_account_without_clobbering(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_26',
+		json.dumps([{'name': 'SuperAPI-thy1117', 'provider': 'superapi', 'access_token': 't1', 'api_user': '8831'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_46',
+		json.dumps([{'name': 'SuperAPI-thy1118', 'provider': 'superapi', 'access_token': 't2', 'api_user': '12762'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_52',
+		json.dumps([{'name': 'SuperAPI-thy1119', 'provider': 'superapi', 'access_token': 't3', 'api_user': '12763'}]),
+	)
+
+	accounts = load_accounts_config()
+
+	assert [account.name for account in accounts] == ['SuperAPI-thy1117', 'SuperAPI-thy1118', 'SuperAPI-thy1119']
+	assert accounts[2].access_token == 't3'
+	assert accounts[2].api_user == '12763'
+	assert accounts[2].provider == 'superapi'
