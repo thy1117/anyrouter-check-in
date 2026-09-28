@@ -398,3 +398,44 @@ def test_guyscode_third_slot_appends_account_without_clobbering(monkeypatch):
 	assert accounts[2].access_token == 't_guys3'
 	assert accounts[2].refresh_token == 'rt_guys3'
 	assert accounts[2].provider == 'guyscode'
+
+
+def test_guyscode_fourth_slot_appends_account_without_clobbering(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_47',
+		json.dumps(
+			[{'name': 'GuysCode-5237', 'provider': 'guyscode', 'access_token': 't_guys1', 'refresh_token': 'rt_guys1'}]
+		),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_48',
+		json.dumps(
+			[{'name': 'GuysCode-8746', 'provider': 'guyscode', 'access_token': 't_guys2', 'refresh_token': 'rt_guys2'}]
+		),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_49',
+		json.dumps(
+			[{'name': 'GuysCode-1125', 'provider': 'guyscode', 'access_token': 't_guys3', 'refresh_token': 'rt_guys3'}]
+		),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_50',
+		json.dumps(
+			[{'name': 'GuysCode-3069', 'provider': 'guyscode', 'access_token': 't_guys4', 'refresh_token': 'rt_guys4'}]
+		),
+	)
+
+	accounts = load_accounts_config()
+
+	assert [account.name for account in accounts] == [
+		'GuysCode-5237',
+		'GuysCode-8746',
+		'GuysCode-1125',
+		'GuysCode-3069',
+	]
+	assert accounts[3].access_token == 't_guys4'
+	assert accounts[3].refresh_token == 'rt_guys4'
+	assert accounts[3].provider == 'guyscode'
