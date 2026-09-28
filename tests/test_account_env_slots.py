@@ -325,3 +325,21 @@ def test_superapi_second_slot_appends_account_without_clobbering(monkeypatch):
 	assert [account.name for account in accounts] == ['SuperAPI-thy1117', 'SuperAPI-thy1118']
 	assert accounts[0].access_token == 't1'
 	assert accounts[1].access_token == 't2'
+
+
+def test_guyscode_slot_appends_account_without_clobbering(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_47',
+		json.dumps(
+			[{'name': 'GuysCode-5237', 'provider': 'guyscode', 'access_token': 't_guys', 'refresh_token': 'rt_guys'}]
+		),
+	)
+
+	accounts = load_accounts_config()
+
+	assert [account.name for account in accounts] == ['GuysCode-5237']
+	assert accounts[0].access_token == 't_guys'
+	assert accounts[0].refresh_token == 'rt_guys'
+	assert accounts[0].provider == 'guyscode'
