@@ -341,6 +341,7 @@ def refresh_access_token(
 	account_name: str,
 	*,
 	session_id: str | None = None,
+	refresh_token: str | None = None,
 ) -> str | None:
 	"""用 HttpOnly 的 refresh cookie 换一枚新的 access_token。
 
@@ -361,7 +362,12 @@ def refresh_access_token(
 		refresh_headers['X-Auth-Session'] = session_id
 
 	try:
-		response = client.post(refresh_url, headers=refresh_headers, timeout=30)
+		if refresh_token:
+			response = client.post(
+				refresh_url, headers=refresh_headers, json={'refresh_token': refresh_token}, timeout=30
+			)
+		else:
+			response = client.post(refresh_url, headers=refresh_headers, timeout=30)
 	except Exception as e:
 		debug_print(f'[WARN] {account_name}: Token refresh request failed: {e}')
 		return None
@@ -431,9 +437,13 @@ def get_user_info(client, headers, user_info_url: str, *, api_user_key: str | No
 
 			if response.status_code == 200:
 				data = response.json()
-				if data.get('success'):
+				if data.get('success') or data.get('code') == 0:
 					user_data = data.get('data', {})
-					quota, used_quota = newapi_quota_pair(user_data)
+					if 'balance' in user_data and 'quota' not in user_data:
+						quota = round(float(user_data.get('balance', 0.0)), 2)
+						used_quota = round(float(user_data.get('frozen_balance', 0.0)), 2)
+					else:
+						quota, used_quota = newapi_quota_pair(user_data)
 					return {
 						'success': True,
 						'quota': quota,
@@ -1903,6 +1913,7 @@ def run_check_in_requests(
 					provider_config,
 					account_name,
 					session_id=session_id_override or account.session_id,
+					refresh_token=getattr(account, 'refresh_token', None),
 				)
 				if refreshed:
 					headers['Authorization'] = f'Bearer {refreshed}'
@@ -2021,7 +2032,7 @@ async def main():
 				need_notify = True
 				account_name = account.get_display_name(i)
 				print(f'[NOTIFY] {account_name} failed, will send notification')
-			elif account.provider in ('xiaobai', 'sheapi', 'superapi', 'aiaiai', 'nianhua', 'twinkle'):
+			elif account.provider in ('xiaobai', 'sheapi', 'superapi', 'guyscode', 'aiaiai', 'nianhua', 'twinkle'):
 				check_in_success_items.append(
 					{
 						'provider': account.provider,
@@ -2115,7 +2126,7 @@ async def main():
 			summary.extend(['', '❌ 失败详情', '\n'.join(notification_content)])
 		if check_in_success_items:
 			summary.extend(['', '✅ 独立签到成功'])
-			provider_order = ['xiaobai', 'sheapi', 'superapi', 'aiaiai', 'nianhua', 'twinkle']
+			provider_order = ['xiaobai', 'sheapi', 'superapi', 'guyscode', 'aiaiai', 'nianhua', 'twinkle']
 			grouped_items = {}
 			for item in check_in_success_items:
 				p = item['provider']
@@ -2144,7 +2155,7 @@ async def main():
 				),
 			)
 			if account_check_in_details[key].get('provider')
-			not in ('xiaobai', 'sheapi', 'superapi', 'aiaiai', 'nianhua', 'twinkle')
+			not in ('xiaobai', 'sheapi', 'superapi', 'guyscode', 'aiaiai', 'nianhua', 'twinkle')
 		]
 		if balance_lines:
 			summary.extend(['', '💰 余额明细', '\n'.join(balance_lines)])
