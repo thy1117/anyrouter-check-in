@@ -511,3 +511,27 @@ def test_superapi_third_slot_appends_account_without_clobbering(monkeypatch):
 	assert accounts[2].access_token == 't3'
 	assert accounts[2].api_user == '12763'
 	assert accounts[2].provider == 'superapi'
+
+
+def test_aiaiai_third_slot_appends_account_without_clobbering(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_34',
+		json.dumps([{'name': 'AIAIAI-thy1117', 'provider': 'aiaiai', 'access_token': 't1', 'api_user': '1001'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_35',
+		json.dumps([{'name': 'AIAIAI-thy1118', 'provider': 'aiaiai', 'access_token': 't2', 'api_user': '1002'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_53',
+		json.dumps([{'name': 'AIAIAI-thy1119', 'provider': 'aiaiai', 'access_token': 't3', 'api_user': '3829'}]),
+	)
+
+	accounts = load_accounts_config()
+
+	assert [account.name for account in accounts] == ['AIAIAI-thy1117', 'AIAIAI-thy1118', 'AIAIAI-thy1119']
+	assert accounts[2].access_token == 't3'
+	assert accounts[2].api_user == '3829'
+	assert accounts[2].provider == 'aiaiai'
