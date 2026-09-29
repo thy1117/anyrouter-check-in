@@ -283,11 +283,11 @@ class AppConfig:
 				api_style='xiaobai',
 				login_path='/login',
 				# The current Xiaobai frontend uses the shared Sub2API login endpoint.
-				login_api_path='/auth/login',
+				login_api_path='/api/v1/auth/login',
 				sign_in_path='/checkin/api/checkin',
 				check_in_status_path='/checkin/api/status',
 				user_info_path='/api/v1/auth/me',
-				auth_refresh_path='/auth/refresh',
+				auth_refresh_path='/api/v1/auth/refresh',
 				api_user_key='',
 				use_proxy=True,
 			),

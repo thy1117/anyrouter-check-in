@@ -13,3 +13,6 @@ balance_hash.txt
 checkin_screenshots
 
 .DS_Store
+
+# Only encrypted recovery checkpoints; never commit runtime auth state.
+.xiaobai-token-recovery/
