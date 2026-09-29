@@ -1,189 +1,157 @@
-name: AnyRouter 自动签到
+name: Xiaobai read-only authentication diagnostic
 on:
   workflow_dispatch:
-  schedule:
-    # 09:07, 21:07 Asia/Shanghai (UTC+8).
-    # GitHub 的 schedule 只是尽力而为，fork 仓库优先级最低，经常延迟数小时甚至丢任务；
-    # 一天跑两次（早晚各一次，北京时间 09:07、21:07）以保证「至少有一次按时跑到」的概率。签到接口对重复调用是幂等的，
-    # 已签到会返回「今日已签到」并按成功处理，所以多跑不会有副作用。
-    - cron: '7 1,13 * * *'
-
+permissions:
+  contents: read
 jobs:
-  checkin:
+  probe:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: production
-    env:
-      PYTHONIOENCODING: utf-8
-      PYTHONUNBUFFERED: 1
-      CHECKIN_TIMEZONE: Asia/Shanghai
-      CHECKIN_DISABLED_PROVIDERS: qingjiu
-      DEBUG_MODE: false
-      NOTIFY_EVERY_RUN: true
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install the same HTTPX version
+        run: python -m pip install 'httpx[http2]==0.28.1' --quiet
+      - name: Start pinned Oracle SG
+        timeout-minutes: 2
+        env:
+          PROXY_SUBSCRIPTION_URL: ''
+          PROXY_NODES: ${{ secrets.PROXY_NODES_XIAOBAI_ORACLE_SG }}
+          PROXY_TEST_URL: https://token.dialoguedui.com/custom/checkin_bonus_user
+          PROXY_NODE_NAME: oracle-sg
+          MIHOMO_VERSION: v1.19.27
+          PROXY_REQUIRED: true
+        run: bash scripts/setup_mihomo_proxy.sh
+      - name: Read-only one-account authentication probes
+        timeout-minutes: 2
+        env:
+          EXTRA_ACCOUNTS_16: ${{ secrets.EXTRA_ACCOUNTS_16 }}
+          EXTRA_ACCOUNTS_13: ${{ secrets.EXTRA_ACCOUNTS_13 }}
+        run: |
+          python - <<'PY_DIAGNOSTIC'
+          """Single-account diagnostics: no check-in and no real-token refresh."""
+          import base64
+          import datetime as dt
+          import json
+          import os
+          import time
 
-    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
-      with:
-        version: "latest"
+          import httpx
 
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
+          BASE = 'https://token.dialoguedui.com'
+          DUMMY = 'diagnostic-not-a-real-token'
+          DUMMY_REFRESH = {'refresh_token': 'diagnostic-invalid-refresh-token'}
+          account = None
+          for slot in ('EXTRA_ACCOUNTS_16', 'EXTRA_ACCOUNTS_13'):
+              raw = os.environ.get(slot, '')
+              if not raw:
+                  continue
+              entries = json.loads(raw)
+              if isinstance(entries, dict):
+                  entries = [entries]
+              candidate = next((a for a in entries if a.get('provider') == 'xiaobai'), None)
+              if candidate is not None:
+                  account = candidate
+                  break
+          if account is None:
+              raise SystemExit('No Xiaobai account in the two scoped slots; no account requests were made.')
 
-    - name: 安装依赖
-      run: |
-        uv sync --frozen
-        echo "✅ 环境初始化完成"
+          access = account.get('access_token') or ''
+          refresh = account.get('refresh_token') or ''
+          for secret in (access, refresh):
+              if secret:
+                  print(f'::add-mask::{secret}')
+          now = dt.datetime.now(dt.timezone.utc)
+          info = {
+              'kind': 'single_account_metadata',
+              'provider': 'xiaobai',
+              'has_access_token': bool(access),
+              'has_refresh_token': bool(refresh),
+              'now_utc': now.isoformat(),
+              'real_refresh_performed': False,
+              'checkin_performed': False,
+          }
+          try:
+              payload = access.split('.')[1]
+              claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+              exp = float(claims['exp'])
+              info['unverified_jwt_exp_utc'] = dt.datetime.fromtimestamp(exp, dt.timezone.utc).isoformat()
+              info['unverified_jwt_expired'] = exp < now.timestamp()
+          except (ValueError, IndexError, KeyError, TypeError):
+              info['unverified_jwt_exp_utc'] = None
+          print(json.dumps(info, ensure_ascii=False), flush=True)
 
-    - name: 确保 Xvfb 可用
-      run: |
-        if command -v xvfb-run >/dev/null 2>&1; then
-          echo "✅ GitHub Runner 已预装 Xvfb"
-        else
-          sudo apt-get update
-          sudo apt-get install -y xvfb
-        fi
-
-    - name: 缓存 CloakBrowser 二进制
-      uses: actions/cache@v5
-      id: cloakbrowser-cache
-      with:
-        path: ~/.cloakbrowser
-        key: ${{ runner.os }}-cloakbrowser-v1
-        restore-keys: |
-          ${{ runner.os }}-cloakbrowser-
-
-    - name: 安装 CloakBrowser
-      run: |
-        uv run python -m cloakbrowser install
-        echo "✅ CloakBrowser 安装完成"
-
-    - name: 恢复余额历史缓存
-      uses: actions/cache@v5
-      with:
-        path: balance_hash.txt
-        key: balance-hash-${ github.ref_name }}-${ github.run_id }}
-        restore-keys: |
-          balance-hash-${ github.ref_name }}-
-          balance-hash-
-
-    - name: 准备浏览器 Profile 目录
-      run: mkdir -p .browser_profiles
-
-    - name: 恢复浏览器 Profile 缓存
-      uses: actions/cache@v5
-      with:
-        path: .browser_profiles
-        key: browser-profiles-${ runner.os }}-${ github.run_id }}
-        restore-keys: |
-          browser-profiles-${ runner.os }}-
-
-    - name: 配置 Mihomo 代理池
-      env:
-        PROXY_SUBSCRIPTION_URL: ${{ secrets.PROXY_SUBSCRIPTION_URL }}
-        PROXY_TEST_URL: https://www.sheapi.top/api/status
-        MIHOMO_VERSION: v1.19.27
-        PROXY_REQUIRED: true
-      run: bash scripts/setup_mihomo_proxy.sh
-
-    - name: 恢复 GLaDOS 节点分配记录
-      uses: actions/cache@v5
-      with:
-        path: .proxy_assignments.json
-        key: glados-proxy-assignments-${{ github.run_id }}
-        restore-keys: |
-          glados-proxy-assignments-
-
-    - name: 执行签到
-      env:
-        DEBUG_MODE: ${{ env.DEBUG_MODE }}
-        CHECKIN_HEADLESS: false
-        CHECKIN_HUMANIZE: true
-        CHECKIN_WAIT_TIMEOUT_MS: 120000
-        ANYROUTER_ACCOUNTS: ${{ secrets.ANYROUTER_ACCOUNTS }}
-        EXTRA_ACCOUNTS: ${{ secrets.EXTRA_ACCOUNTS }}
-        EXTRA_ACCOUNTS_3: ${{ secrets.EXTRA_ACCOUNTS_3 }}
-        EXTRA_ACCOUNTS_4: ${{ secrets.EXTRA_ACCOUNTS_4 }}
-        EXTRA_ACCOUNTS_5: ${{ secrets.EXTRA_ACCOUNTS_5 }}
-        EXTRA_ACCOUNTS_6: ${{ secrets.EXTRA_ACCOUNTS_6 }}
-        EXTRA_ACCOUNTS_9: ${{ secrets.EXTRA_ACCOUNTS_9 }}
-        EXTRA_ACCOUNTS_10: ${{ secrets.EXTRA_ACCOUNTS_10 }}
-        EXTRA_ACCOUNTS_11: ${{ secrets.EXTRA_ACCOUNTS_11 }}
-        EXTRA_ACCOUNTS_12: ${{ secrets.EXTRA_ACCOUNTS_12 }}
-        EXTRA_ACCOUNTS_13: ${{ secrets.EXTRA_ACCOUNTS_13 }}
-        EXTRA_ACCOUNTS_14: ${{ secrets.EXTRA_ACCOUNTS_14 }}
-        EXTRA_ACCOUNTS_16: ${{ secrets.EXTRA_ACCOUNTS_16 }}
-        EXTRA_ACCOUNTS_19: ${{ secrets.EXTRA_ACCOUNTS_19 }}
-        EXTRA_ACCOUNTS_20: ${{ secrets.EXTRA_ACCOUNTS_20 }}
-        EXTRA_ACCOUNTS_21: ${{ secrets.EXTRA_ACCOUNTS_21 }}
-        EXTRA_ACCOUNTS_23: ${{ secrets.EXTRA_ACCOUNTS_23 }}
-        EXTRA_ACCOUNTS_26: ${{ secrets.EXTRA_ACCOUNTS_26 }}
-        EXTRA_ACCOUNTS_33: ${{ secrets.EXTRA_ACCOUNTS_33 }}
-        EXTRA_ACCOUNTS_34: ${{ secrets.EXTRA_ACCOUNTS_34 }}
-        EXTRA_ACCOUNTS_36: ${{ secrets.EXTRA_ACCOUNTS_36 }}
-        EXTRA_ACCOUNTS_37: ${{ secrets.EXTRA_ACCOUNTS_37 }}
-        EXTRA_ACCOUNTS_38: ${{ secrets.EXTRA_ACCOUNTS_38 }}
-        EXTRA_ACCOUNTS_39: ${{ secrets.EXTRA_ACCOUNTS_39 }}
-        EXTRA_ACCOUNTS_40: ${{ secrets.EXTRA_ACCOUNTS_40 }}
-        EXTRA_ACCOUNTS_41: ${{ secrets.EXTRA_ACCOUNTS_41 }}
-        EXTRA_ACCOUNTS_42: ${{ secrets.EXTRA_ACCOUNTS_42 }}
-        EXTRA_ACCOUNTS_43: ${{ secrets.EXTRA_ACCOUNTS_43 }}
-        EXTRA_ACCOUNTS_44: ${{ secrets.EXTRA_ACCOUNTS_44 }}
-        EXTRA_ACCOUNTS_45: ${{ secrets.EXTRA_ACCOUNTS_45 }}
-        EXTRA_ACCOUNTS_46: ${{ secrets.EXTRA_ACCOUNTS_46 }}
-        EXTRA_ACCOUNTS_47: ${{ secrets.EXTRA_ACCOUNTS_47 }}
-        EXTRA_ACCOUNTS_48: ${{ secrets.EXTRA_ACCOUNTS_48 }}
-        EXTRA_ACCOUNTS_49: ${{ secrets.EXTRA_ACCOUNTS_49 }}
-        EXTRA_ACCOUNTS_50: ${{ secrets.EXTRA_ACCOUNTS_50 }}
-        EXTRA_ACCOUNTS_51: ${{ secrets.EXTRA_ACCOUNTS_51 }}
-        EXTRA_ACCOUNTS_52: ${{ secrets.EXTRA_ACCOUNTS_52 }}
-        EXTRA_ACCOUNTS_53: ${{ secrets.EXTRA_ACCOUNTS_53 }}
-        PROVIDERS: ${{ secrets.PROVIDERS }}
-        EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
-        DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
-        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-        CUSTOM_SMTP_SERVER: ${{ secrets.CUSTOM_SMTP_SERVER }}
-        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-        SERVERPUSHKEY: ${{ secrets.SERVERPUSHKEY }}
-        FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-        WEIXIN_WEBHOOK: ${{ secrets.WEIXIN_WEBHOOK }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        GOTIFY_URL: ${{ secrets.GOTIFY_URL }}
-        GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
-        GOTIFY_PRIORITY: ${{ secrets.GOTIFY_PRIORITY }}
-        BARK_KEY: ${{ secrets.BARK_KEY }}
-        BARK_SERVER: ${{ secrets.BARK_SERVER }}
-      run: |
-        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
-
-    - name: 上传调试截图
-      if: always() && env.DEBUG_MODE == 'true'
-      env:
-        HTTP_PROXY: ''
-        HTTPS_PROXY: ''
-      uses: actions/upload-artifact@v4
-      with:
-        name: checkin-screenshots-${ github.run_id }}
-        path: checkin_screenshots/
-        if-no-files-found: warn
-        include-hidden-files: true
-        retention-days: 14
+          proxy = os.environ['CHECKIN_PROXY_URL']
+          HEADERS = {
+              'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+              'Accept': 'application/json',
+              'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+              'Content-Type': 'application/json',
+              'Origin': BASE,
+              'Referer': BASE + '/checkin/',
+          }
 
 
-    - name: 停止代理
-      if: always()
-      run: bash scripts/stop_mihomo_proxy.sh
+          def probe(label, route, token='', http2=True, method='GET', body=None):
+              if method == 'GET':
+                  assert route in ('/checkin/api/status', '/api/v1/auth/me')
+              else:
+                  assert method == 'POST' and route in ('/auth/refresh', '/api/v1/auth/refresh')
+                  assert not token and body == DUMMY_REFRESH
+              headers = dict(HEADERS)
+              if token:
+                  headers['Authorization'] = 'Bearer ' + token
+              started = time.monotonic()
+              result = {'kind': 'probe', 'case': label, 'method': method, 'path': route, 'http2_enabled': http2}
+              try:
+                  with httpx.Client(proxy=proxy, trust_env=False, http2=http2, timeout=15.0, headers=headers) as client:
+                      response = client.request(method, BASE + route, json=body) if body is not None else client.get(BASE + route)
+                  result.update({
+                      'status': response.status_code,
+                      'http_version': response.http_version,
+                      'content_type': response.headers.get('content-type'),
+                      'server': response.headers.get('server'),
+                      'cf_ray': response.headers.get('cf-ray'),
+                      'origin_marker': response.headers.get('x-api0-origin'),
+                  })
+                  try:
+                      payload = response.json()
+                  except ValueError:
+                      result['body_kind'] = 'html' if '<html' in response.text[:200].lower() or '<!doctype' in response.text[:200].lower() else 'non_json'
+                  else:
+                      if isinstance(payload, dict):
+                          for key in ('code', 'ok', 'message', 'reason', 'error_code', 'error_category', 'title'):
+                              value = payload.get(key)
+                              if isinstance(value, (str, int, bool)):
+                                  if isinstance(value, str):
+                                      for secret in (access, refresh):
+                                          if secret:
+                                              value = value.replace(secret, '[REDACTED]')
+                                      value = value[:200]
+                                  result[key] = value
+                          data = payload.get('data')
+                          if route == '/checkin/api/status' and isinstance(data, dict):
+                              result['signedToday'] = data.get('signedToday')
+              except Exception as exc:
+                  result['exception_type'] = type(exc).__name__
+              result['seconds'] = round(time.monotonic() - started, 3)
+              print(json.dumps(result, ensure_ascii=False), flush=True)
 
-    - name: 执行结果
-      if: always()
-      run: |
-        echo "签到任务执行完成"
-        echo "时间: $(date)"
-        if [ "${DEBUG_MODE}" = "true" ] && [ -d checkin_screenshots ] && [ "$(ls -A checkin_screenshots 2>/dev/null)" ]; then
-          echo "调试截图已上传为 artifact: checkin-screenshots-${ github.run_id }}"
-          ls -la checkin_screenshots/
-        fi
+
+          probe('no_auth_h1', '/checkin/api/status', http2=False)
+          probe('no_auth_h2', '/checkin/api/status', http2=True)
+          probe('dummy_auth_h2', '/checkin/api/status', token=DUMMY)
+          if access:
+              probe('saved_auth_h1', '/checkin/api/status', token=access, http2=False)
+              probe('saved_auth_h2', '/checkin/api/status', token=access, http2=True)
+              probe('saved_auth_main_api', '/api/v1/auth/me', token=access)
+          probe('wrong_refresh_path_dummy_only', '/auth/refresh', method='POST', body=DUMMY_REFRESH)
+          probe('correct_refresh_path_dummy_only', '/api/v1/auth/refresh', method='POST', body=DUMMY_REFRESH)
+          print(json.dumps({'kind': 'finished', 'accounts_used': 1, 'checkin_performed': False, 'real_refresh_performed': False}), flush=True)
+          PY_DIAGNOSTIC
+      - name: Stop the isolated proxy
+        if: always()
+        run: bash scripts/stop_mihomo_proxy.sh
