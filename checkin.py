@@ -1111,9 +1111,17 @@ def run_bearer_check_in(
 	}
 
 	try:
+		state = None
+		access_token = account.access_token
+		refresh_token = account.refresh_token
+		try:
+			state = create_xiaobai_token_state(account, provider_config.domain)
+			if state:
+				access_token, refresh_token = state.load()
+		except Exception as exc:
+			debug_print(f'[WARN] {account_name}: Failed to load token state: {exc}')
+
 		with httpx.Client(headers=headers, **client_kwargs) as client:
-			access_token = account.access_token
-			refresh_token = account.refresh_token
 			authentication_error: str | None = None
 
 			if account.has_login_credentials():
@@ -1125,6 +1133,11 @@ def run_bearer_check_in(
 				response = _bearer_login(client, account, account_name, provider_config, headers)
 				access_token, login_refresh_token, authentication_error = _sub2api_token_result(response, account_name)
 				refresh_token = login_refresh_token or refresh_token
+				if state and access_token:
+					try:
+						state.save(access_token, refresh_token or '')
+					except Exception as exc:
+						debug_print(f'[WARN] {account_name}: Failed to save token state: {exc}')
 			elif not access_token and refresh_token:
 				print(f'[AUTH] {account_name}: Refreshing Bearer access token')
 				access_token, rotated_refresh_token, authentication_error = _sub2api_refresh_token(
@@ -1134,6 +1147,12 @@ def run_bearer_check_in(
 					refresh_token,
 				)
 				refresh_token = rotated_refresh_token or refresh_token
+				if state and access_token:
+					try:
+						state.save(access_token, refresh_token or '')
+						print(f'[AUTH] {account_name}: Updated tokens saved encrypted')
+					except Exception as exc:
+						debug_print(f'[WARN] {account_name}: Failed to save token state: {exc}')
 
 			if not access_token:
 				error = authentication_error or 'No usable Bearer access token'
@@ -1161,6 +1180,12 @@ def run_bearer_check_in(
 				if new_access_token:
 					headers['Authorization'] = f'Bearer {new_access_token}'
 					refresh_token = new_refresh_token or refresh_token
+					if state:
+						try:
+							state.save(new_access_token, refresh_token or '')
+							print(f'[AUTH] {account_name}: Updated tokens saved encrypted')
+						except Exception as exc:
+							debug_print(f'[WARN] {account_name}: Failed to save token state: {exc}')
 					_, user_info_before = get_profile()
 				elif refresh_error:
 					authentication_error = refresh_error
