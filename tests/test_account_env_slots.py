@@ -535,3 +535,28 @@ def test_aiaiai_third_slot_appends_account_without_clobbering(monkeypatch):
 	assert accounts[2].access_token == 't3'
 	assert accounts[2].api_user == '3829'
 	assert accounts[2].provider == 'aiaiai'
+
+
+def test_nianhua_three_new_slots_append_accounts_without_clobbering(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_54',
+		json.dumps([{'name': 'Nianhua-thy1119', 'provider': 'nianhua', 'access_token': 't1', 'api_user': '8108'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_55',
+		json.dumps([{'name': 'Nianhua-thy1120', 'provider': 'nianhua', 'access_token': 't2', 'api_user': '8109'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_56',
+		json.dumps([{'name': 'Nianhua-thy1121', 'provider': 'nianhua', 'access_token': 't3', 'api_user': '8110'}]),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == ['Nianhua-thy1119', 'Nianhua-thy1120', 'Nianhua-thy1121']
+	assert accounts[0].api_user == '8108'
+	assert accounts[1].api_user == '8109'
+	assert accounts[2].api_user == '8110'
