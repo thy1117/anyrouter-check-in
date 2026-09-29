@@ -1,6 +1,23 @@
 name: AnyRouter 自动签到
 on:
   workflow_dispatch:
+    inputs:
+      xiaobai_test:
+        description: 'Only test one Xiaobai account; skip every other site'
+        type: boolean
+        default: false
+      xiaobai_config_only:
+        description: 'Only identify the selected account Secret; no site requests'
+        type: boolean
+        default: false
+      xiaobai_account:
+        description: 'Exact Xiaobai account name (scoped test slots only)'
+        type: string
+        default: '小白Code-1125'
+      xiaobai_status_only:
+        description: 'Validate authentication/status without submitting check-in'
+        type: boolean
+        default: true
   schedule:
     # 09:07, 21:07 Asia/Shanghai (UTC+8).
     # GitHub 的 schedule 只是尽力而为，fork 仓库优先级最低，经常延迟数小时甚至丢任务；
@@ -8,8 +25,16 @@ on:
     # 已签到会返回「今日已签到」并按成功处理，所以多跑不会有副作用。
     - cron: '7 1,13 * * *'
 
+# Serialize scheduled/manual runs sharing rotating Xiaobai credentials.
+concurrency:
+  group: checkin-session-state-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   checkin:
+    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.xiaobai_test || inputs.xiaobai_config_only) }}
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -100,6 +125,8 @@ jobs:
         CHECKIN_HEADLESS: false
         CHECKIN_HUMANIZE: true
         CHECKIN_WAIT_TIMEOUT_MS: 120000
+        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
+        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
         ANYROUTER_ACCOUNTS: ${{ secrets.ANYROUTER_ACCOUNTS }}
         EXTRA_ACCOUNTS: ${{ secrets.EXTRA_ACCOUNTS }}
         EXTRA_ACCOUNTS_3: ${{ secrets.EXTRA_ACCOUNTS_3 }}
@@ -160,6 +187,16 @@ jobs:
       run: |
         xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
 
+    - name: 保存加密 Token 恢复检查点
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: xiaobai-encrypted-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+        path: .xiaobai-token-recovery/*.fernet
+        include-hidden-files: true
+        if-no-files-found: ignore
+        retention-days: 14
+
     - name: 上传调试截图
       if: always() && env.DEBUG_MODE == 'true'
       env:
@@ -187,3 +224,66 @@ jobs:
           echo "调试截图已上传为 artifact: checkin-screenshots-${ github.run_id }}"
           ls -la checkin_screenshots/
         fi
+
+
+  xiaobai-test:
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    environment: production
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        version: "latest"
+
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
+    - name: 安装依赖（不启动浏览器）
+      run: uv sync --frozen --no-dev
+
+    - name: 配置单账号 Oracle SG 测试代理
+      if: ${{ !inputs.xiaobai_config_only }}
+      timeout-minutes: 2
+      env:
+        PROXY_SUBSCRIPTION_URL: ''
+        PROXY_NODES: ${{ secrets.PROXY_NODES_XIAOBAI_ORACLE_SG }}
+        PROXY_TEST_URL: https://token.dialoguedui.com/custom/checkin_bonus_user
+        PROXY_NODE_NAME: oracle-sg
+        MIHOMO_VERSION: v1.19.27
+        PROXY_REQUIRED: true
+      run: bash scripts/setup_mihomo_proxy.sh
+
+    - name: 只验证指定的小白账号
+      timeout-minutes: 3
+      env:
+        PYTHONUNBUFFERED: '1'
+        XIAOBAI_TEST_ACCOUNT: ${{ inputs.xiaobai_account }}
+        XIAOBAI_CONFIG_ONLY: ${{ inputs.xiaobai_config_only }}
+        XIAOBAI_STATUS_ONLY: ${{ inputs.xiaobai_status_only }}
+        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
+        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
+        EXTRA_ACCOUNTS_16: ${{ secrets.EXTRA_ACCOUNTS_16 }}
+        EXTRA_ACCOUNTS_13: ${{ secrets.EXTRA_ACCOUNTS_13 }}
+      run: uv run python -m scripts.check_xiaobai
+
+    - name: 保存加密 Token 恢复检查点
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: xiaobai-encrypted-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+        path: .xiaobai-token-recovery/*.fernet
+        include-hidden-files: true
+        if-no-files-found: ignore
+        retention-days: 14
+
+    - name: 停止代理
+      if: always()
+      run: bash scripts/stop_mihomo_proxy.sh

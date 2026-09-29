@@ -52,6 +52,7 @@ from utils.proxy import (
 	get_playwright_proxy,
 	get_proxy_server,
 )
+from utils.xiaobai_token_state import TokenStateError, create_xiaobai_token_state, mask_tokens
 
 load_dotenv()
 
@@ -845,21 +846,22 @@ def _sub2api_refresh_token(
 
 
 def _xiaobai_response_data(response, account_name: str, action: str) -> tuple[dict | None, str | None]:
-	"""解析小白 Code 的 ``{ok, data}`` 响应，不把认证信息写入日志。"""
+	"""Parse Xiaobai results without hiding HTTP errors behind JSON parse errors."""
 	try:
 		payload = response.json()
-	except json.JSONDecodeError:
-		error = f'{action} returned invalid JSON'
+	except ValueError:
+		content_type = getattr(response, 'headers', {}).get('content-type', 'unknown')
+		error = f'{action} failed - HTTP {response.status_code}, non-JSON response ({content_type})'
 		print(f'[FAILED] {account_name}: {error}')
 		return None, error
 
 	if response.status_code != 200:
-		message = payload.get('message') if isinstance(payload, dict) else None
-		error = f'{action} failed - {message or f"HTTP {response.status_code}"}'
+		# Do not echo untrusted response bodies, which may contain credentials.
+		error = f'{action} failed - HTTP {response.status_code}'
 		print(f'[FAILED] {account_name}: {error}')
 		return None, error
 	if isinstance(payload, dict) and payload.get('ok') is False:
-		error = f'{action} failed - {payload.get("message", "unknown error")}'
+		error = f'{action} failed - API reported ok=false'
 		print(f'[FAILED] {account_name}: {error}')
 		return None, error
 
@@ -871,13 +873,29 @@ def _xiaobai_response_data(response, account_name: str, action: str) -> tuple[di
 	return data, None
 
 
+def _xiaobai_auth_error(response, action: str) -> str:
+	"""Report status, response type and a bounded machine code, never a body."""
+	try:
+		payload = response.json()
+	except ValueError:
+		content_type = getattr(response, 'headers', {}).get('content-type', 'unknown')
+		return f'{action} failed - HTTP {response.status_code}, non-JSON response ({content_type}); check the API path'
+	code = payload.get('reason') or payload.get('code') if isinstance(payload, dict) else None
+	known_codes = {'TOKEN_EXPIRED', 'INVALID_TOKEN', 'REFRESH_TOKEN_INVALID', 'REFRESH_TOKEN_EXPIRED', 'UNAUTHORIZED'}
+	suffix = f' ({code})' if isinstance(code, str) and code in known_codes else ''
+	hint = "; update this account's login tokens" if response.status_code == 401 else ''
+	return f'{action} failed - HTTP {response.status_code}{suffix}{hint}'
+
+
 def run_xiaobai_check_in(
 	account: AccountConfig,
 	account_name: str,
 	provider_config,
+	*,
+	status_only: bool = False,
 ) -> tuple[bool, dict | None, dict | None]:
-	"""执行小白 Code 独立签到页的 Bearer API。"""
-	client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0}
+	"""Authenticate via the real API, persist rotations, then access check-in."""
+	client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0, 'trust_env': False}
 	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
 	if proxy_url:
 		client_kwargs['proxy'] = proxy_url
@@ -892,133 +910,160 @@ def run_xiaobai_check_in(
 		'Referer': f'{provider_config.domain}/checkin/',
 		'Origin': provider_config.domain,
 	}
-
+	state = None
+	access_token, refresh_token = account.access_token or '', account.refresh_token or ''
+	mask_tokens(access_token, refresh_token)
 	try:
+		state = create_xiaobai_token_state(account, provider_config.domain)
+		if state:
+			access_token, refresh_token = state.load()
+		if not access_token and not refresh_token:
+			raise TokenStateError('Xiaobai requires access_token or refresh_token')
+
 		with httpx.Client(headers=headers, **client_kwargs) as client:
-			access_token = account.access_token
-			refresh_token = account.refresh_token
-			authentication_error: str | None = None
-
-			if not access_token and refresh_token:
-				print(f'[AUTH] {account_name}: Refreshing Bearer access token')
-				access_token, rotated_refresh_token, authentication_error = _sub2api_refresh_token(
-					client,
-					account_name,
-					provider_config,
-					refresh_token,
-				)
-				refresh_token = rotated_refresh_token or refresh_token
-
-			if not access_token:
-				error = authentication_error or 'Xiaobai requires access_token or refresh_token'
-				print(f'[FAILED] {account_name}: {error}')
-				return False, None, attach_check_in_error(None, error)
-
-			headers['Authorization'] = f'Bearer {access_token}'
-
-			last_authentication_error: str | None = None
 			refresh_attempted = False
 
-			def request(method: str, url: str, *, body: dict | None = None):
-				nonlocal last_authentication_error, refresh_token, refresh_attempted
+			def refresh():
+				nonlocal access_token, refresh_token, refresh_attempted
+				if refresh_attempted or not refresh_token:
+					raise TokenStateError("Authentication failed; update this account's login tokens")
+				if state is None:
+					raise TokenStateError(
+						'Token refresh requires encrypted token-state storage; refusing an unpersisted rotation'
+					)
+				# Verify write permission and take a CAS-protected pending marker
+				# before making the non-replayable refresh request.
+				state.save(access_token, refresh_token, pending=True)
+				refresh_attempted = True
+				print(f'[AUTH] {account_name}: Refreshing access token through /api/v1/auth/refresh')
+				response = client.post(
+					f'{provider_config.domain}{provider_config.auth_refresh_path}',
+					json={'refresh_token': refresh_token},
+					timeout=30,
+				)
+				if response.status_code != 200:
+					if response.status_code in (400, 401):
+						# A definitive rejection did not return a replacement session.
+						state.save(access_token, refresh_token)
+					raise TokenStateError(_xiaobai_auth_error(response, 'Authentication refresh'))
+				try:
+					payload = response.json()
+				except ValueError:
+					raise TokenStateError(_xiaobai_auth_error(response, 'Authentication refresh')) from None
+				data = unwrap_api_data(payload)
+				if (
+					not isinstance(data, dict)
+					or not isinstance(data.get('access_token'), str)
+					or not data['access_token']
+				):
+					raise TokenStateError('Authentication refresh returned no usable access token')
+				new_access = data['access_token']
+				new_refresh = data.get('refresh_token') or refresh_token
+				if not isinstance(new_refresh, str):
+					raise TokenStateError('Authentication refresh returned an invalid refresh token')
+				mask_tokens(new_access, new_refresh)
+				# Save BEFORE making any subsequent API calls or reporting success.
+				state.save(new_access, new_refresh)
+				access_token, refresh_token = new_access, new_refresh
+				print(f'[AUTH] {account_name}: Updated tokens saved encrypted')
 
-				def send():
-					if method == 'GET':
-						return client.get(url, headers=headers, timeout=30)
-					return client.post(url, headers=headers, json=body, timeout=30)
+			def authenticate():
+				if not access_token:
+					refresh()
+				profile_url = f'{provider_config.domain}{provider_config.user_info_path}'
+				headers['Authorization'] = f'Bearer {access_token}'
+				response = client.get(profile_url, headers=headers, timeout=30)
+				if response.status_code == 401 and refresh_token and not refresh_attempted:
+					refresh()
+					headers['Authorization'] = f'Bearer {access_token}'
+					response = client.get(profile_url, headers=headers, timeout=30)
+				if response.status_code != 200:
+					raise TokenStateError(_xiaobai_auth_error(response, 'Authentication validation'))
+				# A 200 SPA/HTML response is not evidence of a valid session.
+				try:
+					payload = response.json()
+				except ValueError:
+					raise TokenStateError(_xiaobai_auth_error(response, 'Authentication validation')) from None
+				data = unwrap_api_data(payload)
+				if not isinstance(data, dict) or not data.get('id'):
+					raise TokenStateError('Authentication validation returned no user identity')
+				print(f'[AUTH] {account_name}: Main API confirmed a valid session')
 
+			authenticate()
+
+			def request(method: str, url: str):
 				for attempt in range(1, XIAOBAI_MAX_REQUEST_ATTEMPTS + 1):
-					response = send()
-					if (
-						(response.status_code == 401 or response.status_code in XIAOBAI_RETRY_STATUS_CODES)
-						and refresh_token
-						and not refresh_attempted
-					):
-						# The Xiaobai gateway sometimes reports an expired/invalid Bearer
-						# token as 502 instead of 401. Rotate once before retrying the
-						# request so old accounts do not fail indefinitely with a gateway error.
-						refresh_attempted = True
-						if response.status_code != 401:
-							print(f'[AUTH] {account_name}: Refreshing Bearer token after HTTP {response.status_code}')
-						new_access_token, new_refresh_token, refresh_error = _sub2api_refresh_token(
-							client,
-							account_name,
-							provider_config,
-							refresh_token,
-						)
-						if new_access_token:
-							headers['Authorization'] = f'Bearer {new_access_token}'
-							refresh_token = new_refresh_token or refresh_token
-							response = send()
-						elif refresh_error:
-							last_authentication_error = refresh_error
-
+					if method == 'GET':
+						response = client.get(url, headers=headers, timeout=30)
+					else:
+						response = client.post(url, headers=headers, json={}, timeout=30)
+					if response.status_code == 401 and not refresh_attempted and refresh_token:
+						refresh()
+						authenticate()
+						if method == 'GET':
+							response = client.get(url, headers=headers, timeout=30)
+						else:
+							response = client.post(url, headers=headers, json={}, timeout=30)
+					# A check-in 502 with a verified session is a service error,
+					# not justification for repeatedly rotating refresh tokens.
 					if (
 						response.status_code not in XIAOBAI_RETRY_STATUS_CODES
 						or attempt == XIAOBAI_MAX_REQUEST_ATTEMPTS
 					):
 						return response
-
 					print(
-						f'[WARN] {account_name}: {method} {url} returned HTTP {response.status_code}; '
-						f'retrying ({attempt}/{XIAOBAI_MAX_REQUEST_ATTEMPTS - 1})'
+						f'[WARN] {account_name}: {method} check-in API returned HTTP {response.status_code}; retrying'
 					)
 					time.sleep(attempt)
-
 				raise RuntimeError('Xiaobai request retry loop ended unexpectedly')
 
-			status_url = f'{provider_config.domain}{provider_config.check_in_status_path}'
-			status_response = request('GET', status_url)
+			status_response = request('GET', f'{provider_config.domain}{provider_config.check_in_status_path}')
 			status, status_error = _xiaobai_response_data(status_response, account_name, 'Check-in status request')
-			if status is not None and status.get('signedToday') is True:
+			if status is None:
+				# The actual frontend disables its button on status failure too.
+				# Do not hide failed authentication/state behind a blind POST.
+				raise TokenStateError(status_error or 'Check-in status request failed')
+			if status_only:
+				print(f'[STATUS] {account_name}: Authentication and status verified; no check-in submitted')
+				return (
+					True,
+					None,
+					{'success': True, 'status_only': True, 'signedToday': status.get('signedToday') is True},
+				)
+			if status.get('signedToday') is True:
 				print(f'[SUCCESS] {account_name}: Already checked in today')
 				return True, None, None
-
-			if status is not None:
-				config = status.get('config')
-				if isinstance(config, dict) and config.get('enabled') is False:
-					error = 'Daily check-in is currently disabled'
-					print(f'[FAILED] {account_name}: {error}')
-					return False, None, attach_check_in_error(None, error)
-			elif status_error:
-				# Status is only an optimization. The web page treats the POST as
-				# authoritative and idempotent, so a transient GET 502 must not
-				# prevent the actual check-in attempt.
-				print(f'[WARN] {account_name}: Status lookup failed; attempting check-in directly')
+			config = status.get('config')
+			if isinstance(config, dict) and config.get('enabled') is False:
+				raise TokenStateError('Daily check-in is currently disabled')
 
 			print(f'[NETWORK] {account_name}: Executing Xiaobai daily check-in')
-			check_in_url = f'{provider_config.domain}{provider_config.sign_in_path}'
-			check_response = request('POST', check_in_url, body={})
-			result, check_in_error = _xiaobai_response_data(check_response, account_name, 'Daily check-in')
+			check_response = request('POST', f'{provider_config.domain}{provider_config.sign_in_path}')
+			result, error = _xiaobai_response_data(check_response, account_name, 'Daily check-in')
 			if result is None:
-				error = last_authentication_error or check_in_error or 'Daily check-in failed'
-				return False, None, attach_check_in_error(None, error)
-
+				raise TokenStateError(error or 'Daily check-in failed')
 			record = result.get('record')
 			result_status = result.get('status')
 			success = bool(
 				result.get('alreadyChecked') is True
 				or isinstance(record, dict)
 				or result.get('success') is True
-				or result.get('code') == 0
 				or (isinstance(result_status, dict) and result_status.get('signedToday') is True)
 			)
 			if not success:
-				error = 'Daily check-in returned an unexpected response'
-				print(f'[FAILED] {account_name}: {error}')
-				return False, None, attach_check_in_error(None, error)
-
-			if result.get('alreadyChecked') is True:
-				print(f'[SUCCESS] {account_name}: Already checked in today')
-			elif isinstance(record, dict) and record.get('reward_amount') is not None:
-				print(f'[SUCCESS] {account_name}: Check-in successful, reward {record["reward_amount"]}')
-			else:
-				print(f'[SUCCESS] {account_name}: Check-in successful!')
+				raise TokenStateError('Daily check-in returned an unexpected response')
+			print(f'[SUCCESS] {account_name}: Check-in successful or already checked in')
 			return True, None, None
-	except Exception as e:
-		error = f'Xiaobai check-in error - {str(e)[:100]}'
-		print(f'[FAILED] {account_name}: {error}')
-		return False, None, attach_check_in_error(None, error)
+	except TokenStateError as exc:
+		error = str(exc)
+	except Exception as exc:
+		# httpx exception strings and unexpected server errors can carry secrets.
+		error = f'Xiaobai check-in error - {type(exc).__name__}'
+	finally:
+		if state:
+			state.close()
+	print(f'[FAILED] {account_name}: {error}')
+	return False, None, attach_check_in_error(None, error)
 
 
 def _bearer_login(client, account: AccountConfig, account_name: str, provider_config, headers: dict):
