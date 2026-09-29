@@ -1695,11 +1695,9 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 		node = provider_config.proxy_nodes[provider_account_index]
 		return NODE_ALIASES.get(node, node)
 
-	# 默认：如果同站点多账号（provider_account_index > 0），自动分配不同 GLaDOS 节点
-	if provider_account_index > 0:
-		node = DEFAULT_GLADOS_PROXY_NODES[provider_account_index % len(DEFAULT_GLADOS_PROXY_NODES)]
-		return NODE_ALIASES.get(node, node)
-	return None
+	# 默认：如果未显式配置节点，按账号序号自动分配不同 GLaDOS 节点
+	node = DEFAULT_GLADOS_PROXY_NODES[provider_account_index % len(DEFAULT_GLADOS_PROXY_NODES)]
+	return NODE_ALIASES.get(node, node)
 
 
 async def check_in_account(
