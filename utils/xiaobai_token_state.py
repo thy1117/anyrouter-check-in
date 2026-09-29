@@ -46,7 +46,7 @@ class XiaobaiTokenState:
 		identity = [domain.rstrip('/'), account.provider, account.name or account.email or self.seed]
 		self.scope = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
 		self.path = f'/repos/{repository}/contents/xiaobai/{self.scope}.fernet'
-		self.bootstrap = tuple(seed_tokens)
+		self.bootstrap: tuple[str, str] = (seed_tokens[0], seed_tokens[1])
 		self.sha = None
 		self.client = client or httpx.Client(
 			base_url='https://api.github.com',
