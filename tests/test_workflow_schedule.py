@@ -76,8 +76,8 @@ def test_sheapi_secrets_are_wired_without_removing_existing_secrets():
 
 def test_single_account_test_cannot_run_production_job():
 	text = WORKFLOW.read_text(encoding='utf-8')
-	assert "github.event_name != 'workflow_dispatch' || !inputs.xiaobai_test" in text
-	assert "github.event_name == 'workflow_dispatch' && inputs.xiaobai_test" in text
+	assert "github.event_name != 'workflow_dispatch' || !(inputs.xiaobai_test || inputs.xiaobai_config_only)" in text
+	assert "github.event_name == 'workflow_dispatch' && (inputs.xiaobai_test || inputs.xiaobai_config_only)" in text
 	test_job = text.split('\n  xiaobai-test:')[1]
 	assert 'run: uv run python -m scripts.check_xiaobai' in test_job
 	assert 'run checkin.py' not in test_job
@@ -93,3 +93,11 @@ def test_token_state_uses_short_lived_token_and_ciphertext_only():
 	assert 'XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}' in text
 	assert 'cancel-in-progress: false' in text
 	assert 'path: .xiaobai-token-recovery/*.fernet' in text
+
+
+def test_config_only_lookup_skips_proxy_and_reaches_safe_entrypoint():
+	text = WORKFLOW.read_text(encoding='utf-8')
+	test_job = text.split('\n  xiaobai-test:')[1]
+	assert 'xiaobai_config_only:' in text
+	assert 'XIAOBAI_CONFIG_ONLY: ${{ inputs.xiaobai_config_only }}' in test_job
+	assert '配置单账号 Oracle SG 测试代理\n      if: ${{ !inputs.xiaobai_config_only }}' in test_job

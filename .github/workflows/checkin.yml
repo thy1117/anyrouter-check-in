@@ -6,6 +6,10 @@ on:
         description: 'Only test one Xiaobai account; skip every other site'
         type: boolean
         default: false
+      xiaobai_config_only:
+        description: 'Only identify the selected account Secret; no site requests'
+        type: boolean
+        default: false
       xiaobai_account:
         description: 'Exact Xiaobai account name (scoped test slots only)'
         type: string
@@ -28,7 +32,7 @@ concurrency:
 
 jobs:
   checkin:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.xiaobai_test }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.xiaobai_test || inputs.xiaobai_config_only) }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -223,7 +227,7 @@ jobs:
 
 
   xiaobai-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.xiaobai_test }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
     runs-on: ubuntu-latest
     timeout-minutes: 7
     environment: production
@@ -246,6 +250,7 @@ jobs:
       run: uv sync --frozen --no-dev
 
     - name: 配置单账号 Oracle SG 测试代理
+      if: ${{ !inputs.xiaobai_config_only }}
       timeout-minutes: 2
       env:
         PROXY_SUBSCRIPTION_URL: ''
@@ -261,6 +266,7 @@ jobs:
       env:
         PYTHONUNBUFFERED: '1'
         XIAOBAI_TEST_ACCOUNT: ${{ inputs.xiaobai_account }}
+        XIAOBAI_CONFIG_ONLY: ${{ inputs.xiaobai_config_only }}
         XIAOBAI_STATUS_ONLY: ${{ inputs.xiaobai_status_only }}
         XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
         XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
