@@ -610,6 +610,9 @@ def load_accounts_config() -> list[AccountConfig] | None:
 		disabled_providers = {
 			name.strip().lower() for name in os.getenv('CHECKIN_DISABLED_PROVIDERS', '').split(',') if name.strip()
 		}
+		only_providers = {
+			name.strip().lower() for name in os.getenv('CHECKIN_ONLY_PROVIDERS', '').split(',') if name.strip()
+		}
 		merged_account_sources = []
 		account_indexes_by_name = {}
 		for account_dict in account_sources:
@@ -618,8 +621,12 @@ def load_accounts_config() -> list[AccountConfig] | None:
 				return None
 
 			provider = account_dict.get('provider', 'anyrouter')
-			if isinstance(provider, str) and provider.strip().lower() in disabled_providers:
+			provider_name = provider.strip().lower() if isinstance(provider, str) else ''
+			if provider_name in disabled_providers:
 				print(f'[INFO] Skipping account from disabled provider "{provider}"')
+				continue
+			if only_providers and provider_name not in only_providers:
+				print(f'[INFO] Skipping account outside CHECKIN_ONLY_PROVIDERS: "{provider}"')
 				continue
 
 			name = account_dict.get('name')

@@ -17,6 +17,7 @@ jobs:
       PYTHONUNBUFFERED: 1
       CHECKIN_TIMEZONE: Asia/Shanghai
       CHECKIN_DISABLED_PROVIDERS: qingjiu
+      CHECKIN_ONLY_PROVIDERS: xiaobai
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
     steps:
@@ -80,10 +81,10 @@ jobs:
 
     - name: 配置 Mihomo 代理池
       env:
-        PROXY_SUBSCRIPTION_URL: ${{ secrets.PROXY_SUBSCRIPTION_URL }}
-        PROXY_NODES: ${{ secrets.PROXY_NODES_XIAOBAI_ORACLE_SG }}
+        PROXY_SUBSCRIPTION_URL: ''
+        PROXY_NODES: ${{ secrets.PROXY_NODES_XIAOBAI_HOME }}
         PROXY_TEST_URL: https://token.dialoguedui.com/custom/checkin_bonus_user
-        PROXY_NODE_NAME: oracle-sg
+        PROXY_NODE_NAME: 家宽
         MIHOMO_VERSION: v1.19.27
         PROXY_REQUIRED: true
       run: bash scripts/setup_mihomo_proxy.sh
@@ -102,7 +103,7 @@ jobs:
         CHECKIN_HEADLESS: false
         CHECKIN_HUMANIZE: true
         CHECKIN_WAIT_TIMEOUT_MS: 120000
-        XIAOBAI_PROXY_NODE: oracle-sg
+        XIAOBAI_PROXY_NODE: 家宽
         ANYROUTER_ACCOUNTS: ${{ secrets.ANYROUTER_ACCOUNTS }}
         EXTRA_ACCOUNTS: ${{ secrets.EXTRA_ACCOUNTS }}
         EXTRA_ACCOUNTS_3: ${{ secrets.EXTRA_ACCOUNTS_3 }}
