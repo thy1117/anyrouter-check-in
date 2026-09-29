@@ -428,6 +428,17 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=False,
 			),
+			'llmpm': ProviderConfig(
+				name='llmpm',
+				domain='https://api.llm.pm',
+				login_path='/console/personal',
+				sign_in_path='/api/user/checkin',
+				check_in_status_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				auth_refresh_path='/api/user/auth/refresh',
+				api_user_key='New-Api-User',
+				use_proxy=False,
+			),
 			'xiaojimao': ProviderConfig(
 				name='xiaojimao',
 				domain='https://api.ark717.com',

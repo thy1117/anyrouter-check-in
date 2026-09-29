@@ -429,6 +429,21 @@ def test_nhh123_provider_is_builtin(monkeypatch):
 	assert provider.http2 is True
 
 
+def test_llmpm_provider_is_builtin(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['llmpm']
+
+	assert provider.domain == 'https://api.llm.pm'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.use_proxy is False
+	assert provider.checkin_turnstile is False
+
+
 def test_superapi_provider_is_builtin(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
