@@ -106,18 +106,13 @@ jobs:
     - name: 配置 Mihomo 代理池
       env:
         PROXY_SUBSCRIPTION_URL: ${{ secrets.PROXY_SUBSCRIPTION_URL }}
+        PROXY_NODES: |
+          ${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}
+          ${{ secrets.PROXY_NODE_RAILWAY }}
         PROXY_TEST_URL: https://www.sheapi.top/api/status
         MIHOMO_VERSION: v1.19.27
         PROXY_REQUIRED: true
       run: bash scripts/setup_mihomo_proxy.sh
-
-    - name: 恢复 GLaDOS 节点分配记录
-      uses: actions/cache@v5
-      with:
-        path: .proxy_assignments.json
-        key: glados-proxy-assignments-${{ github.run_id }}
-        restore-keys: |
-          glados-proxy-assignments-
 
     - name: 执行签到
       env:
