@@ -44,14 +44,7 @@ from utils.browser import (
 from utils.config import AccountConfig, AppConfig, load_accounts_config
 from utils.debug import debug_print, is_debug_enabled
 from utils.notify import notify
-from utils.proxy import (
-	ProxyNodeAllocator,
-	ProxyNodeSwitchError,
-	active_proxy_node,
-	get_mihomo_nodes,
-	get_playwright_proxy,
-	get_proxy_server,
-)
+from utils.proxy import ProxyNodeSwitchError, active_proxy_node, get_playwright_proxy, get_proxy_server
 
 load_dotenv()
 
@@ -1675,23 +1668,38 @@ async def run_check_in_in_page(
 			await browser.close()
 
 
-_PROXY_ALLOCATOR = None
+NODE_ALIASES = {
+	'oracle': 'oracle-sg',
+	'oracle_sg': 'oracle-sg',
+	'oraclesg': 'oracle-sg',
+	'railway': 'railway-sg',
+	'railway_sg': 'railway-sg',
+	'railwaysg': 'railway-sg',
+}
 
 
 def resolve_account_proxy_node(account: AccountConfig, provider_config, provider_account_index: int) -> str | None:
-	"""从当前 GLaDOS 订阅动态分配节点，并跨运行保持 24 小时不重复。"""
-	global _PROXY_ALLOCATOR
-	if account.proxy_node or provider_config.proxy_node or provider_config.proxy_nodes:
-		raise ValueError(f'Provider "{account.provider}" contains a fixed proxy node configuration')
-	# 未启用代理或本地无 Mihomo 端点（如本地/测试）时不切换节点。
-	if not provider_config.use_proxy or not get_proxy_server(use_proxy=provider_config.use_proxy):
-		return None
-	nodes = get_mihomo_nodes()
-	if not nodes:
-		return None
-	if _PROXY_ALLOCATOR is None or _PROXY_ALLOCATOR.nodes != nodes:
-		_PROXY_ALLOCATOR = ProxyNodeAllocator(nodes)
-	return _PROXY_ALLOCATOR.assign(account.provider, account.name or f'account-{provider_account_index + 1}')
+	"""解析账号节点：账号显式配置 > provider 固定节点 > provider 顺序节点池 > 全局 GLaDOS 节点池。"""
+	from utils.config import DEFAULT_GLADOS_PROXY_NODES
+
+	raw_node = account.proxy_node or provider_config.proxy_node
+	if raw_node:
+		return NODE_ALIASES.get(raw_node, raw_node)
+
+	if provider_config.proxy_nodes is not None:
+		if provider_account_index >= len(provider_config.proxy_nodes):
+			raise ValueError(
+				f'Provider "{account.provider}" account #{provider_account_index + 1} has no dedicated proxy node '
+				f'(configured: {len(provider_config.proxy_nodes)})'
+			)
+		node = provider_config.proxy_nodes[provider_account_index]
+		return NODE_ALIASES.get(node, node)
+
+	# 默认：如果同站点多账号（provider_account_index > 0），自动分配不同 GLaDOS 节点
+	if provider_account_index > 0:
+		node = DEFAULT_GLADOS_PROXY_NODES[provider_account_index % len(DEFAULT_GLADOS_PROXY_NODES)]
+		return NODE_ALIASES.get(node, node)
+	return None
 
 
 async def check_in_account(
