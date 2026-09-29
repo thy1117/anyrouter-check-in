@@ -1681,6 +1681,16 @@ _PROXY_ALLOCATOR = None
 def resolve_account_proxy_node(account: AccountConfig, provider_config, provider_account_index: int) -> str | None:
 	"""从当前 GLaDOS 订阅动态分配节点，并跨运行保持 24 小时不重复。"""
 	global _PROXY_ALLOCATOR
+	forced_xiaobai_node = (
+		os.getenv('XIAOBAI_PROXY_NODE', '').strip() if account.provider == 'xiaobai' else ''
+	)
+	if forced_xiaobai_node:
+		# Xiaobai can be pinned to a known-good egress while all other providers
+		# continue using the rolling 24h dynamic allocator.
+		if not provider_config.use_proxy or not get_proxy_server(use_proxy=provider_config.use_proxy):
+			return None
+		return forced_xiaobai_node
+
 	if account.proxy_node or provider_config.proxy_node or provider_config.proxy_nodes:
 		raise ValueError(f'Provider "{account.provider}" contains a fixed proxy node configuration')
 	# 未启用代理或本地无 Mihomo 端点（如本地/测试）时不切换节点。

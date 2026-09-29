@@ -40,13 +40,7 @@ gunzip -f "${ARCHIVE}"
 chmod +x "mihomo-linux-amd64-${MIHOMO_VERSION}"
 MIHOMO_BIN="${PROXY_DIR}/mihomo-linux-amd64-${MIHOMO_VERSION}"
 
-if [[ -n "${PROXY_SUBSCRIPTION_URL:-}" ]]; then
-	echo "[INFO] Using remote Mihomo subscription provider: ${PROXY_SUBSCRIPTION_URL}"
-	PROXY_PROVIDER_BLOCK="type: http
-    url: \"${PROXY_SUBSCRIPTION_URL}\"
-    interval: 3600
-    path: ./subscription.yaml"
-elif [[ -n "${PROXY_NODES:-}" ]]; then
+if [[ -n "${PROXY_NODES:-}" ]]; then
 	echo "[INFO] Converting private proxy nodes to a local Mihomo provider..."
 	PROXY_NODES="${PROXY_NODES}" python3 - > subscription.yaml <<'PY'
 import base64
@@ -177,8 +171,27 @@ for node in nodes:
 		else:
 			print(f'    {key}: {str(value).lower()}')
 PY
+fi
+
+if [[ -n "${PROXY_SUBSCRIPTION_URL:-}" ]]; then
+	echo "[INFO] Using remote Mihomo subscription provider: ${PROXY_SUBSCRIPTION_URL}"
+	PROXY_PROVIDER_BLOCK="type: http
+    url: \"${PROXY_SUBSCRIPTION_URL}\"
+    interval: 3600
+    path: ./subscription-remote.yaml"
+elif [[ -n "${PROXY_NODES:-}" ]]; then
 	PROXY_PROVIDER_BLOCK='type: file
     path: ./subscription.yaml'
+fi
+
+EXTRA_PROVIDER_BLOCK=""
+PROXY_GROUP_USE='      - subscription'
+if [[ -n "${PROXY_SUBSCRIPTION_URL:-}" && -n "${PROXY_NODES:-}" ]]; then
+	EXTRA_PROVIDER_BLOCK='  oracle_nodes:
+    type: file
+    path: ./subscription.yaml'
+	PROXY_GROUP_USE='      - subscription
+      - oracle_nodes'
 fi
 
 cat > config.yaml <<EOF
@@ -197,12 +210,13 @@ proxy-providers:
       enable: true
       interval: 300
       url: https://www.gstatic.com/generate_204
+${EXTRA_PROVIDER_BLOCK}
 
 proxy-groups:
   - name: CHECKIN
     type: select
     use:
-      - subscription
+${PROXY_GROUP_USE}
 
 rules:
   - MATCH,CHECKIN

@@ -43,6 +43,15 @@ def test_provider_config_parses_proxy_node():
 	assert p.use_proxy is True
 
 
+def test_xiaobai_env_proxy_node_overrides_dynamic_allocator(monkeypatch):
+	monkeypatch.setenv('XIAOBAI_PROXY_NODE', 'oracle-sg')
+	monkeypatch.setattr('checkin.get_proxy_server', lambda **kwargs: 'http://127.0.0.1:7890')
+	provider = ProviderConfig(name='xiaobai', domain='https://token.dialoguedui.com', use_proxy=True)
+	account = AccountConfig(cookies=None, provider='xiaobai', name='小白Code-1125')
+
+	assert resolve_account_proxy_node(account, provider, 0) == 'oracle-sg'
+
+
 def test_default_multi_account_providers_do_not_pin_nodes(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)

@@ -56,10 +56,13 @@ def test_checkin_workflow_pins_oracle_sg_proxy_node():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
 	assert 'PROXY_SUBSCRIPTION_URL:' in text
+	assert 'PROXY_NODES: ${{ secrets.PROXY_NODES_XIAOBAI_ORACLE_SG }}' in text
+	assert 'PROXY_TEST_URL: https://token.dialoguedui.com/custom/checkin_bonus_user' in text
+	assert 'PROXY_NODE_NAME: oracle-sg' in text
+	assert 'XIAOBAI_PROXY_NODE: oracle-sg' in text
 	assert '${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}' not in text
 	assert '${{ secrets.PROXY_NODE_RAILWAY }}' not in text
 	assert 'glados-proxy-assignments-' in text
-	assert 'PROXY_NODE_NAME:' not in text
 	assert 'run: bash scripts/setup_mihomo_proxy.sh' in text
 	assert 'run: bash scripts/stop_mihomo_proxy.sh' in text
 	assert 'PROXY_NODE_NAME: jiakuan' not in text
