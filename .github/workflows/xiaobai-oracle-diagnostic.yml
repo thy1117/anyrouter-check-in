@@ -1,0 +1,47 @@
+name: Xiaobai Oracle SG diagnostic
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 配置 Oracle SG 代理
+        env:
+          PROXY_SUBSCRIPTION_URL: ''
+          PROXY_NODES: ${{ secrets.PROXY_NODES_XIAOBAI_ORACLE_SG }}
+          PROXY_TEST_URL: https://token.dialoguedui.com/custom/checkin_bonus_user
+          PROXY_NODE_NAME: oracle-sg
+          MIHOMO_VERSION: v1.19.27
+          PROXY_REQUIRED: true
+        run: bash scripts/setup_mihomo_proxy.sh
+
+      - name: 探测小白 API
+        env:
+          HTTP_PROXY: ''
+          HTTPS_PROXY: ''
+          ALL_PROXY: ''
+        run: |
+          set -u
+          for path in /checkin/api/status /auth/login /custom/checkin_bonus_user; do
+            echo "=== ${path} ==="
+            curl -sS --http1.1 -x "${CHECKIN_PROXY_URL}" \
+              -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/138.0.0.0 Safari/537.36' \
+              -H 'Accept: application/json, text/plain, */*' \
+              -H 'Accept-Language: zh-CN,zh;q=0.9,en;q=0.8' \
+              -H 'Referer: https://token.dialoguedui.com/checkin/' \
+              -H 'Origin: https://token.dialoguedui.com' \
+              -D /tmp/xiaobai-headers -o /tmp/xiaobai-body \
+              -w 'status=%{http_code} remote=%{remote_ip} time=%{time_total}\n' \
+              "https://token.dialoguedui.com${path}" || true
+            sed -n '1,14p' /tmp/xiaobai-headers || true
+            head -c 300 /tmp/xiaobai-body || true
+            echo
+          done
+
+      - name: 停止代理
+        if: always()
+        run: bash scripts/stop_mihomo_proxy.sh
