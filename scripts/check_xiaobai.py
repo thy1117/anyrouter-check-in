@@ -36,24 +36,6 @@ def main():
 	)
 	print(f'[CONFIG] Account {name!r} is in production Secret {source}', flush=True)
 	if os.getenv('XIAOBAI_CONFIG_ONLY', 'false').lower() == 'true':
-		# One-time encrypted transfer for a user-authorized update of one account.
-		# Removed from the repair branch immediately after the transfer is consumed.
-		if name != '小白Code-1125' or source != 'EXTRA_ACCOUNTS_13':
-			raise ValueError('Credential update scope mismatch; nothing exported')
-		from pathlib import Path
-		from cryptography.fernet import Fernet
-
-		key = os.environ['XIAOBAI_TOKEN_STATE_KEY'].encode()
-		envelope = json.dumps({'source': source, 'account': name, 'run_id': os.environ['GITHUB_RUN_ID'],
-			'configuration': os.environ[source]}, ensure_ascii=False).encode()
-		ciphertext = Fernet(key).encrypt(envelope)
-		directory = Path('.xiaobai-token-recovery')
-		directory.mkdir(mode=0o700, exist_ok=True)
-		destination = directory / 'account-config.fernet'
-		with destination.open('xb') as output:
-			output.write(ciphertext)
-		destination.chmod(0o600)
-		print('[CONFIG] Encrypted configuration prepared; no plaintext credentials logged', flush=True)
 		print('[CONFIG] Configuration lookup only; no authentication, refresh or check-in attempted', flush=True)
 		return 0
 	status_only = os.getenv('XIAOBAI_STATUS_ONLY', 'true').lower() != 'false'
