@@ -162,7 +162,7 @@ def test_sheapi_provider_uses_local_captcha_ocr(monkeypatch):
 	assert provider.checkin_captcha is True
 	assert provider.captcha_path == '/api/captcha?scene=checkin'
 	assert provider.use_proxy is True
-	assert provider.proxy_nodes is None
+	assert provider.proxy_nodes == ['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'US-D1-3']
 
 
 def test_aiaiai_provider_uses_cookie_auth(monkeypatch):
@@ -213,7 +213,7 @@ def test_xiaobai_provider_uses_external_check_in_api(monkeypatch):
 	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
 	assert provider.api_user_key == ''
 	assert provider.use_proxy is True
-	assert provider.proxy_nodes is None
+	assert provider.proxy_nodes == ['JP-Dedicated-B1-1', 'Fast-B1-3', 'US-D1-2', 'Balancer-B1-2', 'TW-IPv6-P1-2']
 
 
 def test_gorouter_provider_uses_pat_and_turnstile(monkeypatch):
@@ -272,7 +272,7 @@ def test_qingjiu_provider_uses_browser_page_for_login_session(monkeypatch):
 	assert provider.http2 is False
 	assert provider.request_in_page is True
 	assert provider.use_proxy is True
-	assert provider.proxy_nodes is None
+	assert provider.proxy_nodes == ['家宽', 'oracle-sg', 'railway-sg']
 
 
 def test_qingjiu_custom_provider_inherits_browser_request_defaults(monkeypatch):

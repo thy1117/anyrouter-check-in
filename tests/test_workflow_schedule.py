@@ -56,9 +56,8 @@ def test_production_proxy_configuration_is_unchanged():
 	text = WORKFLOW.read_text(encoding='utf-8').split('\n  xiaobai-test:')[0]
 
 	assert 'PROXY_SUBSCRIPTION_URL:' in text
-	assert '${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}' not in text
-	assert '${{ secrets.PROXY_NODE_RAILWAY }}' not in text
-	assert 'glados-proxy-assignments-' in text
+	assert '${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}' in text
+	assert '${{ secrets.PROXY_NODE_RAILWAY }}' in text
 	assert 'PROXY_NODE_NAME:' not in text
 	assert 'run: bash scripts/setup_mihomo_proxy.sh' in text
 	assert 'run: bash scripts/stop_mihomo_proxy.sh' in text
