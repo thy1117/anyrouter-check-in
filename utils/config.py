@@ -444,6 +444,7 @@ class AppConfig:
 				name='superapi',
 				domain='https://superapi.buzz',
 				login_path='/profile',
+				login_api_path='/api/user/login',
 				sign_in_path='/api/user/checkin',
 				check_in_status_path='/api/user/checkin',
 				user_info_path='/api/user/self',
