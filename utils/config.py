@@ -9,25 +9,6 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Literal
 
-DEFAULT_GLADOS_PROXY_NODES = [
-	'Fast-B1-1',
-	'Balancer-B1-1',
-	'US-D1-1',
-	'TW-IPv6-P1-1',
-	'US-Balancer-N1-1',
-	'US-Netflix-N2-1',
-	'US-Dedicated-B1-1',
-	'JP-Dedicated-B1-1',
-	'US-X1-1',
-	'TW-X1-1',
-	'Fast-B1-2',
-	'Balancer-B1-2',
-	'US-D1-2',
-	'TW-IPv6-P1-2',
-	'US-Balancer-N1-2',
-	'US-Netflix-N2-2',
-]
-
 
 @dataclass
 class ProviderConfig:
@@ -244,8 +225,6 @@ class AppConfig:
 				auth_refresh_path='/api/user/auth/refresh',
 				api_user_key='New-Api-User',
 				use_proxy=True,
-				# 三个清酒账号按加载顺序固定到三个独立出口，避免同一 IP 多账号签到。
-				proxy_nodes=['家宽', 'oracle-sg', 'railway-sg'],
 				# qingjiu occasionally stalls on the Python/httpx connection after a
 				# browser login. Reuse the authenticated browser network stack instead.
 				http2=False,
@@ -276,8 +255,6 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=True,
 				checkin_captcha=True,
-				# SheApi 账号按加载顺序自动分配 glados 独立出口节点，彻底避免同一 IP 限制
-				proxy_nodes=['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'US-D1-3'],
 			),
 			'aiaiai': ProviderConfig(
 				name='aiaiai',
@@ -306,15 +283,13 @@ class AppConfig:
 				api_style='xiaobai',
 				login_path='/login',
 				# The current Xiaobai frontend uses the shared Sub2API login endpoint.
-				login_api_path='/api/v1/auth/login',
+				login_api_path='/auth/login',
 				sign_in_path='/checkin/api/checkin',
 				check_in_status_path='/checkin/api/status',
 				user_info_path='/api/v1/auth/me',
-				auth_refresh_path='/api/v1/auth/refresh',
+				auth_refresh_path='/auth/refresh',
 				api_user_key='',
-				# token.dialoguedui.com 使用 glados 独立节点池，5个账号自动分配5个不同出口
 				use_proxy=True,
-				proxy_nodes=['JP-Dedicated-B1-1', 'Fast-B1-3', 'US-D1-2', 'Balancer-B1-2', 'TW-IPv6-P1-2'],
 			),
 			'ciyuan': ProviderConfig(
 				name='ciyuan',
@@ -428,17 +403,6 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=False,
 			),
-			'llmpm': ProviderConfig(
-				name='llmpm',
-				domain='https://api.llm.pm',
-				login_path='/console/personal',
-				sign_in_path='/api/user/checkin',
-				check_in_status_path='/api/user/checkin',
-				user_info_path='/api/user/self',
-				auth_refresh_path='/api/user/auth/refresh',
-				api_user_key='New-Api-User',
-				use_proxy=False,
-			),
 			'xiaojimao': ProviderConfig(
 				name='xiaojimao',
 				domain='https://api.ark717.com',
@@ -455,7 +419,6 @@ class AppConfig:
 				name='superapi',
 				domain='https://superapi.buzz',
 				login_path='/profile',
-				login_api_path='/api/user/login',
 				sign_in_path='/api/user/checkin',
 				check_in_status_path='/api/user/checkin',
 				user_info_path='/api/user/self',

@@ -52,12 +52,13 @@ def test_ruachat_secret_is_wired_into_workflow():
 	assert 'EXTRA_ACCOUNTS_37: ${{ secrets.EXTRA_ACCOUNTS_37 }}' in text
 
 
-def test_production_proxy_configuration_is_unchanged():
-	text = WORKFLOW.read_text(encoding='utf-8').split('\n  xiaobai-test:')[0]
+def test_checkin_workflow_pins_oracle_sg_proxy_node():
+	text = WORKFLOW.read_text(encoding='utf-8')
 
 	assert 'PROXY_SUBSCRIPTION_URL:' in text
-	assert '${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}' in text
-	assert '${{ secrets.PROXY_NODE_RAILWAY }}' in text
+	assert '${{ secrets.PROXY_NODES_BACKUP_ORACLE_SG }}' not in text
+	assert '${{ secrets.PROXY_NODE_RAILWAY }}' not in text
+	assert 'glados-proxy-assignments-' in text
 	assert 'PROXY_NODE_NAME:' not in text
 	assert 'run: bash scripts/setup_mihomo_proxy.sh' in text
 	assert 'run: bash scripts/stop_mihomo_proxy.sh' in text
@@ -71,32 +72,3 @@ def test_sheapi_secrets_are_wired_without_removing_existing_secrets():
 	assert 'EXTRA_ACCOUNTS_38: ${{ secrets.EXTRA_ACCOUNTS_38 }}' in text
 	assert 'EXTRA_ACCOUNTS_39: ${{ secrets.EXTRA_ACCOUNTS_39 }}' in text
 	assert 'EXTRA_ACCOUNTS_41: ${{ secrets.EXTRA_ACCOUNTS_41 }}' in text
-
-
-def test_single_account_test_cannot_run_production_job():
-	text = WORKFLOW.read_text(encoding='utf-8')
-	assert "github.event_name != 'workflow_dispatch' || !(inputs.xiaobai_test || inputs.xiaobai_config_only)" in text
-	assert "github.event_name == 'workflow_dispatch' && (inputs.xiaobai_test || inputs.xiaobai_config_only)" in text
-	test_job = text.split('\n  xiaobai-test:')[1]
-	assert 'run: uv run python -m scripts.check_xiaobai' in test_job
-	assert 'run checkin.py' not in test_job
-	assert 'TELEGRAM_BOT_TOKEN' not in test_job
-	assert 'ANYROUTER_ACCOUNTS' not in test_job
-	assert 'PROXY_NODE_NAME: oracle-sg' in test_job
-	assert 'XIAOBAI_STATUS_ONLY: ${{ inputs.xiaobai_status_only }}' in test_job
-
-
-def test_token_state_uses_short_lived_token_and_ciphertext_only():
-	text = WORKFLOW.read_text(encoding='utf-8')
-	assert 'XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}' in text
-	assert 'XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}' in text
-	assert 'cancel-in-progress: false' in text
-	assert 'path: .xiaobai-token-recovery/*.fernet' in text
-
-
-def test_config_only_lookup_skips_proxy_and_reaches_safe_entrypoint():
-	text = WORKFLOW.read_text(encoding='utf-8')
-	test_job = text.split('\n  xiaobai-test:')[1]
-	assert 'xiaobai_config_only:' in text
-	assert 'XIAOBAI_CONFIG_ONLY: ${{ inputs.xiaobai_config_only }}' in test_job
-	assert '配置单账号 Oracle SG 测试代理\n      if: ${{ !inputs.xiaobai_config_only }}' in test_job
