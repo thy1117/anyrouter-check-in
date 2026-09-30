@@ -43,54 +43,35 @@ def test_provider_config_parses_proxy_node():
 	assert p.use_proxy is True
 
 
-def test_provider_proxy_nodes_are_assigned_by_provider_account_order():
+def test_default_multi_account_providers_do_not_pin_nodes(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+	from utils.config import AppConfig
+
+	providers = AppConfig.load_from_env().providers
+	assert providers['qingjiu'].proxy_nodes is None
+	assert providers['sheapi'].proxy_nodes is None
+	assert providers['xiaobai'].proxy_nodes is None
+
+
+def test_fixed_proxy_node_config_is_rejected_now_that_glados_is_dynamic():
 	provider = ProviderConfig(
 		name='qingjiu',
 		domain='https://qingjiu.example.com',
 		proxy_nodes=['家宽', 'oracle-sg', 'railway-sg'],
 	)
-	accounts = [
-		AccountConfig(cookies=None, provider='qingjiu', name='清酒-thy1117'),
-		AccountConfig(cookies=None, provider='qingjiu', name='清酒-thy1118'),
-		AccountConfig(cookies=None, provider='qingjiu', name='清酒-thy1119'),
-	]
+	account = AccountConfig(cookies=None, provider='qingjiu', name='清酒-thy1117')
 
-	assert [resolve_account_proxy_node(account, provider, index) for index, account in enumerate(accounts)] == [
-		'家宽',
-		'oracle-sg',
-		'railway-sg',
-	]
+	with pytest.raises(ValueError, match='fixed proxy node configuration'):
+		resolve_account_proxy_node(account, provider, 0)
 
 
-def test_provider_proxy_nodes_fail_when_accounts_exceed_dedicated_nodes():
-	provider = ProviderConfig(name='qingjiu', domain='https://qingjiu.example.com', proxy_nodes=['家宽'])
-	account = AccountConfig(cookies=None, provider='qingjiu', name='清酒-extra')
-
-	with pytest.raises(ValueError, match='has no dedicated proxy node'):
-		resolve_account_proxy_node(account, provider, 1)
-
-
-def test_sheapi_proxy_nodes_assigned_in_order():
-	provider = ProviderConfig(
-		name='sheapi',
-		domain='https://www.sheapi.top',
-		proxy_nodes=['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'US-D1-3'],
-	)
-	accs = [
-		AccountConfig(cookies=None, provider='sheapi', name=f'SheApi-{name}')
-		for name in ('thy1117', 'thy1118', 'thy1119', 'thy1120', 'thy1121')
-	]
-	for idx, acc in enumerate(accs):
-		assert resolve_account_proxy_node(acc, provider, idx) == provider.proxy_nodes[idx]
-
-
-def test_resolve_account_proxy_node_normalizes_aliases():
+def test_account_level_fixed_proxy_node_is_rejected():
 	provider = ProviderConfig(name='custom', domain='https://example.com')
-	acc_oracle = AccountConfig(cookies=None, provider='custom', name='A1', proxy_node='oracle')
-	acc_railway = AccountConfig(cookies=None, provider='custom', name='A2', proxy_node='railway')
+	account = AccountConfig(cookies=None, provider='custom', name='A1', proxy_node='oracle')
 
-	assert resolve_account_proxy_node(acc_oracle, provider, 0) == 'oracle-sg'
-	assert resolve_account_proxy_node(acc_railway, provider, 1) == 'railway-sg'
+	with pytest.raises(ValueError, match='fixed proxy node configuration'):
+		resolve_account_proxy_node(account, provider, 0)
 
 
 def test_get_current_mihomo_node_success():

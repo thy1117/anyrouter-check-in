@@ -162,7 +162,7 @@ def test_sheapi_provider_uses_local_captcha_ocr(monkeypatch):
 	assert provider.checkin_captcha is True
 	assert provider.captcha_path == '/api/captcha?scene=checkin'
 	assert provider.use_proxy is True
-	assert provider.proxy_nodes == ['US-D1-1', 'TW-IPv6-P1-1', 'Fast-B1-2', 'Balancer-B1-1', 'US-D1-3']
+	assert provider.proxy_nodes is None
 
 
 def test_aiaiai_provider_uses_cookie_auth(monkeypatch):
@@ -207,13 +207,13 @@ def test_xiaobai_provider_uses_external_check_in_api(monkeypatch):
 
 	assert provider.api_style == 'xiaobai'
 	assert provider.domain == 'https://token.dialoguedui.com'
-	assert provider.login_api_path == '/api/v1/auth/login'
+	assert provider.login_api_path == '/auth/login'
 	assert provider.sign_in_path == '/checkin/api/checkin'
 	assert provider.check_in_status_path == '/checkin/api/status'
-	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
+	assert provider.auth_refresh_path == '/auth/refresh'
 	assert provider.api_user_key == ''
 	assert provider.use_proxy is True
-	assert provider.proxy_nodes == ['JP-Dedicated-B1-1', 'Fast-B1-3', 'US-D1-2', 'Balancer-B1-2', 'TW-IPv6-P1-2']
+	assert provider.proxy_nodes is None
 
 
 def test_gorouter_provider_uses_pat_and_turnstile(monkeypatch):
@@ -272,7 +272,7 @@ def test_qingjiu_provider_uses_browser_page_for_login_session(monkeypatch):
 	assert provider.http2 is False
 	assert provider.request_in_page is True
 	assert provider.use_proxy is True
-	assert provider.proxy_nodes == ['家宽', 'oracle-sg', 'railway-sg']
+	assert provider.proxy_nodes is None
 
 
 def test_qingjiu_custom_provider_inherits_browser_request_defaults(monkeypatch):
@@ -427,21 +427,6 @@ def test_nhh123_provider_is_builtin(monkeypatch):
 	assert provider.bypass_method is None
 	assert provider.request_in_page is False
 	assert provider.http2 is True
-
-
-def test_llmpm_provider_is_builtin(monkeypatch):
-	monkeypatch.delenv('PROVIDERS', raising=False)
-	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
-
-	provider = AppConfig.load_from_env().providers['llmpm']
-
-	assert provider.domain == 'https://api.llm.pm'
-	assert provider.sign_in_path == '/api/user/checkin'
-	assert provider.check_in_status_path == '/api/user/checkin'
-	assert provider.user_info_path == '/api/user/self'
-	assert provider.api_user_key == 'New-Api-User'
-	assert provider.use_proxy is False
-	assert provider.checkin_turnstile is False
 
 
 def test_superapi_provider_is_builtin(monkeypatch):
