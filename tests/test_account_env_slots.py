@@ -560,3 +560,23 @@ def test_nianhua_three_new_slots_append_accounts_without_clobbering(monkeypatch)
 	assert accounts[0].api_user == '8108'
 	assert accounts[1].api_user == '8109'
 	assert accounts[2].api_user == '8110'
+
+
+def test_ciyuan_second_slot_appends_without_clobbering(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_19',
+		json.dumps([{'name': '词元站-thy1117', 'provider': 'ciyuan', 'access_token': 't1', 'api_user': '1174'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_58',
+		json.dumps([{'name': '词元站-thy1118', 'provider': 'ciyuan', 'access_token': 't2', 'api_user': '2360'}]),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == ['词元站-thy1117', '词元站-thy1118']
+	assert accounts[1].api_user == '2360'
+	assert accounts[1].provider == 'ciyuan'
