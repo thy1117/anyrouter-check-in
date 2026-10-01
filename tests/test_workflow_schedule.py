@@ -72,3 +72,12 @@ def test_sheapi_secrets_are_wired_without_removing_existing_secrets():
 	assert 'EXTRA_ACCOUNTS_38: ${{ secrets.EXTRA_ACCOUNTS_38 }}' in text
 	assert 'EXTRA_ACCOUNTS_39: ${{ secrets.EXTRA_ACCOUNTS_39 }}' in text
 	assert 'EXTRA_ACCOUNTS_41: ${{ secrets.EXTRA_ACCOUNTS_41 }}' in text
+
+
+def test_superapi_secret_60_is_wired_into_workflow():
+	text = WORKFLOW.read_text(encoding='utf-8')
+
+	assert 'EXTRA_ACCOUNTS_13: ${{ secrets.EXTRA_ACCOUNTS_13 }}' in text
+	assert 'EXTRA_ACCOUNTS_46: ${{ secrets.EXTRA_ACCOUNTS_46 }}' in text
+	assert 'EXTRA_ACCOUNTS_52: ${{ secrets.EXTRA_ACCOUNTS_52 }}' in text
+	assert 'EXTRA_ACCOUNTS_60: ${{ secrets.EXTRA_ACCOUNTS_60 }}' in text

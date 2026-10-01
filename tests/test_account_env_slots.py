@@ -552,3 +552,37 @@ def test_sheapi_thy1117_slot_59_appends_without_clobbering(monkeypatch):
 	assert accounts[0].username == 'thy1117'
 	assert accounts[0].password == 'a1989723'
 	assert accounts[0].provider == 'sheapi'
+
+
+def test_superapi_fourth_slot_60_appends_without_clobbering(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_13',
+		json.dumps([{'name': 'SuperAPI-thy1117', 'provider': 'superapi', 'access_token': 't1', 'api_user': '12761'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_46',
+		json.dumps([{'name': 'SuperAPI-thy1118', 'provider': 'superapi', 'access_token': 't2', 'api_user': '12762'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_52',
+		json.dumps([{'name': 'SuperAPI-thy1119', 'provider': 'superapi', 'access_token': 't3', 'api_user': '12763'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_60',
+		json.dumps([{'name': 'SuperAPI-thy1120', 'provider': 'superapi', 'access_token': 't4', 'api_user': '12785'}]),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == [
+		'SuperAPI-thy1117',
+		'SuperAPI-thy1118',
+		'SuperAPI-thy1119',
+		'SuperAPI-thy1120',
+	]
+	assert accounts[3].access_token == 't4'
+	assert accounts[3].api_user == '12785'
+	assert accounts[3].provider == 'superapi'
