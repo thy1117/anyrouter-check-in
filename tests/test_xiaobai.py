@@ -268,13 +268,19 @@ def test_html_profile_is_not_treated_as_valid_session(monkeypatch):
 	assert len(client.calls) == 1
 
 
-def test_logs_never_echo_tokens_or_arbitrary_server_messages(monkeypatch, capsys):
+@pytest.mark.parametrize('github_actions', ['true', 'false'])
+def test_logs_never_echo_tokens_or_arbitrary_server_messages(monkeypatch, capsys, github_actions):
+	monkeypatch.setenv('GITHUB_ACTIONS', github_actions)
 	state = FakeState('old-access', 'old-refresh')
 	client = FakeClient(
 		profiles=[expired()], refreshes=[FakeResponse(401, {'code': 'old-refresh', 'message': 'old-access'})]
 	)
 	install(monkeypatch, client, state)
 	run(account('old-access', 'old-refresh'))
-	output = capsys.readouterr().out
+	lines = capsys.readouterr().out.splitlines()
+	# Runner protocol commands register redaction; they are not displayed logs.
+	mask_commands = [line for line in lines if line.startswith('::add-mask::')]
+	assert mask_commands == (['::add-mask::old-access', '::add-mask::old-refresh'] if github_actions == 'true' else [])
+	output = '\n'.join(line for line in lines if not line.startswith('::add-mask::'))
 	assert 'old-access' not in output
 	assert 'old-refresh' not in output
