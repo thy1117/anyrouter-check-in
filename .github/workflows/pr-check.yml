@@ -6,6 +6,11 @@ on:
   push:
     branches: [workflow]
 
+# Explicit bash enables pipefail: tee must not turn a failed check green.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   quality-checks:
     runs-on: ubuntu-latest
@@ -44,13 +49,13 @@ jobs:
         continue-on-error: true
         run: |
           echo "## Ruff Lint 检查" >> $GITHUB_STEP_SUMMARY
-          uv run ruff check . --output-format=github 2>&1 | tee ruff-lint.log
-          if [ $? -eq 0 ]; then
+          if uv run ruff check . --no-fix --output-format=github 2>&1 | tee ruff-lint.log; then
             echo "✅ 代码风格检查通过" >> $GITHUB_STEP_SUMMARY
             echo "status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ 代码风格检查失败，请查看详细日志" >> $GITHUB_STEP_SUMMARY
             echo "status=failure" >> $GITHUB_OUTPUT
+            exit 1
           fi
 
       - name: 代码格式检查 (Ruff Format)
@@ -58,13 +63,13 @@ jobs:
         continue-on-error: true
         run: |
           echo "## Ruff Format 检查" >> $GITHUB_STEP_SUMMARY
-          uv run ruff format --check . 2>&1 | tee ruff-format.log
-          if [ $? -eq 0 ]; then
+          if uv run ruff format --check . 2>&1 | tee ruff-format.log; then
             echo "✅ 代码格式检查通过" >> $GITHUB_STEP_SUMMARY
             echo "status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ 代码格式检查失败，请运行 \`ruff format .\`" >> $GITHUB_STEP_SUMMARY
             echo "status=failure" >> $GITHUB_OUTPUT
+            exit 1
           fi
 
       - name: 类型检查 (MyPy)
@@ -72,13 +77,13 @@ jobs:
         continue-on-error: true
         run: |
           echo "## MyPy 类型检查" >> $GITHUB_STEP_SUMMARY
-          uv run mypy . --ignore-missing-imports 2>&1 | tee mypy.log
-          if [ $? -eq 0 ]; then
+          if uv run mypy . --ignore-missing-imports 2>&1 | tee mypy.log; then
             echo "✅ 类型检查通过" >> $GITHUB_STEP_SUMMARY
             echo "status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ 类型检查失败，请查看详细日志" >> $GITHUB_STEP_SUMMARY
             echo "status=failure" >> $GITHUB_OUTPUT
+            exit 1
           fi
 
       - name: 安全扫描 (Bandit)
@@ -86,9 +91,8 @@ jobs:
         continue-on-error: true
         run: |
           echo "## Bandit 安全扫描" >> $GITHUB_STEP_SUMMARY
-          uv run bandit -r . -c pyproject.toml -f json -o bandit-report.json
-          uv run bandit -r . -c pyproject.toml 2>&1 | tee bandit.log
-          if [ $? -eq 0 ]; then
+          uv run bandit -r . -c pyproject.toml -f json -o bandit-report.json || true
+          if uv run bandit -r . -c pyproject.toml 2>&1 | tee bandit.log; then
             echo "✅ 安全扫描通过" >> $GITHUB_STEP_SUMMARY
             echo "status=success" >> $GITHUB_OUTPUT
           else
@@ -101,13 +105,13 @@ jobs:
         continue-on-error: true
         run: |
           echo "## Pytest 测试" >> $GITHUB_STEP_SUMMARY
-          uv run pytest tests/ -v --cov=. --cov-report=term --cov-report=xml --cov-report=html 2>&1 | tee pytest.log
-          if [ $? -eq 0 ]; then
+          if uv run pytest tests/ -v --cov=. --cov-report=term --cov-report=xml --cov-report=html 2>&1 | tee pytest.log; then
             echo "✅ 所有测试通过" >> $GITHUB_STEP_SUMMARY
             echo "status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ 测试失败，请查看详细日志" >> $GITHUB_STEP_SUMMARY
             echo "status=failure" >> $GITHUB_OUTPUT
+            exit 1
           fi
 
       - name: 上传覆盖率到 Codecov
