@@ -74,3 +74,46 @@ def test_source_lookup_rejects_duplicate_names_across_secrets():
 	value = json.dumps([{'provider': 'xiaobai', 'name': 'target', 'access_token': 'a'}])
 	with pytest.raises(ValueError, match='exactly one'):
 		select_account_with_source('target', {'EXTRA_ACCOUNTS_16': value, 'EXTRA_ACCOUNTS_13': value})
+
+
+@pytest.mark.parametrize('slot_number', [42, 43, 44, 45])
+def test_config_only_finds_later_slots_without_running_any_account(monkeypatch, capsys, slot_number):
+	import scripts.check_xiaobai as entrypoint
+
+	for slot in entrypoint.XIAOBAI_TEST_SLOTS:
+		monkeypatch.delenv(slot, raising=False)
+	monkeypatch.setenv('XIAOBAI_TEST_ACCOUNT', '小白Code-5237')
+	monkeypatch.setenv('XIAOBAI_CONFIG_ONLY', 'true')
+	monkeypatch.setenv('XIAOBAI_STATUS_ONLY', 'false')
+	monkeypatch.setenv(
+		f'EXTRA_ACCOUNTS_{slot_number}',
+		json.dumps(
+			[
+				{'provider': 'xiaobai', 'name': '小白Code-5237', 'access_token': 'private-target'},
+				{'provider': 'xiaobai', 'name': 'other', 'access_token': 'private-other'},
+			]
+		),
+	)
+
+	def forbidden(*args, **kwargs):
+		pytest.fail('Config lookup must not load state or run any account')
+
+	monkeypatch.setattr(entrypoint, 'run_xiaobai_check_in', forbidden)
+	monkeypatch.setattr(entrypoint.AppConfig, 'load_from_env', forbidden)
+	assert entrypoint.main() == 0
+	output = capsys.readouterr().out
+	assert f'production Secret EXTRA_ACCOUNTS_{slot_number}' in output
+	assert 'private-' not in output
+
+
+def test_isolated_workflow_wires_exactly_the_supported_xiaobai_slots():
+	import re
+	from pathlib import Path
+
+	from scripts.check_xiaobai import XIAOBAI_TEST_SLOTS
+
+	workflow = Path('.github/workflows/checkin.yml').read_text().split('  xiaobai-test:', 1)[1]
+	wired = re.findall(r'        (EXTRA_ACCOUNTS_\d+):', workflow)
+	assert set(wired) == set(XIAOBAI_TEST_SLOTS)
+	for slot in XIAOBAI_TEST_SLOTS:
+		assert f'{slot}: ${{{{ secrets.{slot} }}}}' in workflow
