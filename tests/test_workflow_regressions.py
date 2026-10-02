@@ -23,7 +23,7 @@ def test_caches_use_valid_expressions_and_save_after_partial_failure():
 
 def test_added_accounts_and_credentials_survive_the_repair():
 	text = (ROOT / '.github/workflows/checkin.yml').read_text()
-	for slot in (57, 58, 59):
+	for slot in (57, 58, 59, 60):
 		assert 'EXTRA_ACCOUNTS_' + str(slot) + ': ${{ secrets.EXTRA_ACCOUNTS_' + str(slot) + ' }}' in text
 	assert 'cryptography' in (ROOT / 'pyproject.toml').read_text()
 	assert 'from utils.xiaobai_token_state import' in (ROOT / 'checkin.py').read_text()

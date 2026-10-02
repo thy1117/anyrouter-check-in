@@ -101,3 +101,12 @@ def test_config_only_lookup_skips_proxy_and_reaches_safe_entrypoint():
 	assert 'xiaobai_config_only:' in text
 	assert 'XIAOBAI_CONFIG_ONLY: ${{ inputs.xiaobai_config_only }}' in test_job
 	assert '配置单账号 Oracle SG 测试代理\n      if: ${{ !inputs.xiaobai_config_only }}' in test_job
+
+
+def test_superapi_secret_60_is_wired_into_workflow():
+	text = WORKFLOW.read_text(encoding='utf-8')
+
+	assert 'EXTRA_ACCOUNTS_13: ${{ secrets.EXTRA_ACCOUNTS_13 }}' in text
+	assert 'EXTRA_ACCOUNTS_46: ${{ secrets.EXTRA_ACCOUNTS_46 }}' in text
+	assert 'EXTRA_ACCOUNTS_52: ${{ secrets.EXTRA_ACCOUNTS_52 }}' in text
+	assert 'EXTRA_ACCOUNTS_60: ${{ secrets.EXTRA_ACCOUNTS_60 }}' in text
