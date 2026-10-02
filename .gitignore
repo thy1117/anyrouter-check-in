@@ -13,3 +13,7 @@ balance_hash.txt
 checkin_screenshots
 
 .DS_Store
+
+.xiaobai-token-recovery/
+.mihomo/
+.proxy_assignments.json

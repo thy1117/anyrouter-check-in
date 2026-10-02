@@ -6,6 +6,9 @@ import os
 from checkin import run_xiaobai_check_in
 from utils.config import AccountConfig, AppConfig
 
+# Include the later Xiaobai slots as well as the legacy slot mapping.
+XIAOBAI_TEST_SLOTS = tuple(f'EXTRA_ACCOUNTS_{n}' for n in (13, 16, 42, 43, 44, 45))
+
 
 def select_account_with_source(name: str, slots: dict[str, str]) -> tuple[str, AccountConfig]:
 	matches = []
@@ -31,9 +34,7 @@ def main():
 	name = os.environ['XIAOBAI_TEST_ACCOUNT'].strip()
 	if not name:
 		raise ValueError('An exact account name is required; nothing was run')
-	source, account = select_account_with_source(
-		name, {slot: os.getenv(slot, '') for slot in ('EXTRA_ACCOUNTS_16', 'EXTRA_ACCOUNTS_13')}
-	)
+	source, account = select_account_with_source(name, {slot: os.getenv(slot, '') for slot in XIAOBAI_TEST_SLOTS})
 	print(f'[CONFIG] Account {name!r} is in production Secret {source}', flush=True)
 	if os.getenv('XIAOBAI_CONFIG_ONLY', 'false').lower() == 'true':
 		print('[CONFIG] Configuration lookup only; no authentication, refresh or check-in attempted', flush=True)

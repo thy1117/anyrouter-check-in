@@ -189,13 +189,13 @@ def test_guyscode_provider_uses_tokenrouter_check_in_api(monkeypatch):
 
 	assert provider.api_style == 'tokenrouter'
 	assert provider.domain == 'https://www.guyscode.com'
-	assert provider.login_api_path == '/api/v1/auth/login'
+	assert provider.login_api_path is None
 	assert provider.sign_in_path == '/api/v1/check-in'
 	assert provider.check_in_status_path == '/api/v1/check-in/status'
-	assert provider.user_info_path == '/api/v1/auth/me'
+	assert provider.user_info_path == '/api/v1/user/profile'
 	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
 	assert provider.api_user_key == ''
-	assert provider.use_proxy is False
+	assert provider.use_proxy is True
 
 
 def test_xiaobai_provider_uses_external_check_in_api(monkeypatch):
@@ -207,10 +207,10 @@ def test_xiaobai_provider_uses_external_check_in_api(monkeypatch):
 
 	assert provider.api_style == 'xiaobai'
 	assert provider.domain == 'https://token.dialoguedui.com'
-	assert provider.login_api_path == '/auth/login'
+	assert provider.login_api_path == '/api/v1/auth/login'
 	assert provider.sign_in_path == '/checkin/api/checkin'
 	assert provider.check_in_status_path == '/checkin/api/status'
-	assert provider.auth_refresh_path == '/auth/refresh'
+	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
 	assert provider.api_user_key == ''
 	assert provider.use_proxy is True
 	assert provider.proxy_nodes is None
@@ -524,3 +524,12 @@ def test_xiaojimao_provider_config_is_registered_by_default():
 	assert provider.login_api_path == '/api/user/login'
 	assert provider.sign_in_path == '/api/user/checkin'
 	assert provider.user_info_path == '/api/user/self'
+
+
+def test_restored_providers_keep_llmpm_and_superapi_login(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+	cfg = AppConfig.load_from_env()
+	assert cfg.providers['llmpm'].domain == 'https://api.llm.pm'
+	assert cfg.providers['llmpm'].sign_in_path == '/api/user/checkin'
+	assert cfg.providers['superapi'].login_api_path == '/api/user/login'
