@@ -2,6 +2,10 @@ name: AnyRouter 自动签到
 on:
   workflow_dispatch:
     inputs:
+      sheapi_proxy_only:
+        description: 'Verify and allocate five distinct SheApi exit IPs; no account requests or check-ins'
+        type: boolean
+        default: false
       xiaobai_test:
         description: 'Only test one Xiaobai account; skip every other site'
         type: boolean
@@ -32,7 +36,7 @@ concurrency:
 
 jobs:
   checkin:
-    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.xiaobai_test || inputs.xiaobai_config_only) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only) }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -258,7 +262,7 @@ jobs:
 
 
   xiaobai-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
     runs-on: ubuntu-latest
     timeout-minutes: 7
     environment: production
@@ -320,5 +324,60 @@ jobs:
         retention-days: 14
 
     - name: 停止代理
+      if: always()
+      run: bash scripts/stop_mihomo_proxy.sh
+
+
+  sheapi-proxy-test:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.sheapi_proxy_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        version: "latest"
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+    - run: uv sync --frozen --no-dev
+    - name: 配置生产节点池（不加载账号凭据）
+      env:
+        PROXY_SUBSCRIPTION_URL: ${{ secrets.PROXY_SUBSCRIPTION_URL }}
+        PROXY_TEST_URL: https://www.sheapi.top/api/status
+        MIHOMO_VERSION: v1.19.27
+        PROXY_REQUIRED: true
+      run: bash scripts/setup_mihomo_proxy.sh
+    - uses: actions/cache@v5
+      with:
+        path: .proxy_assignments.json
+        key: glados-proxy-assignments-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          glados-proxy-assignments-
+    - name: 验证并分配五个不同出口 IP（不签到）
+      env:
+        PYTHONUNBUFFERED: '1'
+      run: |
+        uv run python - <<'PY_PROBE'
+        import json
+        from pathlib import Path
+        from utils.proxy import ProxyNodeAllocator, get_mihomo_nodes, probe_proxy_ip
+        nodes = get_mihomo_nodes()
+        assert nodes, 'Mihomo node pool is empty; refusing an unverified allocation'
+        allocator = ProxyNodeAllocator(nodes)
+        accounts = [f'SheApi-thy{number}' for number in range(1117, 1122)]
+        for account in accounts:
+            allocator.assign('sheapi', account, ip_probe=lambda node: probe_proxy_ip(node, 'https://www.sheapi.top'))
+        state = json.loads(Path('.proxy_assignments.json').read_text())['sheapi']
+        assert len({state[account]['ip'] for account in accounts}) == 5
+        for account in accounts:
+            print(json.dumps({'account': account, **state[account]}, ensure_ascii=False))
+        PY_PROBE
+    - name: 停止节点检测代理
       if: always()
       run: bash scripts/stop_mihomo_proxy.sh

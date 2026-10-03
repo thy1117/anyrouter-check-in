@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import threading
@@ -11,6 +12,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generator
+
+import httpx
 
 from utils.debug import debug_print
 
@@ -40,7 +43,7 @@ class ProxyNodeAllocator:
 		tmp.write_text(json.dumps(state, ensure_ascii=False), encoding='utf-8')
 		tmp.replace(self.state_file)
 
-	def _allocate(self, provider, account, excluded=(), reuse_existing=True):
+	def _allocate(self, provider, account, excluded=(), reuse_existing=True, ip_probe=None):
 		with self._lock:
 			state = self._read()
 			now = self.now()
@@ -53,7 +56,13 @@ class ProxyNodeAllocator:
 
 			# Same account keeps its node for the rolling 24h window unless it just failed.
 			existing = assignments.get(account)
-			if reuse_existing and existing and existing['node'] not in excluded and existing['node'] in self.nodes:
+			if (
+				not ip_probe
+				and reuse_existing
+				and existing
+				and existing['node'] not in excluded
+				and existing['node'] in self.nodes
+			):
 				state[provider] = assignments
 				self._write(state)
 				return existing['node']
@@ -64,20 +73,41 @@ class ProxyNodeAllocator:
 
 			taken = {entry['node'] for key, entry in assignments.items() if key != account}
 			taken.update(excluded)
-			for node in self.nodes:
-				if node not in taken:
-					assignments[account] = {'node': node, 'assigned_at': now.isoformat()}
-					state[provider] = assignments
-					self._write(state)
-					return node
+			taken_ips = {entry.get('ip') for key, entry in assignments.items() if key != account}
+			candidates = list(self.nodes)
+			if ip_probe and existing and existing['node'] in candidates:
+				candidates.remove(existing['node'])
+				candidates.insert(0, existing['node'])
+			for node in candidates:
+				if node in taken:
+					continue
+				ip = None
+				if ip_probe:
+					try:
+						ip = ip_probe(node)
+					except ProxyNodeSwitchError as exc:
+						print(f'[WARN] {account}: Skipping node "{node}": {exc}')
+						continue
+					if ip in taken_ips:
+						print(f'[WARN] {account}: Skipping node "{node}": duplicate exit IP {ip}')
+						continue
+				assignments[account] = {'node': node, 'assigned_at': now.isoformat()}
+				if ip_probe:
+					assignments[account]['ip'] = ip
+					print(f'[INFO] {account}: Verified distinct exit IP {ip} on "{node}"')
+				state[provider] = assignments
+				self._write(state)
+				return node
 			state[provider] = assignments
 			self._write(state)
 			raise ProxyNodeSwitchError(
-				f'Provider {provider}: no unused GLaDOS node is available within the last 24 hours'
+				f'Provider {provider}: no reachable node with a distinct exit IP is available'
+				if ip_probe
+				else f'Provider {provider}: no unused GLaDOS node is available within the last 24 hours'
 			)
 
-	def assign(self, provider, account):
-		return self._allocate(provider, account)
+	def assign(self, provider, account, *, ip_probe=None):
+		return self._allocate(provider, account, ip_probe=ip_probe)
 
 	def replace(self, provider, account, failed_node):
 		return self._allocate(provider, account, excluded={failed_node}, reuse_existing=False)
@@ -178,3 +208,37 @@ def active_proxy_node(node_name: str | None, *, account_name: str = '') -> Gener
 				print(f'[INFO] {prefix}Restored proxy node to "{previous_node}"')
 			else:
 				debug_print(f'[WARN] {prefix}Failed to restore proxy node to "{previous_node}"')
+
+
+def probe_proxy_ip(node_name: str, domain: str) -> str:
+	"""确认目标站可达且两次同域 trace 的公网出口一致；不登录、不签到。"""
+	server = get_proxy_server()
+	if not server:
+		raise ProxyNodeSwitchError('Exit IP verification requires CHECKIN_PROXY_URL')
+	with active_proxy_node(node_name):
+		try:
+			with httpx.Client(
+				proxy=server,
+				trust_env=False,
+				follow_redirects=False,
+				timeout=10,
+				headers={'Cache-Control': 'no-cache', 'Connection': 'close'},
+			) as client:
+
+				def read_ip() -> str:
+					response = client.get(f'{domain}/cdn-cgi/trace')
+					response.raise_for_status()
+					fields = dict(line.split('=', 1) for line in response.text.splitlines() if '=' in line)
+					ip = ipaddress.ip_address(fields.get('ip', ''))
+					if not ip.is_global:
+						raise ValueError('Non-public exit IP')
+					return str(ip)
+
+				ip = read_ip()
+				status = client.get(f'{domain}/api/status')
+				status.raise_for_status()
+				if status.json().get('success') is not True or read_ip() != ip:
+					raise ValueError('Target unavailable or exit IP changed during probe')
+				return ip
+		except (httpx.HTTPError, ValueError, AttributeError) as exc:
+			raise ProxyNodeSwitchError(f'Exit IP/target verification failed ({type(exc).__name__})') from None
