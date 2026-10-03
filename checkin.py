@@ -51,6 +51,7 @@ from utils.proxy import (
 	get_mihomo_nodes,
 	get_playwright_proxy,
 	get_proxy_server,
+	probe_proxy_ip,
 )
 from utils.xiaobai_token_state import TokenStateError, create_xiaobai_token_state, mask_tokens
 
@@ -1757,13 +1758,20 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 		raise ValueError(f'Provider "{account.provider}" contains a fixed proxy node configuration')
 	# 未启用代理或本地无 Mihomo 端点（如本地/测试）时不切换节点。
 	if not provider_config.use_proxy or not get_proxy_server(use_proxy=provider_config.use_proxy):
+		if account.provider == 'sheapi':
+			raise ProxyNodeSwitchError('SheApi requires a proxy with a verified distinct exit IP')
 		return None
 	nodes = get_mihomo_nodes()
 	if not nodes:
+		if account.provider == 'sheapi':
+			raise ProxyNodeSwitchError('SheApi proxy node pool is unavailable')
 		return None
 	if _PROXY_ALLOCATOR is None or _PROXY_ALLOCATOR.nodes != nodes:
 		_PROXY_ALLOCATOR = ProxyNodeAllocator(nodes)
-	return _PROXY_ALLOCATOR.assign(account.provider, account.name or f'account-{provider_account_index + 1}')
+	ip_probe = (lambda node: probe_proxy_ip(node, provider_config.domain)) if account.provider == 'sheapi' else None
+	return _PROXY_ALLOCATOR.assign(
+		account.provider, account.name or f'account-{provider_account_index + 1}', ip_probe=ip_probe
+	)
 
 
 async def check_in_account(
@@ -1787,7 +1795,7 @@ async def check_in_account(
 
 	try:
 		target_proxy_node = resolve_account_proxy_node(account, provider_config, provider_account_index)
-	except ValueError as exc:
+	except (ValueError, ProxyNodeSwitchError) as exc:
 		error = str(exc)
 		print(f'[FAILED] {account_name}: {error}')
 		return False, None, attach_check_in_error(None, error)
