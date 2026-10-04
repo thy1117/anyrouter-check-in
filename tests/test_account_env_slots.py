@@ -586,3 +586,20 @@ def test_superapi_fourth_slot_60_appends_without_clobbering(monkeypatch):
 	assert accounts[3].access_token == 't4'
 	assert accounts[3].api_user == '12785'
 	assert accounts[3].provider == 'superapi'
+
+
+def test_superapi_fifth_slot_61_loads_login_credentials(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_61',
+		json.dumps([{'name': 'SuperAPI-thy1121', 'provider': 'superapi', 'username': 'thy1121', 'password': 'test'}]),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == ['SuperAPI-thy1121']
+	assert accounts[0].username == 'thy1121'
+	assert accounts[0].password == 'test'
+	assert accounts[0].provider == 'superapi'
