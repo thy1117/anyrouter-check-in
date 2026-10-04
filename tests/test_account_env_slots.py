@@ -603,3 +603,29 @@ def test_superapi_fifth_slot_61_loads_login_credentials(monkeypatch):
 	assert accounts[0].username == 'thy1121'
 	assert accounts[0].password == 'test'
 	assert accounts[0].provider == 'superapi'
+
+
+def test_kapibala_slot_62_loads_multiple_login_accounts(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_62',
+		json.dumps(
+			[
+				{
+					'name': f'Kapibala-thy{number}',
+					'provider': 'kapibala',
+					'username': f'thy{number}',
+					'password': 'test',
+				}
+				for number in range(1117, 1122)
+			]
+		),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == [f'Kapibala-thy{number}' for number in range(1117, 1122)]
+	assert [account.username for account in accounts] == [f'thy{number}' for number in range(1117, 1122)]
+	assert all(account.password == 'test' and account.provider == 'kapibala' for account in accounts)
