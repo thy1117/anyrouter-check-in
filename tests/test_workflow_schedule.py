@@ -116,6 +116,7 @@ def test_superapi_secret_60_is_wired_into_workflow():
 	assert 'EXTRA_ACCOUNTS_46: ${{ secrets.EXTRA_ACCOUNTS_46 }}' in text
 	assert 'EXTRA_ACCOUNTS_52: ${{ secrets.EXTRA_ACCOUNTS_52 }}' in text
 	assert 'EXTRA_ACCOUNTS_60: ${{ secrets.EXTRA_ACCOUNTS_60 }}' in text
+	assert 'EXTRA_ACCOUNTS_61: ${{ secrets.EXTRA_ACCOUNTS_61 }}' in text
 
 
 def test_sheapi_proxy_test_only_loads_subscription_and_requires_five_ips():
