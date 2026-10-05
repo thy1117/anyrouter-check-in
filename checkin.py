@@ -1300,7 +1300,22 @@ async def run_twinkle_check_in(account, account_name, provider_config):
 		if config.get('captcha_checkin_enabled'):
 			if not config.get('turnstile_enabled') or not config.get('turnstile_site_key'):
 				raise ValueError('Twinkle requires unsupported verification; complete check-in on the website')
-			token, verification_error = await solve_turnstile_in_page(page, config['turnstile_site_key'])
+			for attempt in range(1, GOROUTER_TURNSTILE_ATTEMPTS + 1):
+				if attempt > 1:
+					await asyncio.sleep(GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS)
+					await page.reload(wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
+					await wait_for_waf_ready(page, settings.wait_timeout_ms)
+				token, verification_error = await solve_turnstile_in_page(page, config['turnstile_site_key'])
+				if token:
+					break
+				await reset_turnstile_in_page(page)
+				# Retry only a stalled widget, never a rejected verification or a submitted check-in.
+				if verification_error not in (
+					'Turnstile widget did not become interactive',
+					'Turnstile challenge stalled after click',
+				):
+					break
+				print(f'[WARN] {account_name}: {verification_error} ({attempt}/{GOROUTER_TURNSTILE_ATTEMPTS})')
 			if not token:
 				reason = 'Turnstile did not return a token'
 				if verification_error in (

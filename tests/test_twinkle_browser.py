@@ -8,7 +8,9 @@ from utils.config import AccountConfig, AppConfig
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('scenario', ['verified', 'already', 'challenge_failed', 'rejected', 'status_failed'])
+@pytest.mark.parametrize(
+	'scenario', ['verified', 'already', 'challenge_failed', 'rejected', 'status_failed', 'retry_success']
+)
 async def test_twinkle_contract_and_no_replay(monkeypatch, scenario):
 	provider = AppConfig.load_from_env().providers['twinkle']
 	account = AccountConfig(
@@ -53,13 +55,27 @@ async def test_twinkle_contract_and_no_replay(monkeypatch, scenario):
 		if scenario == 'challenge_failed'
 		else ('challenge', None)
 	)
+	if scenario == 'retry_success':
+		solver.side_effect = [(None, 'Turnstile challenge stalled after click'), ('challenge', None)]
 	monkeypatch.setattr(checkin, 'solve_turnstile_in_page', solver)
+	monkeypatch.setattr(checkin, 'reset_turnstile_in_page', AsyncMock())
+	monkeypatch.setattr(checkin.asyncio, 'sleep', AsyncMock())
 	success, _, after = await checkin._run_account_checkin(account, account.name, provider)
-	assert success == (scenario in ('verified', 'already'))
+	assert success == (scenario in ('verified', 'already', 'retry_success'))
 	posts = [c for c in calls if c['path'] == provider.sign_in_path and c['method'] == 'POST']
-	assert len(posts) == (1 if scenario in ('verified', 'rejected') else 0)
+	assert len(posts) == (1 if scenario in ('verified', 'rejected', 'retry_success') else 0)
 	assert all(c['path'] != provider.auth_refresh_path for c in calls)
-	assert solver.await_count == (0 if scenario in ('already', 'status_failed') else 1)
+	expected_attempts = (
+		0
+		if scenario in ('already', 'status_failed')
+		else 3
+		if scenario == 'challenge_failed'
+		else 2
+		if scenario == 'retry_success'
+		else 1
+	)
+	assert solver.await_count == expected_attempts
+	assert page.reload.await_count == max(0, expected_attempts - 1)
 	context.close.assert_awaited_once()
 	if not success:
 		assert after['check_in_error']
