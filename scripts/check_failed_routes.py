@@ -13,7 +13,7 @@ from checkin import get_waf_cookies_with_browser, is_checked_in_status, parse_co
 from utils.config import AppConfig, load_accounts_config
 from utils.proxy import active_proxy_node, get_proxy_server
 
-TARGETS = {'AnyRouter', 'Twinkle-Dodo', 'Twinkle-112581647', 'SuperAPI-thy1121'}
+TARGETS = {'Twinkle-Dodo', 'Twinkle-112581647'}
 NODES = {'Twinkle-Dodo': 'Fast-B1-1', 'Twinkle-112581647': 'Fast-B1-2'}
 SAFE = {'success', 'code', 'message', 'error', 'reason', 'detail', 'eligible', 'enabled',
         'checked_in_today', 'checked_in', 'has_checked_in', 'signedToday', 'last_checkin_date',
@@ -135,7 +135,7 @@ async def main():
         cfg = AppConfig.load_from_env()
         accounts = load_accounts_config() or []
     selected = {a.name: a for a in accounts if a.name in TARGETS}
-    assert set(selected) == TARGETS, 'Target account missing; no requests dispatched'
+    assert set(selected) == TARGETS and all(a.provider == 'twinkle' for a in selected.values()), 'Target account missing; no requests dispatched'
     for a in selected.values():
         REDACTIONS.extend(str(v) for v in [a.password, a.access_token, a.refresh_token, a.session_id, a.email] if v)
         if isinstance(a.cookies, dict):
@@ -148,7 +148,7 @@ async def main():
         print('CONFIG', json.dumps({'account': name, 'provider': a.provider, 'use_proxy': p.use_proxy,
                                      'node': a.proxy_node, 'has_cookie': bool(a.cookies),
                                      'has_access_token': bool(a.access_token), 'has_login': a.has_login_credentials()}))
-        for route in ('proxy', 'direct') if a.provider == 'twinkle' else ('direct', 'proxy'):
+        for route in ('proxy',):
             node = NODES.get(name, 'Fast-B1-1') if route == 'proxy' else None
             try:
                 with active_proxy_node(node, account_name=name):
