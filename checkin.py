@@ -1237,6 +1237,124 @@ def run_bearer_check_in(
 	return False, None, attach_check_in_error(None, error)
 
 
+async def run_twinkle_check_in(account, account_name, provider_config):
+	"""Follow Twinkle's JSON check-in contract in one browser session; never replay a challenge."""
+	settings = load_browser_login_settings(account_name, provider_config.name, persist_profile=False)
+	context = None
+	before = None
+	try:
+		context = await launch_login_context(settings, use_proxy=provider_config.use_proxy)
+		page = await context.new_page()
+		await prepare_browser_page(page)
+		await page.goto(
+			provider_config.domain + provider_config.login_path,
+			wait_until='domcontentloaded',
+			timeout=settings.wait_timeout_ms,
+		)
+		await wait_for_waf_ready(page, settings.wait_timeout_ms)
+		headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
+
+		async def request(path, method='GET', body=None):
+			result = await page.evaluate(
+				"""async ({path, method, headers, body}) => {
+					const response = await fetch(path, {method, headers, credentials: 'include',
+						...(body === null ? {} : {body: JSON.stringify(body)})});
+					return {status: response.status, body: await response.text()};
+				}""",
+				{'path': path, 'method': method, 'headers': headers, 'body': body},
+			)
+			return result['status'], result['body']
+
+		access = account.access_token
+		if account.has_login_credentials():
+			status, body = await request(
+				provider_config.login_api_path,
+				'POST',
+				{'email': account.get_login_identifier(), 'password': account.password},
+			)
+			if status != 200:
+				raise ValueError(f'Twinkle login failed - HTTP {status}')
+			data = unwrap_api_data(json.loads(body))
+			access = data.get('access_token') if isinstance(data, dict) and not data.get('requires_2fa') else None
+		if not access:
+			raise ValueError('Twinkle requires a valid login; no refresh token was replayed')
+		mask_tokens(access)
+		headers['Authorization'] = f'Bearer {access}'
+		status, body = await request(provider_config.user_info_path)
+		before = parse_sub2api_profile_response(status, body)
+		if not before.get('success'):
+			raise ValueError(f'Twinkle profile failed - HTTP {status}')
+		status, body = await request(provider_config.sign_in_path)
+		state = unwrap_api_data(json.loads(body))
+		if status != 200 or not isinstance(state, dict):
+			raise ValueError('Twinkle check-in status unavailable; no submission attempted')
+		if is_checked_in_status(state):
+			return True, before, before
+		if state.get('enabled') is False or state.get('eligible') is False:
+			raise ValueError('Twinkle check-in is disabled or not eligible')
+		status, body = await request('/api/v1/settings/public')
+		config = unwrap_api_data(json.loads(body))
+		if status != 200 or not isinstance(config, dict):
+			raise ValueError('Twinkle verification settings unavailable; no submission attempted')
+		payload = {}
+		if config.get('captcha_checkin_enabled'):
+			if not config.get('turnstile_enabled') or not config.get('turnstile_site_key'):
+				raise ValueError('Twinkle requires unsupported verification; complete check-in on the website')
+			for attempt in range(1, GOROUTER_TURNSTILE_ATTEMPTS + 1):
+				if attempt > 1:
+					await asyncio.sleep(GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS)
+					await page.reload(wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
+					await wait_for_waf_ready(page, settings.wait_timeout_ms)
+				token, verification_error = await solve_turnstile_in_page(page, config['turnstile_site_key'])
+				if token:
+					break
+				await reset_turnstile_in_page(page)
+				# Retry only a stalled widget, never a rejected verification or a submitted check-in.
+				if verification_error not in (
+					'Turnstile widget did not become interactive',
+					'Turnstile challenge stalled after click',
+				):
+					break
+				print(f'[WARN] {account_name}: {verification_error} ({attempt}/{GOROUTER_TURNSTILE_ATTEMPTS})')
+			if not token:
+				reason = 'Turnstile did not return a token'
+				if verification_error in (
+					'Turnstile widget did not become interactive',
+					'Turnstile challenge stalled after click',
+				):
+					reason = verification_error
+				elif (
+					verification_error
+					and verification_error.startswith('Turnstile failed - ')
+					and verification_error.rsplit(' ', 1)[-1].isdigit()
+				):
+					reason = verification_error
+				elif verification_error and verification_error.startswith('Turnstile render failed'):
+					reason = 'Turnstile render failed'
+				raise ValueError(f'Twinkle verification incomplete: {reason}; no check-in submitted')
+			mask_tokens(token)
+			payload['turnstile_token'] = token
+		status, body = await request(provider_config.sign_in_path, 'POST', payload)
+		if status != 200:
+			if 'TURNSTILE_VERIFICATION_FAILED' in body or 'turnstile verification failed' in body.lower():
+				raise ValueError('Twinkle human verification failed; complete check-in on the website (no retry)')
+			raise ValueError(f'Twinkle check-in failed - HTTP {status} (no retry)')
+		status, body = await request(provider_config.sign_in_path)
+		if status != 200 or not is_checked_in_status(unwrap_api_data(json.loads(body))):
+			raise ValueError('Twinkle check-in not confirmed by server; no retry')
+		status, body = await request(provider_config.user_info_path)
+		return True, before, parse_sub2api_profile_response(status, body)
+	except ValueError as exc:
+		# Only locally constructed errors are safe; JSON decoding errors can contain response details.
+		error = 'Twinkle invalid response; no retry' if isinstance(exc, json.JSONDecodeError) else str(exc)
+	except Exception as exc:
+		error = f'Twinkle browser check-in failed - {type(exc).__name__}; no retry'
+	finally:
+		if context:
+			await context.close()
+	return False, before, attach_check_in_error(None, error)
+
+
 def run_newapi_password_check_in(
 	account: AccountConfig,
 	account_name: str,
@@ -1810,6 +1928,9 @@ async def check_in_account(
 
 
 async def _run_account_checkin(account: AccountConfig, account_name: str, provider_config):
+	if provider_config.name == 'twinkle':
+		return await run_twinkle_check_in(account, account_name, provider_config)
+
 	if provider_config.checkin_turnstile:
 		return await run_gorouter_check_in_in_page(account, account_name, provider_config)
 
