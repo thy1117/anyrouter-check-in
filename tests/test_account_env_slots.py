@@ -629,3 +629,29 @@ def test_kapibala_slot_62_loads_multiple_login_accounts(monkeypatch):
 	assert [account.name for account in accounts] == [f'Kapibala-thy{number}' for number in range(1117, 1122)]
 	assert [account.username for account in accounts] == [f'thy{number}' for number in range(1117, 1122)]
 	assert all(account.password == 'test' and account.provider == 'kapibala' for account in accounts)
+
+
+def test_futurehub_slot_63_loads_bearer_account(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_63',
+		json.dumps(
+			[
+				{
+					'name': 'FutureHub-9243',
+					'provider': 'futureppo',
+					'access_token': 'test-token',
+					'api_user': '9243',
+				}
+			]
+		),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == ['FutureHub-9243']
+	assert accounts[0].provider == 'futureppo'
+	assert accounts[0].access_token == 'test-token'
+	assert accounts[0].api_user == '9243'
