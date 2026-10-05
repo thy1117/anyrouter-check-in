@@ -48,7 +48,11 @@ async def test_twinkle_contract_and_no_replay(monkeypatch, scenario):
 	monkeypatch.setattr(checkin, 'launch_login_context', AsyncMock(return_value=context))
 	monkeypatch.setattr(checkin, 'prepare_browser_page', AsyncMock())
 	monkeypatch.setattr(checkin, 'wait_for_waf_ready', AsyncMock())
-	solver = AsyncMock(return_value=(None, 'timeout') if scenario == 'challenge_failed' else ('challenge', None))
+	solver = AsyncMock(
+		return_value=(None, 'Turnstile challenge stalled after click')
+		if scenario == 'challenge_failed'
+		else ('challenge', None)
+	)
 	monkeypatch.setattr(checkin, 'solve_turnstile_in_page', solver)
 	success, _, after = await checkin._run_account_checkin(account, account.name, provider)
 	assert success == (scenario in ('verified', 'already'))
@@ -59,3 +63,6 @@ async def test_twinkle_contract_and_no_replay(monkeypatch, scenario):
 	context.close.assert_awaited_once()
 	if not success:
 		assert after['check_in_error']
+
+	if scenario == 'challenge_failed':
+		assert 'Turnstile challenge stalled after click' in after['check_in_error']

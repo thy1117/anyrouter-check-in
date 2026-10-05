@@ -1300,9 +1300,23 @@ async def run_twinkle_check_in(account, account_name, provider_config):
 		if config.get('captcha_checkin_enabled'):
 			if not config.get('turnstile_enabled') or not config.get('turnstile_site_key'):
 				raise ValueError('Twinkle requires unsupported verification; complete check-in on the website')
-			token, _ = await solve_turnstile_in_page(page, config['turnstile_site_key'])
+			token, verification_error = await solve_turnstile_in_page(page, config['turnstile_site_key'])
 			if not token:
-				raise ValueError('Twinkle human verification required; complete check-in on the website')
+				reason = 'Turnstile did not return a token'
+				if verification_error in (
+					'Turnstile widget did not become interactive',
+					'Turnstile challenge stalled after click',
+				):
+					reason = verification_error
+				elif (
+					verification_error
+					and verification_error.startswith('Turnstile failed - ')
+					and verification_error.rsplit(' ', 1)[-1].isdigit()
+				):
+					reason = verification_error
+				elif verification_error and verification_error.startswith('Turnstile render failed'):
+					reason = 'Turnstile render failed'
+				raise ValueError(f'Twinkle verification incomplete: {reason}; no check-in submitted')
 			mask_tokens(token)
 			payload['turnstile_token'] = token
 		status, body = await request(provider_config.sign_in_path, 'POST', payload)
