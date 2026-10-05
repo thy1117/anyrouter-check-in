@@ -22,7 +22,7 @@ jobs:
       with:
         python-version: '3.11'
     - name: Dependencies
-      run: uv sync --frozen --no-dev && uv run python -m cloakbrowser install
+      run: uv sync --frozen --no-dev
     - name: Existing production proxy pool
       env:
         PROXY_SUBSCRIPTION_URL: ${{ secrets.PROXY_SUBSCRIPTION_URL }}
