@@ -1,139 +1,39 @@
-name: AnyRouter 自动签到
-on:
-  workflow_dispatch:
-    inputs:
-      sheapi_proxy_only:
-        description: 'Verify and allocate five distinct SheApi exit IPs; no account requests or check-ins'
-        type: boolean
-        default: false
-      xiaobai_test:
-        description: 'Only test one Xiaobai account; skip every other site'
-        type: boolean
-        default: false
-      xiaobai_config_only:
-        description: 'Only identify the selected account Secret; no site requests'
-        type: boolean
-        default: false
-      xiaobai_account:
-        description: 'Exact Xiaobai account name (scoped test slots only)'
-        type: string
-        default: '小白Code-1125'
-      xiaobai_status_only:
-        description: 'Validate authentication/status without submitting check-in'
-        type: boolean
-        default: true
-  schedule:
-    # 09:07, 21:07 Asia/Shanghai (UTC+8).
-    # GitHub 的 schedule 只是尽力而为，fork 仓库优先级最低，经常延迟数小时甚至丢任务；
-    # 一天跑两次（早晚各一次，北京时间 09:07、21:07）以保证「至少有一次按时跑到」的概率。签到接口对重复调用是幂等的，
-    # 已签到会返回「今日已签到」并按成功处理，所以多跑不会有副作用。
-    - cron: '7 1,13 * * *'
-
-# Serialize scheduled/manual runs sharing rotating Xiaobai credentials.
+name: Twinkle only diagnostic
+'on':
+  workflow_dispatch: {}
 concurrency:
   group: checkin-session-state-${{ github.repository }}
   cancel-in-progress: false
-
 jobs:
-  checkin:
-    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only) }}
-    permissions:
-      contents: write
+  diagnostic:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 12
     environment: production
-    env:
-      PYTHONIOENCODING: utf-8
-      PYTHONUNBUFFERED: 1
-      CHECKIN_TIMEZONE: Asia/Shanghai
-      CHECKIN_DISABLED_PROVIDERS: qingjiu
-      DEBUG_MODE: false
-      NOTIFY_EVERY_RUN: true
+    permissions:
+      contents: read
     steps:
     - uses: actions/checkout@v6
-
+      with:
+        persist-credentials: false
     - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
       with:
-        version: "latest"
-
+        version: latest
     - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
-
-    - name: 安装依赖
+    - name: Dependencies
       run: |
-        uv sync --frozen
-        echo "✅ 环境初始化完成"
-
-    - name: 确保 Xvfb 可用
-      run: |
-        if command -v xvfb-run >/dev/null 2>&1; then
-          echo "✅ GitHub Runner 已预装 Xvfb"
-        else
-          sudo apt-get update
-          sudo apt-get install -y xvfb
-        fi
-
-    - name: 缓存 CloakBrowser 二进制
-      uses: actions/cache@v5
-      id: cloakbrowser-cache
-      with:
-        path: ~/.cloakbrowser
-        key: ${{ runner.os }}-cloakbrowser-v1
-        restore-keys: |
-          ${{ runner.os }}-cloakbrowser-
-
-    - name: 安装 CloakBrowser
-      run: |
+        uv sync --frozen --no-dev
         uv run python -m cloakbrowser install
-        echo "✅ CloakBrowser 安装完成"
-
-    - name: 恢复余额历史缓存
-      id: balance-cache
-      uses: actions/cache/restore@v5
-      with:
-        path: balance_hash.txt
-        key: balance-hash-v2-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: |
-          balance-hash-v2-${{ github.ref_name }}-
-
-    - name: 准备浏览器 Profile 目录
-      run: mkdir -p .browser_profiles
-
-    - name: 恢复浏览器 Profile 缓存
-      id: browser-cache
-      uses: actions/cache/restore@v5
-      with:
-        path: .browser_profiles
-        key: browser-profiles-v2-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: |
-          browser-profiles-v2-${{ runner.os }}-${{ github.ref_name }}-
-
-    - name: 配置 Mihomo 代理池
+    - name: Existing production proxy pool
       env:
         PROXY_SUBSCRIPTION_URL: ${{ secrets.PROXY_SUBSCRIPTION_URL }}
         PROXY_TEST_URL: https://www.sheapi.top/api/status
         MIHOMO_VERSION: v1.19.27
-        PROXY_REQUIRED: true
+        PROXY_REQUIRED: 'true'
       run: bash scripts/setup_mihomo_proxy.sh
-
-    - name: 恢复 GLaDOS 节点分配记录
-      id: proxy-cache
-      uses: actions/cache/restore@v5
-      with:
-        path: .proxy_assignments.json
-        key: glados-proxy-assignments-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: |
-          glados-proxy-assignments-
-
-    - name: 执行签到
+    - name: Only two Twinkle accounts; one proxy attempt each
       env:
-        DEBUG_MODE: ${{ env.DEBUG_MODE }}
-        CHECKIN_HEADLESS: false
-        CHECKIN_HUMANIZE: true
-        CHECKIN_WAIT_TIMEOUT_MS: 120000
-        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
-        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
         ANYROUTER_ACCOUNTS: ${{ secrets.ANYROUTER_ACCOUNTS }}
         EXTRA_ACCOUNTS: ${{ secrets.EXTRA_ACCOUNTS }}
         EXTRA_ACCOUNTS_3: ${{ secrets.EXTRA_ACCOUNTS_3 }}
@@ -181,206 +81,14 @@ jobs:
         EXTRA_ACCOUNTS_60: ${{ secrets.EXTRA_ACCOUNTS_60 }}
         EXTRA_ACCOUNTS_61: ${{ secrets.EXTRA_ACCOUNTS_61 }}
         EXTRA_ACCOUNTS_62: ${{ secrets.EXTRA_ACCOUNTS_62 }}
-        EXTRA_ACCOUNTS_63: ${{ secrets.EXTRA_ACCOUNTS_63 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
-        DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
-        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-        CUSTOM_SMTP_SERVER: ${{ secrets.CUSTOM_SMTP_SERVER }}
-        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-        SERVERPUSHKEY: ${{ secrets.SERVERPUSHKEY }}
-        FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-        WEIXIN_WEBHOOK: ${{ secrets.WEIXIN_WEBHOOK }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        GOTIFY_URL: ${{ secrets.GOTIFY_URL }}
-        GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
-        GOTIFY_PRIORITY: ${{ secrets.GOTIFY_PRIORITY }}
-        BARK_KEY: ${{ secrets.BARK_KEY }}
-        BARK_SERVER: ${{ secrets.BARK_SERVER }}
-      run: |
-        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
-
-    - name: 保存加密 Token 恢复检查点
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: xiaobai-encrypted-recovery-${{ github.run_id }}-${{ github.run_attempt }}
-        path: .xiaobai-token-recovery/*.fernet
-        include-hidden-files: true
-        if-no-files-found: ignore
-        retention-days: 14
-
-    - name: 上传调试截图
-      if: always() && env.DEBUG_MODE == 'true'
-      env:
-        HTTP_PROXY: ''
-        HTTPS_PROXY: ''
-      uses: actions/upload-artifact@v4
-      with:
-        name: checkin-screenshots-${{ github.run_id }}
-        path: checkin_screenshots/
-        if-no-files-found: warn
-        include-hidden-files: true
-        retention-days: 14
-
-
-    - name: 停止代理
-      if: always()
-      run: bash scripts/stop_mihomo_proxy.sh
-
-    - name: 保存 balance-cache
-      if: ${{ !cancelled() && steps.balance-cache.outcome == 'success' && steps.balance-cache.outputs.cache-hit != 'true' && hashFiles('balance_hash.txt') != '' }}
-      uses: actions/cache/save@v5
-      with:
-        path: balance_hash.txt
-        key: ${{ steps.balance-cache.outputs.cache-primary-key }}
-
-    - name: 保存 browser-cache
-      if: ${{ !cancelled() && steps.browser-cache.outcome == 'success' && steps.browser-cache.outputs.cache-hit != 'true' && hashFiles('.browser_profiles/**') != '' }}
-      uses: actions/cache/save@v5
-      with:
-        path: .browser_profiles
-        key: ${{ steps.browser-cache.outputs.cache-primary-key }}
-
-    - name: 保存 proxy-cache
-      if: ${{ !cancelled() && steps.proxy-cache.outcome == 'success' && steps.proxy-cache.outputs.cache-hit != 'true' && hashFiles('.proxy_assignments.json') != '' }}
-      uses: actions/cache/save@v5
-      with:
-        path: .proxy_assignments.json
-        key: ${{ steps.proxy-cache.outputs.cache-primary-key }}
-
-    - name: 执行结果
-      if: always()
-      run: |
-        echo "签到任务执行完成"
-        echo "时间: $(date)"
-        if [ "${DEBUG_MODE}" = "true" ] && [ -d checkin_screenshots ] && [ "$(ls -A checkin_screenshots 2>/dev/null)" ]; then
-          echo "调试截图已上传为 artifact: checkin-screenshots-${{ github.run_id }}"
-          ls -la checkin_screenshots/
-        fi
-
-
-  xiaobai-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 7
-    environment: production
-    permissions:
-      contents: write
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        persist-credentials: false
-
-    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
-      with:
-        version: "latest"
-
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-
-    - name: 安装依赖（不启动浏览器）
-      run: uv sync --frozen --no-dev
-
-    - name: 配置单账号 Oracle SG 测试代理
-      if: ${{ !inputs.xiaobai_config_only }}
-      timeout-minutes: 2
-      env:
-        PROXY_SUBSCRIPTION_URL: ''
-        PROXY_NODES: ${{ secrets.PROXY_NODES_XIAOBAI_ORACLE_SG }}
-        PROXY_TEST_URL: https://token.dialoguedui.com/custom/checkin_bonus_user
-        PROXY_NODE_NAME: oracle-sg
-        MIHOMO_VERSION: v1.19.27
-        PROXY_REQUIRED: true
-      run: bash scripts/setup_mihomo_proxy.sh
-
-    - name: 只验证指定的小白账号
-      timeout-minutes: 3
-      env:
         PYTHONUNBUFFERED: '1'
-        XIAOBAI_TEST_ACCOUNT: ${{ inputs.xiaobai_account }}
-        XIAOBAI_CONFIG_ONLY: ${{ inputs.xiaobai_config_only }}
-        XIAOBAI_STATUS_ONLY: ${{ inputs.xiaobai_status_only }}
-        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
-        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
-        EXTRA_ACCOUNTS_16: ${{ secrets.EXTRA_ACCOUNTS_16 }}
-        EXTRA_ACCOUNTS_13: ${{ secrets.EXTRA_ACCOUNTS_13 }}
-        EXTRA_ACCOUNTS_42: ${{ secrets.EXTRA_ACCOUNTS_42 }}
-        EXTRA_ACCOUNTS_43: ${{ secrets.EXTRA_ACCOUNTS_43 }}
-        EXTRA_ACCOUNTS_44: ${{ secrets.EXTRA_ACCOUNTS_44 }}
-        EXTRA_ACCOUNTS_45: ${{ secrets.EXTRA_ACCOUNTS_45 }}
-      run: uv run python -m scripts.check_xiaobai
-
-    - name: 保存加密 Token 恢复检查点
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: xiaobai-encrypted-recovery-${{ github.run_id }}-${{ github.run_attempt }}
-        path: .xiaobai-token-recovery/*.fernet
-        include-hidden-files: true
-        if-no-files-found: ignore
-        retention-days: 14
-
-    - name: 停止代理
-      if: always()
-      run: bash scripts/stop_mihomo_proxy.sh
-
-
-  sheapi-proxy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.sheapi_proxy_only }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: production
-    permissions:
-      contents: read
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        persist-credentials: false
-    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
-      with:
-        version: "latest"
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-    - run: uv sync --frozen --no-dev
-    - name: 配置生产节点池（不加载账号凭据）
-      env:
-        PROXY_SUBSCRIPTION_URL: ${{ secrets.PROXY_SUBSCRIPTION_URL }}
-        PROXY_TEST_URL: https://www.sheapi.top/api/status
-        MIHOMO_VERSION: v1.19.27
-        PROXY_REQUIRED: true
-      run: bash scripts/setup_mihomo_proxy.sh
-    - uses: actions/cache@v5
-      with:
-        path: .proxy_assignments.json
-        key: glados-proxy-assignments-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: |
-          glados-proxy-assignments-
-    - name: 验证并分配五个不同出口 IP（不签到）
-      env:
-        PYTHONUNBUFFERED: '1'
-      run: |
-        uv run python - <<'PY_PROBE'
-        import json
-        from pathlib import Path
-        from utils.proxy import ProxyNodeAllocator, get_mihomo_nodes, probe_proxy_ip
-        nodes = get_mihomo_nodes()
-        assert nodes, 'Mihomo node pool is empty; refusing an unverified allocation'
-        allocator = ProxyNodeAllocator(nodes)
-        accounts = [f'SheApi-thy{number}' for number in range(1117, 1122)]
-        for account in accounts:
-            allocator.assign('sheapi', account, ip_probe=lambda node: probe_proxy_ip(node, 'https://www.sheapi.top'))
-        state = json.loads(Path('.proxy_assignments.json').read_text())['sheapi']
-        assert len({state[account]['ip'] for account in accounts}) == 5
-        for account in accounts:
-            print(json.dumps({'account': account, **state[account]}, ensure_ascii=False))
-        PY_PROBE
-    - name: 停止节点检测代理
+        DEBUG_MODE: 'false'
+        CHECKIN_TIMEZONE: Asia/Shanghai
+        CHECKIN_WAIT_TIMEOUT_MS: '45000'
+        CHECKIN_HEADLESS: 'true'
+      run: xvfb-run -a uv run python -m scripts.check_twinkle_browser
+    - name: Stop diagnostic proxy
       if: always()
       run: bash scripts/stop_mihomo_proxy.sh
