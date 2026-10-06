@@ -2017,7 +2017,9 @@ async def _run_account_checkin(account: AccountConfig, account_name: str, provid
 		return run_xiaobai_check_in(account, account_name, provider_config)
 	if provider_config.api_style in ('sub2api', 'tokenrouter'):
 		return run_bearer_check_in(account, account_name, provider_config)
-	if provider_config.login_api_path and account.has_login_credentials():
+	# Cloudflare-protected providers must authenticate in the same browser context
+	# used for their in-page API requests; the plain HTTP login endpoint returns 403.
+	if provider_config.login_api_path and account.has_login_credentials() and not provider_config.request_in_page:
 		return run_newapi_password_check_in(account, account_name, provider_config)
 
 	# 邮箱密码优先

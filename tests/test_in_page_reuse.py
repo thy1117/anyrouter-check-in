@@ -163,3 +163,55 @@ async def test_check_in_account_hands_login_page_over_and_closes_context(monkeyp
 	assert captured['page'] is page
 	# 借出的上下文必须由 check_in_account 释放，否则浏览器进程留着不退。
 	assert state['closed'] is True
+
+
+async def test_in_page_provider_password_login_uses_browser_context(monkeypatch):
+	page = FakePage()
+	captured: dict = {}
+	state = {'closed': False}
+
+	async def close():
+		state['closed'] = True
+
+	context = SimpleNamespace(close=close)
+
+	async def fake_login(account_name, provider_config, provider, email, password, *, keep_open=False):
+		captured['keep_open'] = keep_open
+		captured['password'] = password
+		return BrowserLoginResult(cookies={'session': 'x'}, api_user='1', context=context, page=page)
+
+	async def fake_in_page(account, account_name, provider_config, **kwargs):
+		captured['page'] = kwargs.get('page')
+		return True, {'success': True}, {'success': True}
+
+	def forbidden_http_login(*args, **kwargs):
+		raise AssertionError('Cloudflare provider must not use the plain HTTP login path')
+
+	monkeypatch.setattr('checkin.login_with_credentials', fake_login)
+	monkeypatch.setattr('checkin.run_check_in_in_page', fake_in_page)
+	monkeypatch.setattr('checkin.run_newapi_password_check_in', forbidden_http_login)
+
+	provider = ProviderConfig(
+		name='superapi',
+		domain='https://superapi.example.test',
+		login_path='/profile',
+		login_api_path='/api/user/login',
+		sign_in_path='/api/user/checkin',
+		user_info_path='/api/user/self',
+		request_in_page=True,
+	)
+	account = AccountConfig(
+		cookies=None,
+		provider='superapi',
+		name='SuperAPI-test',
+		username='test-user',
+		password='test-password',
+	)
+
+	success, _, _ = await check_in_account(account, 0, AppConfig(providers={'superapi': provider}))
+
+	assert success is True
+	assert captured['keep_open'] is True
+	assert captured['password'] == 'test-password'
+	assert captured['page'] is page
+	assert state['closed'] is True
