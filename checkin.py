@@ -550,6 +550,77 @@ def _response_message(body: str) -> str:
 	return body
 
 
+def _rotation_response_data(response, action: str) -> dict:
+	if response.status_code != 200:
+		raise ValueError(f'{action} failed - HTTP {response.status_code}; no retry')
+	try:
+		payload = response.json()
+	except ValueError:
+		raise ValueError(f'{action} returned invalid JSON; no retry') from None
+	data = payload.get('data') if isinstance(payload, dict) and payload.get('code') == 0 else None
+	if not isinstance(data, dict):
+		raise ValueError(f'{action} returned invalid response data; no retry')
+	return data
+
+
+def execute_rotate_check_in_result(
+	client, account_name: str, provider_config, headers: dict, status_response
+) -> tuple[bool, str | None]:
+	"""Submit one confidently matched challenge, then confirm via server status."""
+	from captcha_ocr.rotate import solve_data_urls
+
+	try:
+		status = _rotation_response_data(status_response, 'Check-in status')
+		if status.get('checked_in_today') is True:
+			print(f'[SUCCESS] {account_name}: Already checked in today')
+			return True, None
+		if status.get('checked_in_today') is not False or status.get('eligible') is not True:
+			raise ValueError('Check-in status is invalid or not eligible; no submission attempted')
+
+		started = time.monotonic()
+		response = client.get(f'{provider_config.domain}{provider_config.captcha_path}', headers=headers, timeout=30)
+		challenge = _rotation_response_data(response, 'Rotation challenge')
+		if challenge.get('mode') != 'rotate' or not isinstance(challenge.get('id'), str) or not challenge['id']:
+			raise ValueError('Unsupported or invalid rotation challenge; no submission attempted')
+		expires = challenge.get('expires_in')
+		if type(expires) is not int or expires <= 0:
+			raise ValueError('Invalid rotation challenge expiry; no submission attempted')
+		image, thumb = challenge.get('image'), challenge.get('thumb')
+		if not isinstance(image, str) or not isinstance(thumb, str):
+			raise ValueError('Invalid rotation challenge images; no submission attempted')
+		angle = solve_data_urls(image, thumb)
+		if time.monotonic() - started >= expires:
+			raise ValueError('Rotation challenge expired before submission')
+
+		print(f'[NETWORK] {account_name}: Submitting matched rotation check-in')
+		# A timeout may happen after crediting the reward. Never replay this POST.
+		try:
+			client.post(
+				f'{provider_config.domain}{provider_config.sign_in_path}',
+				json={'captcha_id': challenge['id'], 'captcha_angle': angle},
+				headers=headers,
+				timeout=30,
+			)
+		except httpx.HTTPError:
+			print(f'[WARN] {account_name}: Submission result uncertain; checking status only')
+		response = client.get(
+			f'{provider_config.domain}{provider_config.check_in_status_path or provider_config.sign_in_path}',
+			headers=headers,
+			timeout=30,
+		)
+		confirmed = _rotation_response_data(response, 'Check-in confirmation')
+		if confirmed.get('checked_in_today') is not True:
+			raise ValueError('Rotation check-in not confirmed by server; no retry')
+		print(f'[SUCCESS] {account_name}: Rotation check-in confirmed by server')
+		return True, None
+	except ValueError as exc:
+		error = str(exc)
+	except Exception as exc:
+		error = f'Rotation check-in error - {type(exc).__name__}; no retry'
+	print(f'[FAILED] {account_name}: {error}')
+	return False, error
+
+
 def execute_captcha_check_in_result(
 	client, account_name: str, provider_config, headers: dict
 ) -> tuple[bool, str | None]:
@@ -1197,6 +1268,14 @@ def run_bearer_check_in(
 			print(user_info_before['display'])
 
 			status_response = client.get(status_url, headers=headers, timeout=30)
+			if provider_config.checkin_rotate:
+				success, rotation_error = execute_rotate_check_in_result(
+					client, account_name, provider_config, headers, status_response
+				)
+				_, user_info_after = get_profile()
+				if not success:
+					user_info_after = attach_check_in_error(user_info_after, rotation_error)
+				return success, user_info_before, user_info_after
 			status_payload = None
 			try:
 				status_payload = unwrap_api_data(status_response.json())
