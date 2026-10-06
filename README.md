@@ -272,6 +272,25 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 该站的账号密码登录带 Turnstile 校验，GitHub Actions 不使用账号密码登录。请把上述 JSON 保存到 production Environment Secret `EXTRA_ACCOUNTS_13`，不要把 token 提交到仓库。
 
+### NexaVlinks 旋转验证签到
+
+内置 `nexavlinks` Provider 使用 `https://asia.nexavlinks.com` 的网页登录令牌（不是模型 API Key）。登录后在开发者工具的 `Application → Local Storage` 获取 `auth_token` 和 `refresh_token`，将账号数组保存到 `production` Environment Secret `EXTRA_ACCOUNTS_64`：
+
+```json
+[
+  {
+    "name": "NexaVlinks-账号后缀",
+    "provider": "nexavlinks",
+    "access_token": "网页登录后的 auth_token",
+    "refresh_token": "网页登录后的 refresh_token"
+  }
+]
+```
+
+每个账号使用不同的 `name`。脚本先查询今日状态，已签到则跳过；未签到时在本地匹配旋转图片角度，只提交一次，再通过服务器 `checked_in_today` 确认。图片格式改变、匹配不明确或请求异常时不盲目猜测、不重放签到请求，也不把凭据或响应正文写进日志。
+
+令牌刷新复用现有的 `XIAOBAI_TOKEN_STATE_KEY` 和 `checkin-token-state` 加密存储；未配置持久化存储时拒绝刷新，以免丢失轮换后的令牌。只合并代码不会自动添加账号 Secret，请勿把令牌提交到仓库。
+
 ### GoRouter
 
 GoRouter（`https://gorouter.app`）是新版 NewAPI，只支持 GitHub OAuth 登录，签到接口 `POST /api/user/checkin` 带 Cloudflare Turnstile 校验。因为无法在 CI 里跑 OAuth，凭据用**个人访问令牌（access_token）**：
