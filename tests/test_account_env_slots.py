@@ -701,3 +701,36 @@ def test_nexavlinks_slot_65_overrides_1125_without_clobbering_siblings(monkeypat
 	assert accounts[0].access_token == 'new-1125'
 	assert accounts[0].refresh_token == 'new-r'
 	assert [account.access_token for account in accounts[1:]] == ['old-5237', 'old-3069', 'old-8746', 'old-9308']
+
+
+def test_aiaiai_slot_66_replaces_password_entry_with_token_only(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_40',
+		json.dumps(
+			[
+				{
+					'name': 'AIAIAI-thy1118',
+					'provider': 'aiaiai',
+					'email': 'old@example.com',
+					'password': 'old-password',
+					'cookies': {'session': 'old-session'},
+					'api_user': '3769',
+				}
+			]
+		),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_66',
+		json.dumps([{'name': 'AIAIAI-thy1118', 'provider': 'aiaiai', 'access_token': 'new-token', 'api_user': '3769'}]),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == ['AIAIAI-thy1118']
+	assert accounts[0].access_token == 'new-token'
+	assert accounts[0].api_user == '3769'
+	assert not accounts[0].has_login_credentials()
+	assert not accounts[0].cookies
