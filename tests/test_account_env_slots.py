@@ -655,3 +655,49 @@ def test_futurehub_slot_63_loads_bearer_account(monkeypatch):
 	assert accounts[0].provider == 'futureppo'
 	assert accounts[0].access_token == 'test-token'
 	assert accounts[0].api_user == '9243'
+
+
+def test_nexavlinks_slot_65_overrides_1125_without_clobbering_siblings(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_64',
+		json.dumps(
+			[
+				{
+					'name': f'NexaVlinks-{suffix}',
+					'provider': 'nexavlinks',
+					'access_token': f'old-{suffix}',
+					'refresh_token': 'r',
+				}
+				for suffix in ('1125', '5237', '3069', '8746', '9308')
+			]
+		),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_65',
+		json.dumps(
+			[
+				{
+					'name': 'NexaVlinks-1125',
+					'provider': 'nexavlinks',
+					'access_token': 'new-1125',
+					'refresh_token': 'new-r',
+				}
+			]
+		),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == [
+		'NexaVlinks-1125',
+		'NexaVlinks-5237',
+		'NexaVlinks-3069',
+		'NexaVlinks-8746',
+		'NexaVlinks-9308',
+	]
+	assert accounts[0].access_token == 'new-1125'
+	assert accounts[0].refresh_token == 'new-r'
+	assert [account.access_token for account in accounts[1:]] == ['old-5237', 'old-3069', 'old-8746', 'old-9308']

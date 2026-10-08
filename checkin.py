@@ -67,6 +67,8 @@ XIAOBAI_MAX_REQUEST_ATTEMPTS = 3
 XIAOBAI_RETRY_STATUS_CODES = (502, 503, 504)
 BEARER_LOGIN_MAX_ATTEMPTS = 3
 CAPTCHA_RETRY_KEYWORDS = ('验证码', 'captcha', '过期', 'expired', 'invalid code')
+# SheApi 走 Cloudflare，源站短暂 502/504 时每次换新验证码图片再试，与小白分支一致。
+CAPTCHA_RETRY_STATUS_CODES = XIAOBAI_RETRY_STATUS_CODES
 ALREADY_CHECKED_KEYWORDS = (
 	'已经签到',
 	'已签到',
@@ -642,6 +644,10 @@ def execute_captcha_check_in_result(
 			captcha_response = client.get(captcha_url, headers=checkin_headers, timeout=30)
 			if captcha_response.status_code != 200:
 				error = f'CAPTCHA request failed - HTTP {captcha_response.status_code}'
+				if captcha_response.status_code in CAPTCHA_RETRY_STATUS_CODES and attempt < CAPTCHA_MAX_ATTEMPTS:
+					print(f'[WARN] {account_name}: {error}; retrying ({attempt}/{CAPTCHA_MAX_ATTEMPTS})')
+					time.sleep(attempt)
+					continue
 				print(f'[FAILED] {account_name}: {error}')
 				return False, error
 			captcha_payload = captcha_response.json()
@@ -688,6 +694,14 @@ def execute_captcha_check_in_result(
 					return True, None
 			if any(keyword in message.lower() for keyword in CAPTCHA_RETRY_KEYWORDS):
 				print(f'[WARN] {account_name}: CAPTCHA rejected ({message[:120]}), refreshing image')
+				continue
+			# 已提交的验证码在网关错误时不会被服务端消费，下一轮换新图片即可。
+			if response.status_code in CAPTCHA_RETRY_STATUS_CODES and attempt < CAPTCHA_MAX_ATTEMPTS:
+				print(
+					f'[WARN] {account_name}: Check-in returned HTTP {response.status_code}; '
+					f'retrying with a new CAPTCHA ({attempt}/{CAPTCHA_MAX_ATTEMPTS})'
+				)
+				time.sleep(attempt)
 				continue
 			error = f'Check-in failed - {message[:120]}'
 			print(f'[FAILED] {account_name}: {error}')
