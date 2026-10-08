@@ -198,3 +198,99 @@ def test_get_user_info_includes_gift_quota_in_balance():
 
 	assert result['quota'] == 243.0
 	assert result['display'] == ':money: Current balance: $243.0, Used: $0.0'
+
+
+def _captcha_provider():
+	from utils.config import ProviderConfig
+
+	return ProviderConfig(name='sheapi', domain='https://www.sheapi.top', checkin_captcha=True)
+
+
+class _CaptchaGatewayClient:
+	"""Script captcha GET / check-in POST status codes in order; 200 bodies are well-formed."""
+
+	def __init__(self, get_statuses, post_statuses):
+		self.get_statuses = iter(get_statuses)
+		self.post_statuses = iter(post_statuses)
+		self.captcha_count = 0
+		self.submissions = []
+
+	def get(self, url, *, headers, timeout):
+		self.captcha_count += 1
+		status = next(self.get_statuses)
+		if status != 200:
+			return FakeResponse(status, {})
+		return _JsonResponse(
+			200, {'data': {'captcha_id': f'id-{self.captcha_count}', 'image': 'data:image/png;base64,abc'}}
+		)
+
+	def post(self, url, *, json, headers, timeout):
+		self.submissions.append(json)
+		status = next(self.post_statuses)
+		if status != 200:
+			return _JsonResponse(status, {'type': 'https://developers.cloudflare.com/.../error-502/'})
+		return _JsonResponse(200, {'success': True})
+
+
+class _JsonResponse(FakeResponse):
+	def __init__(self, status_code, payload):
+		import json as _json
+
+		super().__init__(status_code, payload)
+		self.text = _json.dumps(payload)
+
+
+def test_execute_captcha_check_in_retries_captcha_gateway_error(monkeypatch):
+	from checkin import execute_captcha_check_in_result
+
+	monkeypatch.setattr('checkin.time.sleep', lambda seconds: None)
+	monkeypatch.setattr(
+		'captcha_ocr.base64_captcha.solve_data_url',
+		lambda image: type('OCR', (), {'text': '6789', 'exact': True})(),
+	)
+	client = _CaptchaGatewayClient(get_statuses=[502, 200], post_statuses=[200])
+
+	assert execute_captcha_check_in_result(client, 'SheApi', _captcha_provider(), {}) == (True, None)
+	assert client.captcha_count == 2
+	assert client.submissions == [{'captcha_id': 'id-2', 'captcha_code': '6789'}]
+
+
+def test_execute_captcha_check_in_retries_check_in_gateway_error_with_new_image(monkeypatch):
+	from checkin import execute_captcha_check_in_result
+
+	monkeypatch.setattr('checkin.time.sleep', lambda seconds: None)
+	monkeypatch.setattr(
+		'captcha_ocr.base64_captcha.solve_data_url',
+		lambda image: type('OCR', (), {'text': '6789', 'exact': True})(),
+	)
+	client = _CaptchaGatewayClient(get_statuses=[200, 200], post_statuses=[502, 200])
+
+	assert execute_captcha_check_in_result(client, 'SheApi', _captcha_provider(), {}) == (True, None)
+	assert [item['captcha_id'] for item in client.submissions] == ['id-1', 'id-2']
+
+
+def test_execute_captcha_check_in_gives_up_after_max_gateway_errors(monkeypatch):
+	from checkin import CAPTCHA_MAX_ATTEMPTS, execute_captcha_check_in_result
+
+	monkeypatch.setattr('checkin.time.sleep', lambda seconds: None)
+	client = _CaptchaGatewayClient(get_statuses=[502] * CAPTCHA_MAX_ATTEMPTS, post_statuses=[])
+
+	assert execute_captcha_check_in_result(client, 'SheApi', _captcha_provider(), {}) == (
+		False,
+		'CAPTCHA request failed - HTTP 502',
+	)
+	assert client.captcha_count == CAPTCHA_MAX_ATTEMPTS
+	assert client.submissions == []
+
+
+def test_execute_captcha_check_in_does_not_retry_non_gateway_captcha_error(monkeypatch):
+	from checkin import execute_captcha_check_in_result
+
+	monkeypatch.setattr('checkin.time.sleep', lambda seconds: None)
+	client = _CaptchaGatewayClient(get_statuses=[403, 200], post_statuses=[200])
+
+	assert execute_captcha_check_in_result(client, 'SheApi', _captcha_provider(), {}) == (
+		False,
+		'CAPTCHA request failed - HTTP 403',
+	)
+	assert client.captcha_count == 1
