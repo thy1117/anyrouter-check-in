@@ -44,14 +44,32 @@ def test_sidrune_slot_appends_without_overwriting_existing_accounts(monkeypatch)
 			]
 		),
 	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_68',
+		json.dumps(
+			[
+				{
+					'name': 'Sidrune-tthxyc',
+					'provider': 'sidrune',
+					'access_token': 'second-access',
+					'refresh_token': 'second-refresh',
+				}
+			]
+		),
+	)
 	accounts = load_accounts_config()
 	assert accounts is not None
-	assert [account.name for account in accounts] == ['existing', 'Sidrune-dodo']
+	assert [account.name for account in accounts] == ['existing', 'Sidrune-dodo', 'Sidrune-tthxyc']
 	assert accounts[0].access_token == 'existing-token'
 	assert accounts[1].provider == 'sidrune'
+	assert accounts[1].access_token == 'test-access'
 	assert accounts[1].refresh_token == 'test-refresh'
+	assert accounts[2].provider == 'sidrune'
+	assert accounts[2].access_token == 'second-access'
+	assert accounts[2].refresh_token == 'second-refresh'
 	workflow = Path(__file__).resolve().parents[1] / '.github/workflows/checkin.yml'
 	assert 'EXTRA_ACCOUNTS_67: ${{ secrets.EXTRA_ACCOUNTS_67 }}' in workflow.read_text()
+	assert 'EXTRA_ACCOUNTS_68: ${{ secrets.EXTRA_ACCOUNTS_68 }}' in workflow.read_text()
 
 
 @pytest.mark.parametrize(
