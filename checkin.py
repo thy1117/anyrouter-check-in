@@ -21,6 +21,7 @@ if hasattr(sys.stderr, 'reconfigure'):
 import httpx
 from cloakbrowser import launch_async
 from dotenv import load_dotenv
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from utils.browser import (
 	BrowserLoginResult,
@@ -576,8 +577,15 @@ def execute_rotate_check_in_result(
 		if status.get('checked_in_today') is True:
 			print(f'[SUCCESS] {account_name}: Already checked in today')
 			return True, None
-		if status.get('checked_in_today') is not False or status.get('eligible') is not True:
-			raise ValueError('Check-in status is invalid or not eligible; no submission attempted')
+		if status.get('checked_in_today') is not False or not isinstance(status.get('eligible'), bool):
+			raise ValueError(
+				'Check-in status is invalid: expected boolean checked_in_today and eligible; no submission attempted'
+			)
+		if status['eligible'] is False:
+			raise ValueError(
+				'Check-in not eligible: usage must exceed 0.4 quota today or yesterday '
+				'(first check-in on registration day exempt); no submission attempted'
+			)
 
 		started = time.monotonic()
 		response = client.get(f'{provider_config.domain}{provider_config.captcha_path}', headers=headers, timeout=30)
@@ -1009,6 +1017,19 @@ def run_xiaobai_check_in(
 		with httpx.Client(headers=headers, **client_kwargs) as client:
 			refresh_attempted = False
 
+			def get_with_retry(url: str):
+				# Retry read-only calls, never a check-in or rotating refresh POST.
+				for attempt in range(1, XIAOBAI_MAX_REQUEST_ATTEMPTS):
+					try:
+						return client.get(url, headers=headers, timeout=30)
+					except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+						print(
+							f'[WARN] {account_name}: GET failed - {type(exc).__name__}; '
+							f'retrying ({attempt}/{XIAOBAI_MAX_REQUEST_ATTEMPTS - 1})'
+						)
+						time.sleep(attempt)
+				return client.get(url, headers=headers, timeout=30)
+
 			def refresh():
 				nonlocal access_token, refresh_token, refresh_attempted
 				if refresh_attempted or not refresh_token:
@@ -1058,11 +1079,11 @@ def run_xiaobai_check_in(
 					refresh()
 				profile_url = f'{provider_config.domain}{provider_config.user_info_path}'
 				headers['Authorization'] = f'Bearer {access_token}'
-				response = client.get(profile_url, headers=headers, timeout=30)
+				response = get_with_retry(profile_url)
 				if response.status_code == 401 and refresh_token and not refresh_attempted:
 					refresh()
 					headers['Authorization'] = f'Bearer {access_token}'
-					response = client.get(profile_url, headers=headers, timeout=30)
+					response = get_with_retry(profile_url)
 				if response.status_code != 200:
 					raise TokenStateError(_xiaobai_auth_error(response, 'Authentication validation'))
 				# A 200 SPA/HTML response is not evidence of a valid session.
@@ -1080,14 +1101,14 @@ def run_xiaobai_check_in(
 			def request(method: str, url: str):
 				for attempt in range(1, XIAOBAI_MAX_REQUEST_ATTEMPTS + 1):
 					if method == 'GET':
-						response = client.get(url, headers=headers, timeout=30)
+						response = get_with_retry(url)
 					else:
 						response = client.post(url, headers=headers, json={}, timeout=30)
 					if response.status_code == 401 and not refresh_attempted and refresh_token:
 						refresh()
 						authenticate()
 						if method == 'GET':
-							response = client.get(url, headers=headers, timeout=30)
+							response = get_with_retry(url)
 						else:
 							response = client.post(url, headers=headers, json={}, timeout=30)
 					# A check-in 502 with a verified session is a service error,
@@ -1678,7 +1699,15 @@ async def run_gorouter_check_in_in_page(
 			print(f'[WARN] {account_name}: No refresh cookie found in account or browser profile')
 
 		login_url = f'{provider_config.domain}{provider_config.login_path}'
-		await page.goto(login_url, wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
+		for attempt in range(2):
+			try:
+				await page.goto(login_url, wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
+				break
+			except PlaywrightTimeoutError:
+				if attempt:
+					raise
+				print(f'[WARN] {account_name}: Page navigation timed out; retrying once before account requests')
+				await asyncio.sleep(2)
 		await wait_for_waf_ready(page, settings.wait_timeout_ms)
 
 		headers = {

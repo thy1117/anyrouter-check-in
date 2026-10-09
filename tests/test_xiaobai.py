@@ -59,10 +59,14 @@ class FakeClient:
 	def get(self, url, *, headers, timeout):
 		self.calls.append({'method': 'GET', 'url': url, 'headers': headers.copy()})
 		if url.endswith('/auth/me'):
-			return (
+			response = (
 				next(self.profiles) if self.profiles is not None else FakeResponse(200, {'code': 0, 'data': {'id': 1}})
 			)
-		return next(self.statuses)
+		else:
+			response = next(self.statuses)
+		if isinstance(response, Exception):
+			raise response
+		return response
 
 	def post(self, url, *, headers=None, json=None, timeout):
 		self.calls.append({'method': 'POST', 'url': url, 'headers': (headers or {}).copy(), 'json': json})
@@ -219,6 +223,32 @@ def test_status_502_recovers_on_retry(monkeypatch):
 	client = FakeClient(statuses=[FakeResponse(502, {}), signed()])
 	install(monkeypatch, client)
 	assert run()[0] is True
+
+
+@pytest.mark.parametrize('stage', ['profile', 'status'])
+def test_get_connection_error_recovers_without_rotating_tokens(monkeypatch, capsys, stage):
+	error = httpx.ConnectError('private-token')
+	client = FakeClient(
+		profiles=[error, profile_ok()] if stage == 'profile' else None,
+		statuses=[error, signed()] if stage == 'status' else [signed()],
+	)
+	state = FakeState('access-secret', 'refresh-secret')
+	install(monkeypatch, client, state)
+	assert run(account('access-secret', 'refresh-secret'))[0] is True
+	assert [x['method'] for x in client.calls] == ['GET', 'GET', 'GET']
+	assert state.saved == []
+	assert 'private-token' not in capsys.readouterr().out
+
+
+def test_profile_connection_failure_stops_after_three_attempts(monkeypatch, capsys):
+	client = FakeClient(profiles=[httpx.ConnectError('private-token') for _ in range(3)])
+	state = FakeState('access-secret', 'refresh-secret')
+	install(monkeypatch, client, state)
+	result = run(account('access-secret', 'refresh-secret'))
+	assert result[0] is False and result[2]['check_in_error'].endswith('ConnectError')
+	assert [x['method'] for x in client.calls] == ['GET', 'GET', 'GET']
+	assert state.saved == []
+	assert 'private-token' not in capsys.readouterr().out
 
 
 def test_status_401_refreshes_once_and_revalidates_profile(monkeypatch):

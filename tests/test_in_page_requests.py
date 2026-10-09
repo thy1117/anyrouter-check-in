@@ -1,7 +1,34 @@
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 
 from checkin import parse_check_in_response, parse_user_info_response
+from utils.browser import request_in_page
 from utils.config import AppConfig, ProviderConfig
+
+
+@pytest.mark.parametrize(
+	'method,status,attempts',
+	[('GET', 522, 3), ('GET', 503, 3), ('GET', 401, 1), ('GET', 429, 1), ('POST', 522, 1), ('POST', 503, 1)],
+)
+async def test_in_page_retries_only_transient_gets(monkeypatch, method, status, attempts):
+	page = SimpleNamespace(evaluate=AsyncMock(return_value={'status': status, 'body': 'response'}))
+	sleep = AsyncMock()
+	monkeypatch.setattr('utils.browser.asyncio.sleep', sleep)
+	assert await request_in_page(page, '/api/user/self', method=method) == (status, 'response')
+	assert page.evaluate.await_count == attempts
+	assert sleep.await_count == attempts - 1
+
+
+async def test_in_page_get_recovers_from_522_with_same_headers(monkeypatch):
+	page = SimpleNamespace(evaluate=AsyncMock(side_effect=[{'status': 522}, {'status': 200, 'body': 'ok'}]))
+	monkeypatch.setattr('utils.browser.asyncio.sleep', AsyncMock())
+	headers = {'Authorization': 'Bearer private-token'}
+	assert await request_in_page(page, '/api/user/self', headers=headers) == (200, 'ok')
+	assert page.evaluate.await_count == 2
+	assert all(call.args[1]['headers'] == headers for call in page.evaluate.await_args_list)
 
 
 def test_futureppo_uses_in_page_requests(monkeypatch):
