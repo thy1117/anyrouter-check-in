@@ -492,6 +492,25 @@ def test_motomoto_provider_uses_turnstile(monkeypatch):
 	assert provider.turnstile_site_key == '0x4AAAAAAEmotcLRDeCq9vgi'
 
 
+def test_aotera_provider_uses_turnstile(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['aotera']
+
+	assert provider.domain == 'https://aotera.cc'
+	assert provider.login_path == '/console/personal'
+	assert provider.sign_in_path == '/api/user/checkin'
+	assert provider.check_in_status_path == '/api/user/checkin'
+	assert provider.user_info_path == '/api/user/self'
+	assert provider.auth_refresh_path == '/api/user/auth/refresh'
+	assert provider.api_user_key == 'New-Api-User'
+	assert provider.use_proxy is False
+	assert provider.persist_profile is True
+	assert provider.checkin_turnstile is True
+	assert provider.turnstile_site_key == '0x4AAAAAAFNldzOlcO9be9_G'
+
+
 def test_ruachat_provider_uses_newapi_checkin_without_turnstile(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)

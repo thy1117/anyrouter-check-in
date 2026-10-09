@@ -289,6 +289,23 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 脚本读取 `/api/v1/welfare/profile`，今日已签到则跳过，资格不足不提交；符合条件时调用 `/api/v1/welfare/checkin`。不自动抽奖或兑换福利。令牌过期后复用已有的加密 Token 状态存储进行刷新，不把令牌提交到仓库。
 
+### Aotera
+
+Aotera（`https://aotera.cc`）使用新版 NewAPI，签到接口 `POST /api/user/checkin` 带 Cloudflare Turnstile 校验。凭据使用**个人访问令牌（access_token）**加**用户 ID（api_user）**。
+
+将账号 JSON 保存到 `production` Environment Secret `EXTRA_ACCOUNTS_73`（后续账号可用 `EXTRA_ACCOUNTS_74` ~ `EXTRA_ACCOUNTS_77`）：
+
+```json
+[
+  {
+    "name": "Aotera-thy1117",
+    "provider": "aotera",
+    "access_token": "nap_xxxxxx",
+    "api_user": "1136"
+  }
+]
+```
+
 ### NexaVlinks 旋转验证签到
 
 内置 `nexavlinks` Provider 使用 `https://asia.nexavlinks.com` 的网页登录令牌（不是模型 API Key）。登录后在开发者工具的 `Application → Local Storage` 获取 `auth_token` 和 `refresh_token`，将账号数组保存到 `production` Environment Secret `EXTRA_ACCOUNTS_64`：

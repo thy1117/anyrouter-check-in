@@ -734,3 +734,20 @@ def test_aiaiai_slot_66_replaces_password_entry_with_token_only(monkeypatch):
 	assert accounts[0].api_user == '3769'
 	assert not accounts[0].has_login_credentials()
 	assert not accounts[0].cookies
+
+
+def test_aotera_slot_73_loads_pat_account(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_73',
+		json.dumps([{'name': 'Aotera-thy1117', 'provider': 'aotera', 'access_token': 'test-pat', 'api_user': '1136'}]),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == ['Aotera-thy1117']
+	assert accounts[0].provider == 'aotera'
+	assert accounts[0].access_token == 'test-pat'
+	assert accounts[0].api_user == '1136'
