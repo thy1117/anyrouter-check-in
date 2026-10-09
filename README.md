@@ -272,6 +272,23 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 该站的账号密码登录带 Turnstile 校验，GitHub Actions 不使用账号密码登录。请把上述 JSON 保存到 production Environment Secret `EXTRA_ACCOUNTS_13`，不要把 token 提交到仓库。
 
+### Sidrune 福利签到
+
+内置 `sidrune` Provider 使用 `https://sidrune.ai/welfare` 的网页登录令牌。账号单独保存到 `production` Environment Secret `EXTRA_ACCOUNTS_67`，不会覆盖已有账号：
+
+```json
+[
+  {
+    "name": "Sidrune-dodo",
+    "provider": "sidrune",
+    "access_token": "网页登录后的 auth_token",
+    "refresh_token": "网页登录后的 refresh_token"
+  }
+]
+```
+
+脚本读取 `/api/v1/welfare/profile`，今日已签到则跳过，资格不足不提交；符合条件时调用 `/api/v1/welfare/checkin`。不自动抽奖或兑换福利。令牌过期后复用已有的加密 Token 状态存储进行刷新，不把令牌提交到仓库。
+
 ### NexaVlinks 旋转验证签到
 
 内置 `nexavlinks` Provider 使用 `https://asia.nexavlinks.com` 的网页登录令牌（不是模型 API Key）。登录后在开发者工具的 `Application → Local Storage` 获取 `auth_token` 和 `refresh_token`，将账号数组保存到 `production` Environment Secret `EXTRA_ACCOUNTS_64`：
