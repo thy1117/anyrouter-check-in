@@ -274,7 +274,7 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 ### Sidrune 福利签到
 
-内置 `sidrune` Provider 使用 `https://sidrune.ai/welfare` 的网页登录令牌。`Sidrune-dodo`、`Sidrune-tthxyc`、`Sidrune-5237`、`Sidrune-8746` 分别保存在 `production` Environment Secret `EXTRA_ACCOUNTS_67`、`EXTRA_ACCOUNTS_68`、`EXTRA_ACCOUNTS_69`、`EXTRA_ACCOUNTS_70`，不会覆盖已有账号：
+内置 `sidrune` Provider 使用 `https://sidrune.ai/welfare` 的网页登录令牌。`Sidrune-dodo`、`Sidrune-tthxyc`、`Sidrune-5237`、`Sidrune-8746`、`Sidrune-3069`、`Sidrune-9308` 分别保存在 `production` Environment Secret `EXTRA_ACCOUNTS_67`、`EXTRA_ACCOUNTS_68`、`EXTRA_ACCOUNTS_69`、`EXTRA_ACCOUNTS_70`、`EXTRA_ACCOUNTS_71`、`EXTRA_ACCOUNTS_72`，不会覆盖已有账号：
 
 ```json
 [
