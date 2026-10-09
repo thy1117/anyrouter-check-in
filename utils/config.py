@@ -208,6 +208,18 @@ class AppConfig:
 				checkin_rotate=True,
 				captcha_path='/api/v1/check-in/challenge',
 			),
+			'sidrune': ProviderConfig(
+				name='sidrune',
+				domain='https://sidrune.ai',
+				api_style='sub2api',
+				login_path='/welfare',
+				sign_in_path='/api/v1/welfare/checkin',
+				check_in_status_path='/api/v1/welfare/profile',
+				user_info_path='/api/v1/auth/me',
+				auth_refresh_path='/api/v1/auth/refresh',
+				api_user_key='',
+				use_proxy=False,
+			),
 			'42w': ProviderConfig(
 				name='42w',
 				domain='https://api.42w.shop',
