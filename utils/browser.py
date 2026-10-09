@@ -659,18 +659,25 @@ async def request_in_page(
 	握手伪装不了，即便持有有效 cf_clearance 也会 403。改由页面自己发请求，
 	指纹和挑战通过时完全一致，也不必把 cookie 搬来搬去。
 	"""
-	result = await page.evaluate(
-		"""async ({path, method, headers}) => {
-			const res = await fetch(path, {
-				method,
-				headers,
-				credentials: 'include',
-			});
-			return {status: res.status, body: await res.text()};
-		}""",
-		{'path': path, 'method': method, 'headers': headers or {}},
-	)
-	return int(result['status']), result.get('body') or ''
+	for attempt in range(1, 4):
+		result = await page.evaluate(
+			"""async ({path, method, headers}) => {
+				const res = await fetch(path, {
+					method,
+					headers,
+					credentials: 'include',
+				});
+				return {status: res.status, body: await res.text()};
+			}""",
+			{'path': path, 'method': method, 'headers': headers or {}},
+		)
+		status = int(result['status'])
+		# A failed POST may already have changed server state. Only replay GETs.
+		if method.upper() != 'GET' or status not in (502, 503, 504, 522) or attempt == 3:
+			break
+		print(f'[WARN] In-page GET returned HTTP {status}; retrying ({attempt}/2)')
+		await asyncio.sleep(attempt)
+	return status, result.get('body') or ''
 
 
 _TURNSTILE_RENDER_JS = """

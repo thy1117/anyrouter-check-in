@@ -3,6 +3,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -130,11 +133,16 @@ def test_parse_gorouter_checkin_result_handles_non_json_body():
 	assert 'HTTP 502' in error
 
 
-async def test_turnstile_flow_sends_api_user_header(monkeypatch):
+@pytest.mark.parametrize('navigation_failures', [0, 1, 2])
+async def test_turnstile_flow_sends_api_user_header(monkeypatch, navigation_failures):
 	requests = []
+	navigations = []
 
 	class Page:
 		async def goto(self, *args, **kwargs):
+			navigations.append(kwargs)
+			if len(navigations) <= navigation_failures:
+				raise PlaywrightTimeoutError('Page navigation timed out')
 			return None
 
 	class Context:
@@ -160,12 +168,13 @@ async def test_turnstile_flow_sends_api_user_header(monkeypatch):
 		return 200, '{"success":true,"data":{"stats":{"checked_in_today":true}}}'
 
 	monkeypatch.setattr(
-		'checkin.load_browser_login_settings', lambda *args, **kwargs: SimpleNamespace(wait_timeout_ms=1000)
+		'checkin.load_browser_login_settings', lambda *args, **kwargs: SimpleNamespace(wait_timeout_ms=120000)
 	)
 	monkeypatch.setattr('checkin.launch_login_context', fake_launch_context)
 	monkeypatch.setattr('checkin.prepare_browser_page', noop)
 	monkeypatch.setattr('checkin.wait_for_waf_ready', noop)
 	monkeypatch.setattr('checkin.request_in_page', fake_request)
+	monkeypatch.setattr('checkin.asyncio.sleep', noop)
 
 	account = AccountConfig(
 		cookies=None,
@@ -187,6 +196,11 @@ async def test_turnstile_flow_sends_api_user_header(monkeypatch):
 
 	success, _, _ = await run_gorouter_check_in_in_page(account, 'Laomo', provider)
 
+	assert len(navigations) == min(navigation_failures + 1, 2)
+	assert all(navigation['timeout'] == 120000 for navigation in navigations)
+	if navigation_failures == 2:
+		assert success is False and requests == []
+		return
 	assert success is True
 	assert requests
 	assert all(headers['Authorization'] == 'Bearer secret-token' for _, _, headers in requests)

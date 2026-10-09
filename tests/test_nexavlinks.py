@@ -134,6 +134,24 @@ def test_invalid_or_ineligible_status_never_submits(monkeypatch, capsys, status)
 	assert 'private-token' not in capsys.readouterr().out
 
 
+def test_ineligible_status_explains_usage_requirement_without_submitting(monkeypatch):
+	run, requests, _ = setup_session(monkeypatch, status=response({'checked_in_today': False, 'eligible': False}))
+	success, _, after = run()
+	assert success is False
+	assert 'not eligible' in after['check_in_error'] and '0.4' in after['check_in_error']
+	assert 'invalid' not in after['check_in_error']
+	assert all(r.method == 'GET' and not r.url.path.endswith('/challenge') for r in requests)
+
+
+@pytest.mark.parametrize('eligible', [None, 'false', 0])
+def test_malformed_eligibility_is_not_reported_as_usage_requirement(monkeypatch, eligible):
+	run, requests, _ = setup_session(monkeypatch, status=response({'checked_in_today': False, 'eligible': eligible}))
+	success, _, after = run()
+	assert success is False
+	assert 'invalid' in after['check_in_error'] and 'not eligible' not in after['check_in_error']
+	assert all(r.method == 'GET' and not r.url.path.endswith('/challenge') for r in requests)
+
+
 @pytest.mark.parametrize(
 	'data', [{'mode': 'click'}, {'mode': 'rotate', 'id': ''}, {'mode': 'rotate', 'id': 'test-captcha', 'expires_in': 0}]
 )
