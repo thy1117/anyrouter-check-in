@@ -308,7 +308,7 @@ Aotera（`https://aotera.cc`）使用新版 NewAPI，签到接口 `POST /api/use
 
 ### Lunora 每日签到
 
-内置 `lunora` Provider 使用 `https://www.uselunora.com/checkin` 的网页登录令牌。`Lunora-1125`、`Lunora-5237`、`Lunora-8746`、`Lunora-9308` 分别保存在 `production` Environment Secret `EXTRA_ACCOUNTS_78`、`EXTRA_ACCOUNTS_79`、`EXTRA_ACCOUNTS_80`、`EXTRA_ACCOUNTS_81`（后续账号可用 `EXTRA_ACCOUNTS_82`）：
+内置 `lunora` Provider 使用 `https://www.uselunora.com/checkin` 的网页登录令牌。`Lunora-1125`、`Lunora-5237`、`Lunora-8746`、`Lunora-9308`、`Lunora-3069` 分别保存在 `production` Environment Secret `EXTRA_ACCOUNTS_78`、`EXTRA_ACCOUNTS_79`、`EXTRA_ACCOUNTS_80`、`EXTRA_ACCOUNTS_81`、`EXTRA_ACCOUNTS_82`（后续账号可用 `EXTRA_ACCOUNTS_83` ~ `EXTRA_ACCOUNTS_87`）：
 
 ```json
 [
