@@ -552,3 +552,20 @@ def test_restored_providers_keep_llmpm_and_superapi_login(monkeypatch):
 	assert cfg.providers['llmpm'].domain == 'https://api.llm.pm'
 	assert cfg.providers['llmpm'].sign_in_path == '/api/user/checkin'
 	assert cfg.providers['superapi'].login_api_path == '/api/user/login'
+
+
+def test_lunora_provider_uses_sub2api_checkin(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+
+	provider = AppConfig.load_from_env().providers['lunora']
+
+	assert provider.domain == 'https://www.uselunora.com'
+	assert provider.api_style == 'sub2api'
+	assert provider.login_path == '/checkin'
+	assert provider.sign_in_path == '/api/v1/checkin/claim'
+	assert provider.check_in_status_path == '/api/v1/checkin/status'
+	assert provider.user_info_path == '/api/v1/auth/me'
+	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
+	assert provider.api_user_key == ''
+	assert provider.use_proxy is False

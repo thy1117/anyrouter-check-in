@@ -751,3 +751,29 @@ def test_aotera_slot_73_loads_pat_account(monkeypatch):
 	assert accounts[0].provider == 'aotera'
 	assert accounts[0].access_token == 'test-pat'
 	assert accounts[0].api_user == '1136'
+
+
+def test_lunora_slot_78_loads_account(monkeypatch):
+	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_78',
+		json.dumps(
+			[
+				{
+					'name': 'Lunora-1125',
+					'provider': 'lunora',
+					'access_token': 'test-access',
+					'refresh_token': 'test-refresh',
+				}
+			]
+		),
+	)
+
+	accounts = load_accounts_config()
+	assert accounts is not None
+
+	assert [account.name for account in accounts] == ['Lunora-1125']
+	assert accounts[0].provider == 'lunora'
+	assert accounts[0].access_token == 'test-access'
+	assert accounts[0].refresh_token == 'test-refresh'
