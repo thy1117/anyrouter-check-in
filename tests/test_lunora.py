@@ -83,6 +83,19 @@ def test_lunora_slot_appends_without_overwriting_existing_accounts(monkeypatch):
 			]
 		),
 	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_82',
+		json.dumps(
+			[
+				{
+					'name': 'Lunora-3069',
+					'provider': 'lunora',
+					'access_token': 'fifth-access',
+					'refresh_token': 'fifth-refresh',
+				}
+			]
+		),
+	)
 	accounts = load_accounts_config()
 	assert accounts is not None
 	assert [account.name for account in accounts] == [
@@ -91,6 +104,7 @@ def test_lunora_slot_appends_without_overwriting_existing_accounts(monkeypatch):
 		'Lunora-5237',
 		'Lunora-8746',
 		'Lunora-9308',
+		'Lunora-3069',
 	]
 	assert accounts[0].access_token == 'existing-token'
 	assert accounts[1].provider == 'lunora'
@@ -105,11 +119,15 @@ def test_lunora_slot_appends_without_overwriting_existing_accounts(monkeypatch):
 	assert accounts[4].provider == 'lunora'
 	assert accounts[4].access_token == 'fourth-access'
 	assert accounts[4].refresh_token == 'fourth-refresh'
+	assert accounts[5].provider == 'lunora'
+	assert accounts[5].access_token == 'fifth-access'
+	assert accounts[5].refresh_token == 'fifth-refresh'
 	workflow = Path(__file__).resolve().parents[1] / '.github/workflows/checkin.yml'
 	assert 'EXTRA_ACCOUNTS_78: ${{ secrets.EXTRA_ACCOUNTS_78 }}' in workflow.read_text()
 	assert 'EXTRA_ACCOUNTS_79: ${{ secrets.EXTRA_ACCOUNTS_79 }}' in workflow.read_text()
 	assert 'EXTRA_ACCOUNTS_80: ${{ secrets.EXTRA_ACCOUNTS_80 }}' in workflow.read_text()
 	assert 'EXTRA_ACCOUNTS_81: ${{ secrets.EXTRA_ACCOUNTS_81 }}' in workflow.read_text()
+	assert 'EXTRA_ACCOUNTS_82: ${{ secrets.EXTRA_ACCOUNTS_82 }}' in workflow.read_text()
 
 
 @pytest.mark.parametrize(
