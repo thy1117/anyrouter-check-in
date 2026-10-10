@@ -234,6 +234,18 @@ class AppConfig:
 				checkin_turnstile=True,
 				turnstile_site_key='0x4AAAAAAFNldzOlcO9be9_G',
 			),
+			'lunora': ProviderConfig(
+				name='lunora',
+				domain='https://www.uselunora.com',
+				api_style='sub2api',
+				login_path='/checkin',
+				sign_in_path='/api/v1/checkin/claim',
+				check_in_status_path='/api/v1/checkin/status',
+				user_info_path='/api/v1/auth/me',
+				auth_refresh_path='/api/v1/auth/refresh',
+				api_user_key='',
+				use_proxy=False,
+			),
 			'42w': ProviderConfig(
 				name='42w',
 				domain='https://api.42w.shop',

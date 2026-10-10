@@ -306,6 +306,23 @@ Aotera（`https://aotera.cc`）使用新版 NewAPI，签到接口 `POST /api/use
 ]
 ```
 
+### Lunora 每日签到
+
+内置 `lunora` Provider 使用 `https://www.uselunora.com/checkin` 的网页登录令牌。账号单独保存到 `production` Environment Secret `EXTRA_ACCOUNTS_78`（后续账号可用 `EXTRA_ACCOUNTS_79` ~ `EXTRA_ACCOUNTS_82`）：
+
+```json
+[
+  {
+    "name": "Lunora-1125",
+    "provider": "lunora",
+    "access_token": "网页登录后的 auth_token",
+    "refresh_token": "网页登录后的 refresh_token"
+  }
+]
+```
+
+脚本读取 `/api/v1/checkin/status`，今日已签到则跳过，未达资格不提交；符合条件时调用 `/api/v1/checkin/claim`。令牌过期后复用已有的加密 Token 状态存储进行刷新，不把令牌提交到仓库。
+
 ### NexaVlinks 旋转验证签到
 
 内置 `nexavlinks` Provider 使用 `https://asia.nexavlinks.com` 的网页登录令牌（不是模型 API Key）。登录后在开发者工具的 `Application → Local Storage` 获取 `auth_token` 和 `refresh_token`，将账号数组保存到 `production` Environment Secret `EXTRA_ACCOUNTS_64`：
