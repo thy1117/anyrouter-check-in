@@ -6,6 +6,7 @@ AnyRouter.top 自动签到脚本
 import asyncio
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -67,6 +68,7 @@ GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS = 8
 XIAOBAI_MAX_REQUEST_ATTEMPTS = 3
 XIAOBAI_RETRY_STATUS_CODES = (502, 503, 504)
 BEARER_LOGIN_MAX_ATTEMPTS = 3
+SIDRUNE_WELFARE_EXCHANGE_PATH = '/api/v1/welfare/exchange/balance'
 CAPTCHA_RETRY_KEYWORDS = ('验证码', 'captcha', '过期', 'expired', 'invalid code')
 # SheApi 走 Cloudflare，源站短暂 502/504 时每次换新验证码图片再试，与小白分支一致。
 CAPTCHA_RETRY_STATUS_CODES = XIAOBAI_RETRY_STATUS_CODES
@@ -884,6 +886,53 @@ def parse_sub2api_profile_response(status_code: int, body: str) -> dict:
 	}
 
 
+def exchange_sidrune_welfare_balance(
+	client, account_name: str, provider_config, headers: dict, profile: dict
+) -> str | None:
+	"""把已解锁且满足门槛的 Sidrune 福利余额兑换到钱包。"""
+	if profile.get('exchange_unlocked') is not True:
+		print(f'[INFO] {account_name}: Sidrune welfare exchange is not unlocked; skipping')
+		return None
+
+	threshold = profile.get('exchange_spending_threshold', 0)
+	if (
+		isinstance(threshold, bool)
+		or not isinstance(threshold, (int, float))
+		or not math.isfinite(threshold)
+		or threshold < 0
+	):
+		return 'Sidrune welfare exchange spending gate is invalid; no exchange submitted'
+	if threshold > 0 and profile.get('exchange_spending_met') is not True:
+		print(f'[INFO] {account_name}: Sidrune welfare exchange spending gate is not met; skipping')
+		return None
+
+	amount = profile.get('balance')
+	if isinstance(amount, bool) or not isinstance(amount, (int, float)) or not math.isfinite(amount) or amount < 0:
+		return 'Sidrune welfare balance is invalid; no exchange submitted'
+	if amount == 0:
+		print(f'[INFO] {account_name}: Sidrune welfare balance is empty; skipping exchange')
+		return None
+
+	response = client.post(
+		f'{provider_config.domain}{SIDRUNE_WELFARE_EXCHANGE_PATH}',
+		headers=headers,
+		json={'amount': amount},
+		timeout=30,
+	)
+	if response.status_code != 200:
+		return f'Sidrune welfare exchange failed - HTTP {response.status_code}; no retry'
+	try:
+		payload = response.json()
+	except ValueError:
+		return 'Sidrune welfare exchange failed - invalid JSON response; no retry'
+	if not isinstance(payload, dict) or type(payload.get('code')) is not int or payload['code'] != 0:
+		return 'Sidrune welfare exchange rejected or returned invalid response; no retry'
+	if payload.get('success') is False:
+		return 'Sidrune welfare exchange rejected by API; no retry'
+	print(f'[SUCCESS] {account_name}: Exchanged Sidrune welfare balance ${amount:.8f} to wallet')
+	return None
+
+
 def _sub2api_token_result(response, account_name: str) -> tuple[str | None, str | None, str | None]:
 	"""解析 Bearer 登录/刷新响应，并返回可用于通知的认证错误。"""
 	try:
@@ -1335,6 +1384,26 @@ def run_bearer_check_in(
 				success, check_in_error = parse_check_in_result(
 					account_name, check_response.status_code, check_response.text
 				)
+
+			if success and provider_config.name == 'sidrune':
+				try:
+					# 签到奖励到账后重新读取，已签到的账号也补兑剩余福利余额。
+					welfare_response = client.get(status_url, headers=headers, timeout=30)
+					welfare_profile = _rotation_response_data(welfare_response, 'Sidrune welfare profile')
+					if welfare_profile.get('checked_in_today') is not True:
+						check_in_error = 'Sidrune check-in is not confirmed; no exchange submitted'
+					else:
+						check_in_error = exchange_sidrune_welfare_balance(
+							client, account_name, provider_config, headers, welfare_profile
+						)
+				except Exception as exc:
+					check_in_error = (
+						f'Sidrune welfare exchange not confirmed - {type(exc).__name__}; '
+						'check welfare records before rerunning; no retry'
+					)
+				if check_in_error:
+					print(f'[FAILED] {account_name}: {check_in_error}')
+					success = False
 
 			_, user_info_after = get_profile()
 			if not success:

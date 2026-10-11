@@ -4,7 +4,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from checkin import run_bearer_check_in
+from checkin import exchange_sidrune_welfare_balance, run_bearer_check_in
 from utils.config import AccountConfig, AppConfig, _account_env_names, load_accounts_config
 
 
@@ -156,8 +156,10 @@ def test_sidrune_welfare_checkin_respects_status(monkeypatch, checked, eligible,
 	provider = sidrune_provider(monkeypatch)
 	account = AccountConfig(cookies=None, name='Sidrune-dodo', provider='sidrune', access_token='test-access')
 	requests = []
+	checked_today = checked
 
 	def handler(request):
+		nonlocal checked_today
 		requests.append(request)
 		assert request.headers['Authorization'] == 'Bearer test-access'
 		if request.url.path == '/api/v1/auth/me':
@@ -165,8 +167,11 @@ def test_sidrune_welfare_checkin_respects_status(monkeypatch, checked, eligible,
 			return httpx.Response(200, json={'code': 0, 'data': {'balance': 2.5}})
 		if request.url.path == '/api/v1/welfare/profile':
 			assert request.method == 'GET'
-			return httpx.Response(200, json={'code': 0, 'data': {'checked_in_today': checked, 'eligible': eligible}})
+			return httpx.Response(
+				200, json={'code': 0, 'data': {'checked_in_today': checked_today, 'eligible': eligible, 'balance': 0}}
+			)
 		assert request.url.path == '/api/v1/welfare/checkin' and request.method == 'POST'
+		checked_today = True
 		return httpx.Response(200, json={'code': 0, 'data': {'streak_day': 1, 'reward_amount': 0.1}})
 
 	client = httpx.Client
@@ -179,3 +184,154 @@ def test_sidrune_welfare_checkin_respects_status(monkeypatch, checked, eligible,
 	assert before is not None and after is not None
 	assert before['quota'] == after['quota'] == 2.5
 	assert len([request for request in requests if request.method == 'POST']) == submissions
+
+
+@pytest.fixture
+def welfare_session(monkeypatch):
+	provider = sidrune_provider(monkeypatch)
+	client = httpx.Client
+	monkeypatch.setattr('checkin.create_xiaobai_token_state', lambda *args: None)
+
+	def run(
+		*, checked=True, profile=None, exchange_response=None, checkin_status=200, confirmed=True, name='Sidrune-dodo'
+	):
+		account = AccountConfig(cookies=None, name=name, provider='sidrune', access_token=f'test-{name}')
+		welfare = {
+			'checked_in_today': checked,
+			'eligible': True,
+			'balance': 0 if not checked else 1.09272526,
+			'exchange_unlocked': True,
+			'exchange_spending_threshold': 0,
+			**(profile or {}),
+		}
+		requests = []
+		wallet = 2.5
+
+		def handler(request):
+			nonlocal wallet
+			requests.append(request)
+			assert request.url.host == 'sidrune.ai'
+			assert request.headers['Authorization'] == f'Bearer test-{name}'
+			if request.url.path == '/api/v1/auth/me':
+				assert request.method == 'GET'
+				return httpx.Response(200, json={'code': 0, 'data': {'balance': wallet}})
+			if request.url.path == '/api/v1/welfare/profile':
+				assert request.method == 'GET'
+				return httpx.Response(200, json={'code': 0, 'data': welfare})
+			if request.url.path == '/api/v1/welfare/checkin':
+				assert request.method == 'POST'
+				if checkin_status == 200:
+					welfare['checked_in_today'] = confirmed
+					welfare['balance'] = 1.09272526
+				return httpx.Response(checkin_status, json={'code': 0, 'data': {'reward_amount': 1.09272526}})
+			assert request.url.path == '/api/v1/welfare/exchange/balance' and request.method == 'POST'
+			if isinstance(exchange_response, Exception):
+				raise exchange_response
+			response = exchange_response or httpx.Response(200, json={'code': 0, 'data': {}})
+			if response.status_code == 200 and response.headers.get('content-type') == 'application/json':
+				payload = response.json()
+				if isinstance(payload, dict) and payload.get('code') == 0 and payload.get('success') is not False:
+					wallet += json.loads(request.content)['amount']
+					welfare['balance'] = 0
+			return response
+
+		monkeypatch.setattr(
+			'checkin.httpx.Client', lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs)
+		)
+		return run_bearer_check_in(account, name, provider), requests
+
+	return run
+
+
+@pytest.mark.parametrize('checked', [False, True])
+def test_sidrune_exchanges_fresh_full_welfare_balance_after_checkin(welfare_session, checked):
+	(success, before, after), requests = welfare_session(checked=checked)
+	assert success is True
+	assert before['quota'] == 2.5 and after['quota'] == 3.5927
+	posts = [request for request in requests if request.method == 'POST']
+	assert len(posts) == (1 if checked else 2)
+	assert json.loads(posts[-1].content) == {'amount': 1.09272526}
+	assert requests[-3].url.path == '/api/v1/welfare/profile'
+	assert requests[-2].url.path == '/api/v1/welfare/exchange/balance'
+	assert requests[-1].url.path == '/api/v1/auth/me'
+
+
+@pytest.mark.parametrize(
+	'profile',
+	[
+		{'balance': 0},
+		{'exchange_unlocked': False},
+		{'exchange_unlocked': None},
+		{'exchange_spending_threshold': 5, 'exchange_spending_met': False},
+		{'exchange_spending_threshold': 5},
+	],
+)
+def test_sidrune_skips_exchange_until_balance_and_gates_allow_it(welfare_session, profile):
+	(success, before, after), requests = welfare_session(profile=profile)
+	assert success is True and before['quota'] == after['quota'] == 2.5
+	assert all(request.method == 'GET' for request in requests)
+
+
+def test_sidrune_exchanges_when_spending_gate_is_met(welfare_session):
+	(success, _, _), requests = welfare_session(
+		profile={'exchange_spending_threshold': 5, 'exchange_spending_met': True}
+	)
+	assert success is True
+	assert len([request for request in requests if request.method == 'POST']) == 1
+
+
+@pytest.mark.parametrize('amount', [None, '1.11', True, -1, float('nan'), float('inf')])
+def test_sidrune_invalid_welfare_balance_never_submits(monkeypatch, amount):
+	provider = sidrune_provider(monkeypatch)
+	requests = []
+
+	def handler(request):
+		requests.append(request)
+		return httpx.Response(200, json={'code': 0})
+
+	with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+		error = exchange_sidrune_welfare_balance(
+			client, 'Sidrune-dodo', provider, {}, {'balance': amount, 'exchange_unlocked': True}
+		)
+	assert error is not None and 'invalid' in error
+	assert requests == []
+
+
+@pytest.mark.parametrize(
+	'response',
+	[
+		httpx.Response(401, json={'message': 'private-token'}),
+		httpx.Response(502, text='<html>private-token</html>'),
+		httpx.Response(200, text='private-token'),
+		httpx.Response(200, json={'code': 'private-token', 'message': 'private-token'}),
+		httpx.Response(200, json={'success': True}),
+		httpx.Response(200, json={'code': 0, 'success': False}),
+		httpx.Response(200, json=[]),
+		httpx.ReadTimeout('private-token'),
+		ValueError('private-token'),
+	],
+)
+def test_sidrune_exchange_failure_is_reported_without_replay_or_secrets(welfare_session, capsys, response):
+	(success, before, after), requests = welfare_session(exchange_response=response)
+	assert success is False and before['quota'] == after['quota'] == 2.5
+	assert 'exchange' in after['check_in_error'] and 'no retry' in after['check_in_error']
+	assert len([request for request in requests if request.method == 'POST']) == 1
+	assert requests[-1].url.path == '/api/v1/auth/me'
+	assert 'private-token' not in after['check_in_error'] + capsys.readouterr().out
+
+
+@pytest.mark.parametrize(('checkin_status', 'confirmed'), [(502, True), (200, False)])
+def test_sidrune_failed_or_unconfirmed_checkin_does_not_exchange(welfare_session, checkin_status, confirmed):
+	(success, _, after), requests = welfare_session(checked=False, checkin_status=checkin_status, confirmed=confirmed)
+	assert success is False
+	assert after['check_in_error']
+	assert [request.url.path for request in requests if request.method == 'POST'] == ['/api/v1/welfare/checkin']
+
+
+def test_sidrune_all_six_accounts_use_their_own_session_and_balance(welfare_session):
+	for index, suffix in enumerate(['dodo', 'tthxyc', '5237', '8746', '3069', '9308']):
+		amount = (index + 1) / 10
+		(success, before, after), requests = welfare_session(name=f'Sidrune-{suffix}', profile={'balance': amount})
+		assert success is True and before['quota'] == 2.5 and after['quota'] == round(2.5 + amount, 4)
+		posts = [request for request in requests if request.method == 'POST']
+		assert len(posts) == 1 and json.loads(posts[0].content) == {'amount': amount}
