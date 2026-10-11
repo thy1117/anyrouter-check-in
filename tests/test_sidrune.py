@@ -193,7 +193,14 @@ def welfare_session(monkeypatch):
 	monkeypatch.setattr('checkin.create_xiaobai_token_state', lambda *args: None)
 
 	def run(
-		*, checked=True, profile=None, exchange_response=None, checkin_status=200, confirmed=True, name='Sidrune-dodo'
+		*,
+		checked=True,
+		profile=None,
+		exchange_response=None,
+		checkin_status=200,
+		confirmed=True,
+		name='Sidrune-dodo',
+		exchange_only=False,
 	):
 		account = AccountConfig(cookies=None, name=name, provider='sidrune', access_token=f'test-{name}')
 		welfare = {
@@ -238,7 +245,7 @@ def welfare_session(monkeypatch):
 		monkeypatch.setattr(
 			'checkin.httpx.Client', lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs)
 		)
-		return run_bearer_check_in(account, name, provider), requests
+		return run_bearer_check_in(account, name, provider, exchange_only=exchange_only), requests
 
 	return run
 
@@ -335,3 +342,32 @@ def test_sidrune_all_six_accounts_use_their_own_session_and_balance(welfare_sess
 		assert success is True and before['quota'] == 2.5 and after['quota'] == round(2.5 + amount, 4)
 		posts = [request for request in requests if request.method == 'POST']
 		assert len(posts) == 1 and json.loads(posts[0].content) == {'amount': amount}
+
+
+@pytest.mark.parametrize('checked', [True, False])
+def test_sidrune_exchange_only_never_submits_checkin(welfare_session, checked):
+	(success, before, after), requests = welfare_session(
+		checked=checked, profile={'balance': 0.5, 'eligible': False}, exchange_only=True
+	)
+	assert success is True
+	assert before['quota'] == 2.5 and after['quota'] == 3.0
+	assert [request.url.path for request in requests if request.method == 'POST'] == [
+		'/api/v1/welfare/exchange/balance'
+	]
+
+
+def test_exchange_only_rejects_other_providers_before_any_authentication(monkeypatch):
+	from utils.config import ProviderConfig
+
+	def forbidden(*args, **kwargs):
+		pytest.fail('Non-Sidrune exchange-only mode must not authenticate or create a client')
+
+	monkeypatch.setattr('checkin.httpx.Client', forbidden)
+	monkeypatch.setattr('checkin.create_xiaobai_token_state', forbidden)
+	success, _, after = run_bearer_check_in(
+		AccountConfig(cookies=None),
+		'other',
+		ProviderConfig(name='twinkle', domain='https://example.test'),
+		exchange_only=True,
+	)
+	assert success is False and 'restricted' in after['check_in_error']

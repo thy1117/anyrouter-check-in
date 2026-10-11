@@ -1249,8 +1249,12 @@ def run_bearer_check_in(
 	account: AccountConfig,
 	account_name: str,
 	provider_config,
+	*,
+	exchange_only: bool = False,
 ) -> tuple[bool, dict | None, dict | None]:
 	"""使用 Bearer API 登录、查询余额并签到。"""
+	if exchange_only and provider_config.name != 'sidrune':
+		return False, None, attach_check_in_error(None, 'Exchange-only mode is restricted to Sidrune')
 	client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0, 'trust_env': False}
 	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
 	if proxy_url:
@@ -1367,7 +1371,10 @@ def run_bearer_check_in(
 				pass
 
 			check_in_error: str | None = None
-			if status_response.status_code == 200 and is_checked_in_status(status_payload):
+			if exchange_only:
+				print(f'[TEST] {account_name}: Exchange only; no check-in submitted')
+				success = True
+			elif status_response.status_code == 200 and is_checked_in_status(status_payload):
 				print(f'[SUCCESS] {account_name}: Already checked in today')
 				success = True
 			elif (
@@ -1388,9 +1395,11 @@ def run_bearer_check_in(
 			if success and provider_config.name == 'sidrune':
 				try:
 					# 签到奖励到账后重新读取，已签到的账号也补兑剩余福利余额。
-					welfare_response = client.get(status_url, headers=headers, timeout=30)
+					welfare_response = (
+						status_response if exchange_only else client.get(status_url, headers=headers, timeout=30)
+					)
 					welfare_profile = _rotation_response_data(welfare_response, 'Sidrune welfare profile')
-					if welfare_profile.get('checked_in_today') is not True:
+					if not exchange_only and welfare_profile.get('checked_in_today') is not True:
 						check_in_error = 'Sidrune check-in is not confirmed; no exchange submitted'
 					else:
 						check_in_error = exchange_sidrune_welfare_balance(

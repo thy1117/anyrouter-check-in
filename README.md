@@ -289,6 +289,8 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 脚本读取 `/api/v1/welfare/profile`，今日已签到则跳过重复签到，资格不足不提交；符合条件时调用 `/api/v1/welfare/checkin`。签到成功或确认今日已签到后，重新读取福利余额，对已解锁且满足消费门槛的账号调用 `/api/v1/welfare/exchange/balance`，把全部福利余额兑换到钱包。未解锁、未满足门槛或福利余额为零时跳过兑换；不自动抽奖、解锁或兑换套餐。兑换失败会保留错误并通知，本次不重放请求，下次任务会重新查询余额后再尝试。各账号复用自己的登录令牌，无需修改现有 Secret。令牌过期后复用已有的加密 Token 状态存储进行刷新，不把令牌提交到仓库。
 
+单独验证兑换时，在 Actions 的手动运行选项中勾选 `sidrune_exchange_only`。该入口只加载上述六个账号，不执行任何签到、抽奖或其他站点任务；记录每个账号兑换前后的钱包余额，必要时安全刷新并保存加密令牌状态。
+
 ### Aotera
 
 Aotera（`https://aotera.cc`）使用新版 NewAPI，签到接口 `POST /api/user/checkin` 带 Cloudflare Turnstile 校验。凭据使用**个人访问令牌（access_token）**加**用户 ID（api_user）**。
