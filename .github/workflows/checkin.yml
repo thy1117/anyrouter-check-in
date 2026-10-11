@@ -210,6 +210,7 @@ jobs:
         EXTRA_ACCOUNTS_85: ${{ secrets.EXTRA_ACCOUNTS_85 }}
         EXTRA_ACCOUNTS_86: ${{ secrets.EXTRA_ACCOUNTS_86 }}
         EXTRA_ACCOUNTS_87: ${{ secrets.EXTRA_ACCOUNTS_87 }}
+        EXTRA_ACCOUNTS_88: ${{ secrets.EXTRA_ACCOUNTS_88 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
