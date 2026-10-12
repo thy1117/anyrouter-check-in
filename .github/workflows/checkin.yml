@@ -2,6 +2,10 @@ name: AnyRouter 自动签到
 on:
   workflow_dispatch:
     inputs:
+      recovery_diagnostic:
+        description: 'Inspect only rua-chat-account-1 and SheApi-thy1119; no login submission or check-in'
+        type: boolean
+        default: false
       sidrune_exchange_only:
         description: 'Only exchange the six Sidrune welfare balances; no check-ins or other sites'
         type: boolean
@@ -51,6 +55,7 @@ jobs:
       CHECKIN_DISABLED_PROVIDERS: qingjiu
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
+      RECOVERY_DIAGNOSTIC: ${{ inputs.recovery_diagnostic || 'false' }}
     steps:
     - uses: actions/checkout@v6
 
@@ -231,7 +236,11 @@ jobs:
         BARK_KEY: ${{ secrets.BARK_KEY }}
         BARK_SERVER: ${{ secrets.BARK_SERVER }}
       run: |
-        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
+        if [ "${RECOVERY_DIAGNOSTIC}" = "true" ]; then
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run python -m scripts.diagnose_rua_sheapi
+        else
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
+        fi
 
     - name: 保存加密 Token 恢复检查点
       if: always()
