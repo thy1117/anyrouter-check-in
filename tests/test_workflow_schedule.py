@@ -3,10 +3,11 @@ from pathlib import Path
 WORKFLOW = Path(__file__).parent.parent / '.github' / 'workflows' / 'checkin.yml'
 
 
-def test_checkin_workflow_runs_three_times_daily_at_beijing_07_past():
+def test_checkin_workflow_runs_every_eight_hours_from_beijing_02():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
-	assert "- cron: '7 1,7,13 * * *'" in text
+	assert "- cron: '0 2,10,18 * * *'" in text
+	assert '# 02:00, 10:00, 18:00 Asia/Shanghai (UTC+8).' in text
 	assert 'workflow_dispatch:' in text
 	assert 'NOTIFY_EVERY_RUN: true' in text
 
