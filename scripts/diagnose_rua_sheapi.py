@@ -6,7 +6,7 @@ import json
 import httpx
 
 import checkin
-from utils.browser import _is_email_form_visible, _log_login_page_state
+from utils.browser import USERNAME_SELECTORS, _is_email_form_visible, _open_email_login_form
 from utils.config import AppConfig, load_accounts_config
 from utils.proxy import active_proxy_node, get_proxy_server
 
@@ -25,7 +25,14 @@ def public_shape(response):
 	if isinstance(data, dict):
 		shape['keys'] = sorted(data)
 		if isinstance(data.get('stats'), dict):
-			shape['checked_in_today'] = data['stats'].get('checked_in_today')
+			shape['stats'] = {
+				key: value
+				for key, value in data['stats'].items()
+				if key in ('checked_in_today', 'total_checkins', 'total_quota', 'month_quota')
+			}
+		for key in ('checked_in_today', 'checked_today', 'quota', 'gift_quota', 'used_quota'):
+			if key in data and type(data[key]) in (bool, int, float):
+				shape[key] = data[key]
 	return shape
 
 
@@ -67,7 +74,29 @@ async def main():
 					)
 				)
 				print('RUA_PLAYWRIGHT_VISIBLE=' + str(await _is_email_form_visible(page)))
-				await _log_login_page_state(page)
+				for selector in USERNAME_SELECTORS:
+					locators = page.locator(selector)
+					print(
+						'RUA_MATCH='
+						+ json.dumps(
+							{
+								'selector': selector,
+								'count': await locators.count(),
+								'first_visible': await locators.first.is_visible(),
+							}
+						)
+					)
+				try:
+					await _open_email_login_form(page, 5000)
+					print('RUA_OPEN_FORM=success')
+				except Exception as exc:
+					print('RUA_OPEN_FORM=' + type(exc).__name__)
+					await page.reload(wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
+					try:
+						await _open_email_login_form(page, 5000)
+						print('RUA_RELOADED_FORM=success')
+					except Exception as second:
+						print('RUA_RELOADED_FORM=' + type(second).__name__)
 			finally:
 				await context.close()
 			continue
@@ -82,6 +111,19 @@ async def main():
 					except httpx.HTTPError as exc:
 						result = {'transport_error': type(exc).__name__}
 					print('SHE_PUBLIC=' + json.dumps({'http2': http2, **result}))
+					assert account.access_token and account.api_user is not None
+					headers = {
+						'Authorization': 'Bearer ' + account.access_token,
+						provider.api_user_key: str(account.api_user),
+						'X-Requested-With': 'XMLHttpRequest',
+					}
+					for path in (provider.user_info_path, provider.check_in_status_path or provider.sign_in_path):
+						assert path
+						try:
+							result = public_shape(client.get(provider.domain + path, headers=headers))
+						except httpx.HTTPError as exc:
+							result = {'transport_error': type(exc).__name__}
+						print('SHE_STATE=' + json.dumps({'http2': http2, 'path': path, **result}))
 
 
 if __name__ == '__main__':

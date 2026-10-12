@@ -114,7 +114,7 @@ jobs:
         path: .browser_profiles
         key: browser-profiles-v2-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          browser-profiles-v2-${{ runner.os }}-${{ github.ref_name }}-
+          ${{ inputs.recovery_diagnostic && format('browser-profiles-v2-{0}-main-', runner.os) || format('browser-profiles-v2-{0}-{1}-', runner.os, github.ref_name) }}
 
     - name: 配置 Mihomo 代理池
       env:
