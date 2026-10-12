@@ -71,24 +71,17 @@ async def main():
 			finally:
 				await context.close()
 			continue
-		# SheApi: only GET profile/status/CAPTCHA, never POST or token refresh.
-		assert account.access_token and account.api_user is not None
-		assert provider.user_info_path and provider.check_in_status_path and provider.captcha_path
+		# SheApi: only GET the public status endpoint; never use credentials or POST.
+		# The failed run's auth fields are intentionally not replayed in this probe.
 		node = checkin.resolve_account_proxy_node(account, provider, 2)
 		with active_proxy_node(node, account_name=name):
 			for http2 in (True, False):
 				with httpx.Client(proxy=get_proxy_server(), http2=http2, trust_env=False, timeout=20) as client:
-					headers = {
-						'Authorization': 'Bearer ' + account.access_token,
-						'New-Api-User': str(account.api_user),
-						'X-Requested-With': 'XMLHttpRequest',
-					}
-					for path in (provider.user_info_path, provider.check_in_status_path, provider.captcha_path):
-						try:
-							result = public_shape(client.get(provider.domain + path, headers=headers))
-						except httpx.HTTPError as exc:
-							result = {'transport_error': type(exc).__name__}
-						print('SHE_READ=' + json.dumps({'http2': http2, 'path': path, **result}))
+					try:
+						result = public_shape(client.get(provider.domain + '/api/status'))
+					except httpx.HTTPError as exc:
+						result = {'transport_error': type(exc).__name__}
+					print('SHE_PUBLIC=' + json.dumps({'http2': http2, **result}))
 
 
 if __name__ == '__main__':
