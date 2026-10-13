@@ -342,7 +342,7 @@ Aotera（`https://aotera.cc`）使用新版 NewAPI，签到接口 `POST /api/use
 
 每个账号使用不同的 `name`。脚本先查询今日状态，已签到则跳过；未签到时在本地匹配旋转图片角度，只提交一次，再通过服务器 `checked_in_today` 确认。图片格式改变、匹配不明确或请求异常时不盲目猜测、不重放签到请求，也不把凭据或响应正文写进日志。
 
-新增账号 `NexaVlinks-g12`、`NexaVlinks-tthxyc`、`NexaVlinks-13`、`NexaVlinks-15`、`NexaVlinks-24`、`NexaVlinks-26`、`NexaVlinks-27`、`NexaVlinks-28`、`NexaVlinks-37` 分别单独保存在 `production` Environment Secret `EXTRA_ACCOUNTS_88`、`EXTRA_ACCOUNTS_89`、`EXTRA_ACCOUNTS_90`、`EXTRA_ACCOUNTS_91`、`EXTRA_ACCOUNTS_92`、`EXTRA_ACCOUNTS_93`、`EXTRA_ACCOUNTS_94`、`EXTRA_ACCOUNTS_95`、`EXTRA_ACCOUNTS_96`，避免覆盖 `EXTRA_ACCOUNTS_64` 中的已有账号。
+新增账号 `NexaVlinks-g12`、`NexaVlinks-tthxyc`、`NexaVlinks-13`、`NexaVlinks-15`、`NexaVlinks-24`、`NexaVlinks-26`、`NexaVlinks-27`、`NexaVlinks-28`、`NexaVlinks-37`、`NexaVlinks-38` 分别单独保存在 `production` Environment Secret `EXTRA_ACCOUNTS_88`、`EXTRA_ACCOUNTS_89`、`EXTRA_ACCOUNTS_90`、`EXTRA_ACCOUNTS_91`、`EXTRA_ACCOUNTS_92`、`EXTRA_ACCOUNTS_93`、`EXTRA_ACCOUNTS_94`、`EXTRA_ACCOUNTS_95`、`EXTRA_ACCOUNTS_96`、`EXTRA_ACCOUNTS_97`，避免覆盖 `EXTRA_ACCOUNTS_64` 中的已有账号。
 
 令牌刷新复用现有的 `XIAOBAI_TOKEN_STATE_KEY` 和 `checkin-token-state` 加密存储；未配置持久化存储时拒绝刷新，以免丢失轮换后的令牌。只合并代码不会自动添加账号 Secret，请勿把令牌提交到仓库。
 
