@@ -26,10 +26,7 @@ on:
         description: 'Validate authentication/status without submitting check-in'
         type: boolean
         default: true
-  schedule:
-    # 02:00, 10:00, 18:00 Asia/Shanghai (UTC+8).
-    # 每隔 8 小时运行一次；cron 使用 UTC，GitHub 调度可能延迟或漏跑。
-    - cron: '0 2,10,18 * * *'
+  # 内置定时已移除：改由 Muse 外部定时任务准时触发（每天 10:00 / 18:00 / 02:00 北京时间），避免 GitHub 调度延迟。
 
 # Serialize scheduled/manual runs sharing rotating Xiaobai credentials.
 concurrency:
