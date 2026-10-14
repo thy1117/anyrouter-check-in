@@ -2559,8 +2559,8 @@ async def main():
 						summary.append(format_check_in_notification(account_check_in_details[acc_key]))
 					else:
 						summary.append(f'✅ {item["name"]} · 今日已签到')
-		balance_lines = [
-			format_check_in_notification(account_check_in_details[key])
+		balance_keys = [
+			key
 			for key in sorted(
 				account_check_in_details,
 				key=lambda k: (
@@ -2571,8 +2571,15 @@ async def main():
 			if account_check_in_details[key].get('provider')
 			not in ('xiaobai', 'sheapi', 'superapi', 'guyscode', 'aiaiai', 'nianhua', 'twinkle')
 		]
-		if balance_lines:
-			summary.extend(['', '💰 余额明细', '\n'.join(balance_lines)])
+		if balance_keys:
+			summary.extend(['', '💰 余额明细'])
+			last_balance_provider = None
+			for _balance_key in balance_keys:
+				_balance_provider = account_check_in_details[_balance_key].get('provider', '')
+				if last_balance_provider is not None and _balance_provider != last_balance_provider:
+					summary.append('')
+				summary.append(format_check_in_notification(account_check_in_details[_balance_key]))
+				last_balance_provider = _balance_provider
 
 		notify_content = '\n'.join(summary)
 		screenshot_paths = take_pending_screenshots() if is_debug_enabled() else []
