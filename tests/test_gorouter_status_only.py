@@ -49,3 +49,32 @@ async def test_gorouter_status_only_reads_identity_and_status_without_challenge_
 	assert request.await_args_list[0].args[1] == provider.user_info_path
 	assert 'month=' in request.await_args_list[1].args[1]
 	context.close.assert_awaited_once()
+
+
+async def test_gorouter_status_only_without_pat_refuses_before_browser_or_refresh(monkeypatch):
+	launch = AsyncMock()
+	monkeypatch.setattr(checkin, 'launch_login_context', launch)
+	monkeypatch.setattr(
+		checkin,
+		'load_browser_login_settings',
+		lambda *a, **kw: pytest.fail('status-only must check PAT before loading browser settings'),
+	)
+	account = AccountConfig(
+		cookies='new_api_refresh=test-refresh-cookie',
+		provider='aotera',
+		name='Aotera-thy1117',
+		access_token=None,
+		api_user='1136',
+	)
+	provider = AppConfig.load_from_env().providers['aotera']
+
+	success, before, after = await checkin.run_gorouter_check_in_in_page(
+		account, 'Aotera-thy1117', provider, status_only=True
+	)
+
+	assert success is False
+	assert before is None
+	assert after is not None
+	assert after['success'] is False
+	assert 'access_token' in after['check_in_error']
+	launch.assert_not_awaited()

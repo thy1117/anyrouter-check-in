@@ -36,7 +36,7 @@ async def run() -> int:
 	for account in accounts:
 		success, _, info = await run_gorouter_check_in_in_page(
 			account,
-			account.name,
+			account.get_display_name(0),
 			config.providers[account.provider],
 			status_only=True,
 		)
