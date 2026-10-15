@@ -78,7 +78,7 @@ def test_sheapi_secrets_are_wired_without_removing_existing_secrets():
 def test_single_account_test_cannot_run_production_job():
 	text = WORKFLOW.read_text(encoding='utf-8')
 	assert (
-		"github.event_name != 'workflow_dispatch' || !(inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only)"
+		"github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only)"
 		in text
 	)
 	assert (

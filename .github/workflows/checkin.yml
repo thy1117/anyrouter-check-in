@@ -2,6 +2,10 @@ name: AnyRouter 自动签到
 on:
   workflow_dispatch:
     inputs:
+      gorouter_status_only:
+        description: 'Read identity and current-day status for the five failed Nianhua/Aotera accounts; no challenges or check-in writes'
+        type: boolean
+        default: false
       sidrune_exchange_only:
         description: 'Only exchange the six Sidrune welfare balances; no check-ins or other sites'
         type: boolean
@@ -35,7 +39,7 @@ concurrency:
 
 jobs:
   checkin:
-    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only) }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -296,6 +300,47 @@ jobs:
           ls -la checkin_screenshots/
         fi
 
+
+  gorouter-status:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.gorouter_status_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        version: "latest"
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+    - run: uv sync --frozen --no-dev
+    - uses: actions/cache@v5
+      with:
+        path: ~/.cloakbrowser
+        key: ${{ runner.os }}-cloakbrowser-v1
+    - name: Install browser
+      run: uv run python -m cloakbrowser install
+    - name: Read exactly five account statuses
+      env:
+        PYTHONUNBUFFERED: '1'
+        CHECKIN_TIMEZONE: Asia/Shanghai
+        CHECKIN_HEADLESS: 'false'
+        CHECKIN_HUMANIZE: 'true'
+        CHECKIN_WAIT_TIMEOUT_MS: '120000'
+        EXTRA_ACCOUNTS_9: ${{ secrets.EXTRA_ACCOUNTS_9 }}
+        EXTRA_ACCOUNTS_54: ${{ secrets.EXTRA_ACCOUNTS_54 }}
+        EXTRA_ACCOUNTS_55: ${{ secrets.EXTRA_ACCOUNTS_55 }}
+        EXTRA_ACCOUNTS_56: ${{ secrets.EXTRA_ACCOUNTS_56 }}
+        EXTRA_ACCOUNTS_73: ${{ secrets.EXTRA_ACCOUNTS_73 }}
+        EXTRA_ACCOUNTS_77: ${{ secrets.EXTRA_ACCOUNTS_77 }}
+        PROVIDERS: ${{ secrets.PROVIDERS }}
+        EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
+      run: xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run python -m scripts.check_gorouter
 
   sidrune-exchange-test:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.sidrune_exchange_only }}

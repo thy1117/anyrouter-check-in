@@ -1717,6 +1717,7 @@ async def run_gorouter_check_in_in_page(
 	*,
 	api_user_override: str | None = None,
 	access_token_override: str | None = None,
+	status_only: bool = False,
 ) -> tuple[bool, dict | None, dict | None]:
 	"""使用 GoRouter 官方页面的 Turnstile 流程执行签到。
 
@@ -1871,6 +1872,10 @@ async def run_gorouter_check_in_in_page(
 		if status_error:
 			print(f'[FAILED] {account_name}: {status_error}')
 			return False, user_info_before, attach_check_in_error(user_info_before, status_error)
+
+		if status_only:
+			print(f'[STATUS] {account_name}: Identity and daily status verified; checked_in_today={checked_today}')
+			return True, user_info_before, {**user_info_before, 'status_only': True, 'checked_in_today': checked_today}
 
 		if checked_today:
 			print(f'[SUCCESS] {account_name}: Already checked in today')
