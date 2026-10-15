@@ -1717,6 +1717,7 @@ async def run_gorouter_check_in_in_page(
 	*,
 	api_user_override: str | None = None,
 	access_token_override: str | None = None,
+	status_only: bool = False,
 ) -> tuple[bool, dict | None, dict | None]:
 	"""使用 GoRouter 官方页面的 Turnstile 流程执行签到。
 
@@ -1727,6 +1728,11 @@ async def run_gorouter_check_in_in_page(
 	同一个 sitekey 取得，不依赖站点签到卡片的弹窗。结果只认服务端
 	``checked_in_today``。
 	"""
+	if status_only and not (access_token_override or account.access_token):
+		error = 'GoRouter status-only requires access_token'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, None, attach_check_in_error(None, error)
+
 	print(f'[PROCESSING] {account_name}: Starting browser for GoRouter check-in...')
 	settings = load_browser_login_settings(
 		account_name,
@@ -1872,10 +1878,18 @@ async def run_gorouter_check_in_in_page(
 			print(f'[FAILED] {account_name}: {status_error}')
 			return False, user_info_before, attach_check_in_error(user_info_before, status_error)
 
+		if status_only:
+			print(f'[STATUS] {account_name}: Identity and daily status verified; checked_in_today={checked_today}')
+			return True, user_info_before, {**user_info_before, 'status_only': True, 'checked_in_today': checked_today}
+
 		if checked_today:
 			print(f'[SUCCESS] {account_name}: Already checked in today')
-			status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
-			return True, user_info_before, parse_user_info_response(status, body)
+			try:
+				status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+				after = parse_user_info_response(status, body)
+			except Exception as exc:
+				after = {'success': False, 'balance_read_error': type(exc).__name__}
+			return True, user_info_before, {**after, 'checked_in_today': True}
 
 		sign_in_path = provider_config.sign_in_path or provider_config.check_in_status_path
 		last_error = None
@@ -1899,37 +1913,91 @@ async def run_gorouter_check_in_in_page(
 
 			print(f'[NETWORK] {account_name}: Turnstile token minted, submitting check-in')
 			separator = '&' if '?' in sign_in_path else '?'
-			status, body = await request_in_page(
-				page,
-				f'{sign_in_path}{separator}turnstile={quote(token, safe="")}',
-				method='POST',
-				headers=headers,
-			)
+			try:
+				status, body = await request_in_page(
+					page,
+					f'{sign_in_path}{separator}turnstile={quote(token, safe="")}',
+					method='POST',
+					headers=headers,
+				)
+				submission_error = None
+			except Exception as exc:
+				# The write may have committed; do not log a URL containing the challenge token.
+				status, body = 0, ''
+				submission_error = f'Check-in submission transport error - {type(exc).__name__}'
+				print(f'[WARN] {account_name}: {submission_error}; checking status without resubmitting')
 			await reset_turnstile_in_page(page)
-			succeeded, retry_turnstile, checkin_error = parse_gorouter_checkin_result(status, body)
-			if not succeeded:
-				last_error = checkin_error
-				already_checked = any(keyword in (checkin_error or '') for keyword in ALREADY_CHECKED_KEYWORDS)
-				if retry_turnstile and attempt < GOROUTER_TURNSTILE_ATTEMPTS:
-					print(f'[WARN] {account_name}: {checkin_error}, retrying with a fresh token')
-					continue
-				if not already_checked:
-					print(f'[FAILED] {account_name}: {checkin_error}')
-					return False, user_info_before, attach_check_in_error(user_info_before, checkin_error)
+			succeeded, retry_turnstile, checkin_error = (
+				(False, False, submission_error) if submission_error else parse_gorouter_checkin_result(status, body)
+			)
+			already_checked = any(keyword in (checkin_error or '') for keyword in ALREADY_CHECKED_KEYWORDS)
+			if not succeeded and not already_checked and (retry_turnstile or 400 <= status < 500):
+				# A returned challenge/auth/rate-limit rejection needs attention, not another POST.
+				error = checkin_error or 'Check-in submission rejected'
+				print(f'[FAILED] {account_name}: {error}')
+				return (
+					False,
+					user_info_before,
+					{
+						**(attach_check_in_error(user_info_before, error) or {}),
+						'check_in_phase': 'submission_rejected',
+						'check_in_submitted': True,
+					},
+				)
 
-			# 服务端 checked_in_today 是唯一的成功判据，POST 的返回值只用于诊断。
-			status, body = await request_in_page(page, status_path, headers=headers)
-			checked_today, status_error = parse_gorouter_checkin_status(status, body)
-			if checked_today:
-				print(f'[SUCCESS] {account_name}: Check-in confirmed by checked_in_today')
-				status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
-				return True, user_info_before, parse_user_info_response(status, body)
-			last_error = status_error or last_error or 'Check-in was not reflected by checked_in_today'
-			print(f'[WARN] {account_name}: {last_error} (attempt {attempt}/{GOROUTER_TURNSTILE_ATTEMPTS})')
+			# Once POST was attempted, only bounded GET confirmation is permitted.
+			last_error = checkin_error
+			for confirmation in range(3):
+				if confirmation:
+					await asyncio.sleep(2)
+				try:
+					status, body = await request_in_page(page, status_path, headers=headers)
+					checked_today, status_error = parse_gorouter_checkin_status(status, body)
+				except Exception as exc:
+					checked_today, status_error = False, f'Check-in status read error - {type(exc).__name__}'
+				if checked_today:
+					print(f'[SUCCESS] {account_name}: Check-in confirmed by checked_in_today')
+					try:
+						status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+						after = parse_user_info_response(status, body)
+					except Exception as exc:
+						after = {'success': False, 'balance_read_error': type(exc).__name__}
+					return (
+						True,
+						user_info_before,
+						{
+							**after,
+							'checked_in_today': True,
+							'check_in_phase': 'confirmed',
+							'check_in_submitted': True,
+						},
+					)
+				last_error = status_error or last_error or 'Check-in was not reflected by checked_in_today'
+				if status in (401, 403, 429):
+					break
+			error = f'签到已提交但结果未确认；未重复提交 ({last_error})'
+			print(f'[FAILED] {account_name}: {error}')
+			return (
+				False,
+				user_info_before,
+				{
+					**(attach_check_in_error(user_info_before, error) or {}),
+					'check_in_phase': 'submitted_unconfirmed',
+					'check_in_submitted': True,
+				},
+			)
 
-		error = last_error or 'GoRouter check-in was not confirmed'
+		error = f'验证码未完成，签到未提交；需网页确认 ({last_error or "Turnstile token was not obtained"})'
 		print(f'[FAILED] {account_name}: {error}')
-		return False, user_info_before, attach_check_in_error(user_info_before, error)
+		return (
+			False,
+			user_info_before,
+			{
+				**(attach_check_in_error(user_info_before, error) or {}),
+				'check_in_phase': 'not_submitted',
+				'check_in_submitted': False,
+			},
+		)
 
 	except Exception as e:
 		error = f'Error during GoRouter check-in: {str(e)[:100]}'
@@ -2578,12 +2646,10 @@ async def main():
 				_count_p = account_check_in_details[_balance_key].get('provider', '')
 				_provider_counts[_count_p] = _provider_counts.get(_count_p, 0) + 1
 			_multi_keys = [
-				k for k in balance_keys
-				if _provider_counts[account_check_in_details[k].get('provider', '')] > 1
+				k for k in balance_keys if _provider_counts[account_check_in_details[k].get('provider', '')] > 1
 			]
 			_single_keys = [
-				k for k in balance_keys
-				if _provider_counts[account_check_in_details[k].get('provider', '')] <= 1
+				k for k in balance_keys if _provider_counts[account_check_in_details[k].get('provider', '')] <= 1
 			]
 			last_balance_provider = None
 			for _balance_key in _multi_keys:
