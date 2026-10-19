@@ -1,33 +1,62 @@
-name: AnyRouter identity-only diagnostic
+name: AnyRouter isolated repair verification
 on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: checkin-session-state-${{ github.repository }}
+  cancel-in-progress: false
 jobs:
-  anyrouter-identity:
+  anyrouter-only:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 10
     environment: production
     steps:
-      - name: Read AnyRouter identity metadata only
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: latest
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install locked dependencies
+        run: uv sync --frozen
+      - name: Restore existing CloakBrowser binary
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.cloakbrowser
+          key: ${{ runner.os }}-cloakbrowser-v1
+          restore-keys: |
+            ${{ runner.os }}-cloakbrowser-
+      - name: Verify only AnyRouter with production check-in function
         env:
           ANYROUTER_ACCOUNTS: ${{ secrets.ANYROUTER_ACCOUNTS }}
+          DEBUG_MODE: false
+          PYTHONIOENCODING: utf-8
         run: |
-          python3 - <<'PYCODE'
-          import json, os
-          accounts = json.loads(os.environ['ANYROUTER_ACCOUNTS'])
-          if not isinstance(accounts, list) or len(accounts) != 1:
-              raise SystemExit('Expected exactly one AnyRouter account; no changes made')
-          account = accounts[0]
-          if account.get('provider', 'anyrouter') != 'anyrouter':
-              raise SystemExit('Unexpected provider; no changes made')
-          print(json.dumps({
-              'name': account.get('name'),
-              'provider': account.get('provider', 'anyrouter'),
-              'api_user': account.get('api_user'),
-              'has_session_cookie': bool(account.get('cookies')),
-              'has_access_token': bool(account.get('access_token') or account.get('token') or account.get('accessToken')),
-              'has_password_login': bool((account.get('username') or account.get('email')) and account.get('password')),
-          }, ensure_ascii=False))
-          print('Metadata only: no site requests, check-ins, other account Secrets, or credential output.')
+          uv run python - <<'PYCODE'
+          import asyncio, json, os
+          from checkin import check_in_account
+          from utils.config import AccountConfig, AppConfig
+
+          records = json.loads(os.environ['ANYROUTER_ACCOUNTS'])
+          if not isinstance(records, list) or len(records) != 1:
+              raise SystemExit('Expected exactly one AnyRouter account')
+          record = records[0]
+          if record.get('provider', 'anyrouter') != 'anyrouter' or str(record.get('api_user')) != '185500':
+              raise SystemExit('AnyRouter identity mismatch; no site requests made')
+          account = AccountConfig.from_dict(record, 0)
+          success, before, after = asyncio.run(check_in_account(account, 0, AppConfig.load_from_env()))
+          result = {'success': success, 'account': account.name, 'api_user': account.api_user,
+                    'balance_before': (before or {}).get('quota'),
+                    'balance_after': (after or {}).get('quota'),
+                    'error': (after or {}).get('check_in_error')}
+          print(json.dumps(result, ensure_ascii=False))
+          summary = '## AnyRouter only\n\n' + json.dumps(result, ensure_ascii=False) + '\n'
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write(summary)
+          if not success:
+              raise SystemExit(1)
+          if not (before or {}).get('success') or not (after or {}).get('success'):
+              raise SystemExit('Check-in passed but identity/balance verification failed')
           PYCODE
