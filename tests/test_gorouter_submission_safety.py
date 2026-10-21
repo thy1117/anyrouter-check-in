@@ -182,22 +182,27 @@ async def test_explicit_business_rejection_is_not_reported_as_ambiguous(monkeypa
 	context.close.assert_awaited_once()
 
 
-async def test_already_checked_business_response_still_confirms_by_status(monkeypatch, gorouter):
+@pytest.mark.parametrize(
+	'message', ['今日已签到', 'Already checked in today', 'Already signed today', 'Already claimed today']
+)
+@pytest.mark.parametrize('confirmed', [False, True])
+async def test_already_checked_business_response_still_confirms_by_status(monkeypatch, gorouter, message, confirmed):
 	account, provider, _ = gorouter
 	request = AsyncMock(
 		side_effect=[
 			profile(),
 			signed(False),
-			(200, json.dumps({'success': False, 'message': '今日已签到'})),
-			signed(True),
-			profile(),
+			(200, json.dumps({'success': False, 'message': message})),
+			*([signed(True), profile()] if confirmed else [signed(False)] * 3),
 		]
 	)
 	monkeypatch.setattr(checkin, 'request_in_page', request)
 	success, _, after = await checkin.run_gorouter_check_in_in_page(account, account.name, provider)
-	assert success is True
-	assert after['check_in_phase'] == 'confirmed'
-	assert after['checked_in_today'] is True
+	assert success is confirmed
+	assert after['check_in_phase'] == ('confirmed' if confirmed else 'submitted_unconfirmed')
+	if confirmed:
+		assert after['checked_in_today'] is True
+	assert request.await_count >= 4
 	assert len([call for call in request.await_args_list if call.kwargs.get('method') == 'POST']) == 1
 
 

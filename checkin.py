@@ -1930,7 +1930,7 @@ async def run_gorouter_check_in_in_page(
 			succeeded, retry_turnstile, checkin_error = (
 				(False, False, submission_error) if submission_error else parse_gorouter_checkin_result(status, body)
 			)
-			already_checked = any(keyword in (checkin_error or '') for keyword in ALREADY_CHECKED_KEYWORDS)
+			already_checked = any(keyword in (checkin_error or '').lower() for keyword in ALREADY_CHECKED_KEYWORDS)
 			try:
 				submission_payload = json.loads(body)
 			except json.JSONDecodeError:
