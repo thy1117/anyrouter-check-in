@@ -1931,9 +1931,18 @@ async def run_gorouter_check_in_in_page(
 				(False, False, submission_error) if submission_error else parse_gorouter_checkin_result(status, body)
 			)
 			already_checked = any(keyword in (checkin_error or '') for keyword in ALREADY_CHECKED_KEYWORDS)
-			if not succeeded and not already_checked and (retry_turnstile or 400 <= status < 500):
-				# A returned challenge/auth/rate-limit rejection needs attention, not another POST.
+			try:
+				submission_payload = json.loads(body)
+			except json.JSONDecodeError:
+				submission_payload = None
+			business_rejected = (
+				status == 200 and isinstance(submission_payload, dict) and submission_payload.get('success') is False
+			)
+			if not succeeded and not already_checked and (business_rejected or retry_turnstile or 400 <= status < 500):
+				# An explicit business/challenge/auth/rate rejection is not an ambiguous write.
 				error = checkin_error or 'Check-in submission rejected'
+				if business_rejected:
+					error = f'签到被站点拒绝；未重复提交 ({error})'
 				print(f'[FAILED] {account_name}: {error}')
 				return (
 					False,

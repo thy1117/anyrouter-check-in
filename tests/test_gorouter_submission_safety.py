@@ -163,6 +163,57 @@ async def test_server_turnstile_rejection_is_not_used_to_mint_more_tokens(monkey
 	assert checkin.solve_turnstile_in_page.await_count == 1
 
 
+@pytest.mark.parametrize('message', ['签到名额暂未轮到本账号；登录、充值和模型调用不受影响', '签到活动暂未开放'])
+async def test_explicit_business_rejection_is_not_reported_as_ambiguous(monkeypatch, gorouter, message):
+	account, provider, context = gorouter
+	request = AsyncMock(
+		side_effect=[profile(), signed(False), (200, json.dumps({'success': False, 'message': message}))]
+	)
+	monkeypatch.setattr(checkin, 'request_in_page', request)
+	success, before, after = await checkin.run_gorouter_check_in_in_page(account, account.name, provider)
+	assert success is False
+	assert before['success'] is True
+	assert after['check_in_phase'] == 'submission_rejected'
+	assert after['check_in_submitted'] is True
+	assert message in after['check_in_error']
+	assert '结果未确认' not in after['check_in_error']
+	assert request.await_count == 3
+	assert checkin.solve_turnstile_in_page.await_count == 1
+	context.close.assert_awaited_once()
+
+
+async def test_already_checked_business_response_still_confirms_by_status(monkeypatch, gorouter):
+	account, provider, _ = gorouter
+	request = AsyncMock(
+		side_effect=[
+			profile(),
+			signed(False),
+			(200, json.dumps({'success': False, 'message': '今日已签到'})),
+			signed(True),
+			profile(),
+		]
+	)
+	monkeypatch.setattr(checkin, 'request_in_page', request)
+	success, _, after = await checkin.run_gorouter_check_in_in_page(account, account.name, provider)
+	assert success is True
+	assert after['check_in_phase'] == 'confirmed'
+	assert after['checked_in_today'] is True
+	assert len([call for call in request.await_args_list if call.kwargs.get('method') == 'POST']) == 1
+
+
+@pytest.mark.parametrize(
+	'post_reply', [(200, '{}'), (200, 'null'), (200, '{"success":null}'), (500, '{"success":false}')]
+)
+async def test_missing_or_server_error_result_remains_ambiguous(monkeypatch, gorouter, post_reply):
+	account, provider, _ = gorouter
+	request = AsyncMock(side_effect=[profile(), signed(False), post_reply, signed(False), signed(False), signed(False)])
+	monkeypatch.setattr(checkin, 'request_in_page', request)
+	success, _, after = await checkin.run_gorouter_check_in_in_page(account, account.name, provider)
+	assert success is False
+	assert after['check_in_phase'] == 'submitted_unconfirmed'
+	assert len([call for call in request.await_args_list if call.kwargs.get('method') == 'POST']) == 1
+
+
 async def test_bad_gateway_post_can_be_confirmed_by_status_without_post_replay(monkeypatch, gorouter):
 	account, provider, _ = gorouter
 	request = AsyncMock(side_effect=[profile(), signed(False), (503, '<html>gateway</html>'), signed(True), profile()])
