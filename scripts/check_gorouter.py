@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 
 from checkin import run_gorouter_check_in_in_page
 from utils.config import AccountConfig, AppConfig, load_accounts_config
@@ -14,10 +15,17 @@ RECOVERY_ACCOUNTS = {
 	'Aotera-thy1121': 'aotera',
 }
 
+STATUS_GROUPS = {
+	'legacy': RECOVERY_ACCOUNTS,
+	'aotera': {f'Aotera-thy{i}': 'aotera' for i in range(1117, 1122)},
+}
 
-def select_accounts(accounts: list[AccountConfig]) -> list[AccountConfig]:
+
+def select_accounts(accounts: list[AccountConfig], group: str = 'legacy') -> list[AccountConfig]:
+	if group not in STATUS_GROUPS:
+		raise ValueError('Unknown GoRouter status group; nothing was run')
 	selected = []
-	for name, provider in RECOVERY_ACCOUNTS.items():
+	for name, provider in STATUS_GROUPS[group].items():
 		matches = [account for account in accounts if account.name == name]
 		if len(matches) != 1 or matches[0].provider != provider:
 			raise ValueError(f'Expected exactly one {provider} account named {name}; nothing was run')
@@ -29,7 +37,10 @@ def select_accounts(accounts: list[AccountConfig]) -> list[AccountConfig]:
 
 
 async def run() -> int:
-	accounts = select_accounts(load_accounts_config() or [])
+	group = os.environ.get('GOROUTER_STATUS_GROUP', 'legacy')
+	if group not in STATUS_GROUPS:
+		raise ValueError('Unknown GoRouter status group; nothing was run')
+	accounts = select_accounts(load_accounts_config() or [], group)
 	config = AppConfig.load_from_env()
 	failures = 0
 	print('[STATUS] Exactly five accounts; identity + daily status only. No refresh, challenge or check-in submission.')
