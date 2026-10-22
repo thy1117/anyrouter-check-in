@@ -50,7 +50,7 @@ async def test_status_runner_reports_only_safe_fields_and_never_other_accounts(m
 	)
 	monkeypatch.setattr(entrypoint, 'run_gorouter_check_in_in_page', check)
 	assert await entrypoint.run() == 0
-	assert check.await_count == 5
+	assert check.await_count == 3
 	assert all(call.kwargs.get('status_only') is True for call in check.await_args_list)
 	output = capsys.readouterr().out
 	assert 'private-value' not in output
@@ -59,5 +59,5 @@ async def test_status_runner_reports_only_safe_fields_and_never_other_accounts(m
 		for line in output.splitlines()
 		if line.startswith('GOROUTER_STATUS ')
 	]
-	assert len(results) == 5
+	assert len(results) == 3
 	assert all(result['checked_in_today'] is False for result in results)

@@ -1,4 +1,4 @@
-"""Read-only diagnostics for the five failed GoRouter accounts; no token minting or check-in POST."""
+"""Read-only diagnostics for the three Nianhua accounts; no token minting or check-in POST."""
 
 import asyncio
 import json
@@ -11,13 +11,10 @@ RECOVERY_ACCOUNTS = {
 	'Nianhua-Dodo': 'nianhua',
 	'Nianhua-thy1119': 'nianhua',
 	'Nianhua-thy1121': 'nianhua',
-	'Aotera-thy1117': 'aotera',
-	'Aotera-thy1121': 'aotera',
 }
 
 STATUS_GROUPS = {
 	'legacy': RECOVERY_ACCOUNTS,
-	'aotera': {f'Aotera-thy{i}': 'aotera' for i in range(1117, 1122)},
 }
 
 
@@ -43,7 +40,9 @@ async def run() -> int:
 	accounts = select_accounts(load_accounts_config() or [], group)
 	config = AppConfig.load_from_env()
 	failures = 0
-	print('[STATUS] Exactly five accounts; identity + daily status only. No refresh, challenge or check-in submission.')
+	print(
+		f'[STATUS] Exactly {len(accounts)} accounts; identity + daily status only. No refresh, challenge or check-in submission.'
+	)
 	for account in accounts:
 		success, _, info = await run_gorouter_check_in_in_page(
 			account,
