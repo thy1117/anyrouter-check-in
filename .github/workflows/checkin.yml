@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       gorouter_status_only:
-        description: 'Read identity and current-day status for the three Nianhua accounts; no challenges or check-in writes'
+        description: 'Read identity and current-day status for an exact account group; no challenges or check-in writes'
         type: boolean
         default: false
       gorouter_status_group:
@@ -11,6 +11,7 @@ on:
         type: choice
         options:
         - legacy
+        - nexa
         default: legacy
       sidrune_exchange_only:
         description: 'Only exchange the six Sidrune welfare balances; no check-ins or other sites'
@@ -328,8 +329,10 @@ jobs:
         path: ~/.cloakbrowser
         key: ${{ runner.os }}-cloakbrowser-v1
     - name: Install browser
+      if: ${{ inputs.gorouter_status_group != 'nexa' }}
       run: uv run python -m cloakbrowser install
     - name: Read exactly three Nianhua account statuses
+      if: ${{ inputs.gorouter_status_group != 'nexa' }}
       env:
         GOROUTER_STATUS_GROUP: ${{ inputs.gorouter_status_group }}
         PYTHONUNBUFFERED: '1'
@@ -344,6 +347,18 @@ jobs:
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
       run: xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run python -m scripts.check_gorouter
+    - name: Read exactly NexaVlinks-27 and NexaVlinks-38 statuses
+      if: ${{ inputs.gorouter_status_group == 'nexa' }}
+      env:
+        PYTHONUNBUFFERED: '1'
+        CHECKIN_TIMEZONE: Asia/Shanghai
+        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
+        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
+        EXTRA_ACCOUNTS_94: ${{ secrets.EXTRA_ACCOUNTS_94 }}
+        EXTRA_ACCOUNTS_97: ${{ secrets.EXTRA_ACCOUNTS_97 }}
+        PROVIDERS: ${{ secrets.PROVIDERS }}
+        EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
+      run: uv run python -m scripts.check_nexa_status
 
   sidrune-exchange-test:
     if: ${{ github.event_name == 'workflow_dispatch' && !inputs.gorouter_status_only && inputs.sidrune_exchange_only }}
