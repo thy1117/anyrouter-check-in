@@ -22,9 +22,12 @@ def test_gorouter_status_dispatch_is_isolated_and_read_only():
 	target = next(step for step in steps if 'scripts.check_gorouter' in step.get('run', ''))
 	assert 'TELEGRAM_BOT_TOKEN' not in target.get('env', {})
 	assert 'PROXY_SUBSCRIPTION_URL' not in target.get('env', {})
-	assert 'EXTRA_ACCOUNTS_9' in target['env']
-	assert 'EXTRA_ACCOUNTS_73' in target['env']
-	assert 'EXTRA_ACCOUNTS_77' in target['env']
+	assert {key for key in target['env'] if key.startswith('EXTRA_ACCOUNTS')} == {
+		'EXTRA_ACCOUNTS_9',
+		'EXTRA_ACCOUNTS_54',
+		'EXTRA_ACCOUNTS_55',
+		'EXTRA_ACCOUNTS_56',
+	}
 
 
 def _workflow_job_runs(job_if, flags):

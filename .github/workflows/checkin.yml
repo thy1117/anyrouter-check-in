@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       gorouter_status_only:
-        description: 'Read identity and current-day status for the five failed Nianhua/Aotera accounts; no challenges or check-in writes'
+        description: 'Read identity and current-day status for the three Nianhua accounts; no challenges or check-in writes'
         type: boolean
         default: false
       gorouter_status_group:
@@ -11,7 +11,6 @@ on:
         type: choice
         options:
         - legacy
-        - aotera
         default: legacy
       sidrune_exchange_only:
         description: 'Only exchange the six Sidrune welfare balances; no check-ins or other sites'
@@ -201,11 +200,6 @@ jobs:
         EXTRA_ACCOUNTS_70: ${{ secrets.EXTRA_ACCOUNTS_70 }}
         EXTRA_ACCOUNTS_71: ${{ secrets.EXTRA_ACCOUNTS_71 }}
         EXTRA_ACCOUNTS_72: ${{ secrets.EXTRA_ACCOUNTS_72 }}
-        EXTRA_ACCOUNTS_73: ${{ secrets.EXTRA_ACCOUNTS_73 }}
-        EXTRA_ACCOUNTS_74: ${{ secrets.EXTRA_ACCOUNTS_74 }}
-        EXTRA_ACCOUNTS_75: ${{ secrets.EXTRA_ACCOUNTS_75 }}
-        EXTRA_ACCOUNTS_76: ${{ secrets.EXTRA_ACCOUNTS_76 }}
-        EXTRA_ACCOUNTS_77: ${{ secrets.EXTRA_ACCOUNTS_77 }}
         EXTRA_ACCOUNTS_78: ${{ secrets.EXTRA_ACCOUNTS_78 }}
         EXTRA_ACCOUNTS_79: ${{ secrets.EXTRA_ACCOUNTS_79 }}
         EXTRA_ACCOUNTS_80: ${{ secrets.EXTRA_ACCOUNTS_80 }}
@@ -332,7 +326,7 @@ jobs:
         key: ${{ runner.os }}-cloakbrowser-v1
     - name: Install browser
       run: uv run python -m cloakbrowser install
-    - name: Read exactly five account statuses
+    - name: Read exactly three Nianhua account statuses
       env:
         GOROUTER_STATUS_GROUP: ${{ inputs.gorouter_status_group }}
         PYTHONUNBUFFERED: '1'
@@ -344,11 +338,6 @@ jobs:
         EXTRA_ACCOUNTS_54: ${{ secrets.EXTRA_ACCOUNTS_54 }}
         EXTRA_ACCOUNTS_55: ${{ secrets.EXTRA_ACCOUNTS_55 }}
         EXTRA_ACCOUNTS_56: ${{ secrets.EXTRA_ACCOUNTS_56 }}
-        EXTRA_ACCOUNTS_73: ${{ secrets.EXTRA_ACCOUNTS_73 }}
-        EXTRA_ACCOUNTS_74: ${{ secrets.EXTRA_ACCOUNTS_74 }}
-        EXTRA_ACCOUNTS_75: ${{ secrets.EXTRA_ACCOUNTS_75 }}
-        EXTRA_ACCOUNTS_76: ${{ secrets.EXTRA_ACCOUNTS_76 }}
-        EXTRA_ACCOUNTS_77: ${{ secrets.EXTRA_ACCOUNTS_77 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
       run: xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run python -m scripts.check_gorouter
