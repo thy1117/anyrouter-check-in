@@ -13,7 +13,7 @@ def test_gorouter_status_dispatch_is_isolated_and_read_only():
 	assert trigger['workflow_dispatch']['inputs']['gorouter_status_only']['default'] is False
 	assert 'inputs.gorouter_status_only' in config['jobs']['checkin']['if']
 	job = config['jobs']['gorouter-status']
-	assert job['if'] == "${{ github.event_name == 'workflow_dispatch' && inputs.gorouter_status_only }}"
+	assert job['if'] == "${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}"
 	assert job['permissions'] == {'contents': 'read'}
 	steps = job['steps']
 	commands = '\n'.join(step.get('run', '') for step in steps)
@@ -40,12 +40,13 @@ def _workflow_job_runs(job_if, flags):
 	return bool(eval(expression, {'__builtins__': {}}, {}))
 
 
-@pytest.mark.parametrize('values', product([False, True], repeat=5))
+@pytest.mark.parametrize('values', product([False, True], repeat=6))
 def test_gorouter_status_only_excludes_every_conflicting_dispatch_job(values):
 	config = yaml.safe_load(WORKFLOW.read_text())
 	flags = dict(
 		zip(
 			(
+				'sidrune_checkin_only',
 				'gorouter_status_only',
 				'sidrune_exchange_only',
 				'xiaobai_test',
@@ -58,19 +59,22 @@ def test_gorouter_status_only_excludes_every_conflicting_dispatch_job(values):
 
 	runs = {
 		name: _workflow_job_runs(config['jobs'][name]['if'], flags)
-		for name in ('checkin', 'gorouter-status', 'sidrune-exchange-test', 'xiaobai-test', 'sheapi-proxy-test')
+		for name in ('checkin', 'gorouter-status', 'sidrune-exchange-test', 'xiaobai-test', 'sheapi-proxy-test', 'sidrune-checkin-test')
 	}
 	assert runs == {
 		'checkin': not any(flags.values()),
-		'gorouter-status': flags['gorouter_status_only'],
-		'sidrune-exchange-test': flags['sidrune_exchange_only'] and not flags['gorouter_status_only'],
+		'sidrune-checkin-test': flags['sidrune_checkin_only'],
+		'gorouter-status': not flags['sidrune_checkin_only'] and flags['gorouter_status_only'],
+		'sidrune-exchange-test': not flags['sidrune_checkin_only'] and flags['sidrune_exchange_only'] and not flags['gorouter_status_only'],
 		'xiaobai-test': (
-			not flags['gorouter_status_only']
+			not flags['sidrune_checkin_only']
+			and not flags['gorouter_status_only']
 			and not flags['sidrune_exchange_only']
 			and not flags['sheapi_proxy_only']
 			and (flags['xiaobai_test'] or flags['xiaobai_config_only'])
 		),
 		'sheapi-proxy-test': (
-			not flags['gorouter_status_only'] and not flags['sidrune_exchange_only'] and flags['sheapi_proxy_only']
+			not flags['sidrune_checkin_only']
+			and not flags['gorouter_status_only'] and not flags['sidrune_exchange_only'] and flags['sheapi_proxy_only']
 		),
 	}

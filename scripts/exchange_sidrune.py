@@ -9,10 +9,10 @@ from utils.config import AccountConfig, AppConfig
 SIDRUNE_SLOTS = tuple(f'EXTRA_ACCOUNTS_{number}' for number in range(67, 73))
 
 
-def select_accounts(slots: dict[str, str]) -> list[AccountConfig]:
+def select_accounts(slots: dict[str, str], slot_names: tuple[str, ...] = SIDRUNE_SLOTS) -> list[AccountConfig]:
 	accounts: list[AccountConfig] = []
 	names = set()
-	for slot in SIDRUNE_SLOTS:
+	for slot in slot_names:
 		raw = slots.get(slot, '')
 		if not raw:
 			raise ValueError(f'Missing Sidrune Secret {slot}; nothing was run')

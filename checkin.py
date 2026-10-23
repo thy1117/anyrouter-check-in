@@ -1251,8 +1251,11 @@ def run_bearer_check_in(
 	provider_config,
 	*,
 	exchange_only: bool = False,
+	checkin_only: bool = False,
 ) -> tuple[bool, dict | None, dict | None]:
 	"""使用 Bearer API 登录、查询余额并签到。"""
+	if checkin_only and (exchange_only or provider_config.name != 'sidrune'):
+		return False, None, attach_check_in_error(None, 'Check-in-only mode is restricted to Sidrune')
 	if exchange_only and provider_config.name != 'sidrune':
 		return False, None, attach_check_in_error(None, 'Exchange-only mode is restricted to Sidrune')
 	client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0, 'trust_env': False}
@@ -1392,7 +1395,8 @@ def run_bearer_check_in(
 					account_name, check_response.status_code, check_response.text
 				)
 
-			if success and provider_config.name == 'sidrune':
+			welfare_profile = None
+			if (success or checkin_only) and provider_config.name == 'sidrune':
 				try:
 					# 签到奖励到账后重新读取，已签到的账号也补兑剩余福利余额。
 					welfare_response = (
@@ -1401,7 +1405,7 @@ def run_bearer_check_in(
 					welfare_profile = _rotation_response_data(welfare_response, 'Sidrune welfare profile')
 					if not exchange_only and welfare_profile.get('checked_in_today') is not True:
 						check_in_error = 'Sidrune check-in is not confirmed; no exchange submitted'
-					else:
+					elif not checkin_only:
 						check_in_error = exchange_sidrune_welfare_balance(
 							client, account_name, provider_config, headers, welfare_profile
 						)
@@ -1415,6 +1419,13 @@ def run_bearer_check_in(
 					success = False
 
 			_, user_info_after = get_profile()
+			if checkin_only:
+				user_info_after['sidrune_checkin'] = {
+					'already_checked_in': is_checked_in_status(status_payload),
+					'checked_in_today': (welfare_profile or {}).get('checked_in_today'),
+					'welfare_before': status_payload.get('balance') if isinstance(status_payload, dict) else None,
+					'welfare_after': (welfare_profile or {}).get('balance'),
+				}
 			if not success:
 				user_info_after = attach_check_in_error(user_info_after, check_in_error)
 			return success, user_info_before, user_info_after

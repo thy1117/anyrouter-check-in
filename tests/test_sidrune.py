@@ -201,6 +201,7 @@ def welfare_session(monkeypatch):
 		confirmed=True,
 		name='Sidrune-dodo',
 		exchange_only=False,
+		checkin_only=False,
 	):
 		account = AccountConfig(cookies=None, name=name, provider='sidrune', access_token=f'test-{name}')
 		welfare = {
@@ -245,7 +246,7 @@ def welfare_session(monkeypatch):
 		monkeypatch.setattr(
 			'checkin.httpx.Client', lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs)
 		)
-		return run_bearer_check_in(account, name, provider, exchange_only=exchange_only), requests
+		return run_bearer_check_in(account, name, provider, exchange_only=exchange_only, checkin_only=checkin_only), requests
 
 	return run
 
@@ -371,3 +372,23 @@ def test_exchange_only_rejects_other_providers_before_any_authentication(monkeyp
 		exchange_only=True,
 	)
 	assert success is False and 'restricted' in after['check_in_error']
+
+
+@pytest.mark.parametrize('checked', [False, True])
+def test_sidrune_checkin_only_confirms_status_without_exchange(welfare_session, checked):
+	(success, before, after), requests = welfare_session(checked=checked, checkin_only=True)
+	assert success is True
+	assert before['quota'] == after['quota'] == 2.5
+	assert after['sidrune_checkin']['already_checked_in'] is checked
+	assert after['sidrune_checkin']['checked_in_today'] is True
+	assert after['sidrune_checkin']['welfare_after'] == 1.09272526
+	assert [request.url.path for request in requests if request.method == 'POST'] == (
+		[] if checked else ['/api/v1/welfare/checkin']
+	)
+
+
+def test_sidrune_checkin_only_rejects_unconfirmed_post(welfare_session):
+	(success, _, after), requests = welfare_session(checked=False, confirmed=False, checkin_only=True)
+	assert success is False
+	assert after['sidrune_checkin']['checked_in_today'] is False
+	assert [request.url.path for request in requests if request.method == 'POST'] == ['/api/v1/welfare/checkin']

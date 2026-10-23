@@ -13,6 +13,10 @@ on:
         - legacy
         - nexa
         default: legacy
+      sidrune_checkin_only:
+        description: 'Check in all configured Sidrune accounts; no exchange, lottery, unlock or other sites'
+        type: boolean
+        default: false
       sidrune_exchange_only:
         description: 'Only exchange the six Sidrune welfare balances; no check-ins or other sites'
         type: boolean
@@ -46,7 +50,7 @@ concurrency:
 
 jobs:
   checkin:
-    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only) }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -315,7 +319,7 @@ jobs:
 
 
   gorouter-status:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.gorouter_status_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -368,8 +372,61 @@ jobs:
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
       run: uv run python -m scripts.check_nexa_status
 
+  sidrune-checkin-test:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.sidrune_checkin_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        version: "latest"
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+    - name: 安装依赖（不启动浏览器或代理）
+      run: uv sync --frozen --no-dev
+    - name: 仅签到全部 Sidrune 账号并回读（不兑换）
+      env:
+        PYTHONUNBUFFERED: '1'
+        CHECKIN_TIMEZONE: Asia/Shanghai
+        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
+        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
+        EXTRA_ACCOUNTS_67: ${{ secrets.EXTRA_ACCOUNTS_67 }}
+        EXTRA_ACCOUNTS_68: ${{ secrets.EXTRA_ACCOUNTS_68 }}
+        EXTRA_ACCOUNTS_69: ${{ secrets.EXTRA_ACCOUNTS_69 }}
+        EXTRA_ACCOUNTS_70: ${{ secrets.EXTRA_ACCOUNTS_70 }}
+        EXTRA_ACCOUNTS_71: ${{ secrets.EXTRA_ACCOUNTS_71 }}
+        EXTRA_ACCOUNTS_72: ${{ secrets.EXTRA_ACCOUNTS_72 }}
+        EXTRA_ACCOUNTS_98: ${{ secrets.EXTRA_ACCOUNTS_98 }}
+        EXTRA_ACCOUNTS_99: ${{ secrets.EXTRA_ACCOUNTS_99 }}
+        EXTRA_ACCOUNTS_100: ${{ secrets.EXTRA_ACCOUNTS_100 }}
+        EXTRA_ACCOUNTS_101: ${{ secrets.EXTRA_ACCOUNTS_101 }}
+        EXTRA_ACCOUNTS_102: ${{ secrets.EXTRA_ACCOUNTS_102 }}
+        EXTRA_ACCOUNTS_103: ${{ secrets.EXTRA_ACCOUNTS_103 }}
+        EXTRA_ACCOUNTS_104: ${{ secrets.EXTRA_ACCOUNTS_104 }}
+        EXTRA_ACCOUNTS_105: ${{ secrets.EXTRA_ACCOUNTS_105 }}
+        EXTRA_ACCOUNTS_106: ${{ secrets.EXTRA_ACCOUNTS_106 }}
+        EXTRA_ACCOUNTS_107: ${{ secrets.EXTRA_ACCOUNTS_107 }}
+        EXTRA_ACCOUNTS_108: ${{ secrets.EXTRA_ACCOUNTS_108 }}
+      run: uv run --no-dev python -m scripts.check_sidrune
+    - name: 保存加密 Token 恢复检查点
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: sidrune-checkin-encrypted-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+        path: .xiaobai-token-recovery/*.fernet
+        include-hidden-files: true
+        if-no-files-found: ignore
+        retention-days: 14
+
   sidrune-exchange-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.gorouter_status_only && inputs.sidrune_exchange_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
@@ -410,7 +467,7 @@ jobs:
         retention-days: 14
 
   xiaobai-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
     runs-on: ubuntu-latest
     timeout-minutes: 7
     environment: production
@@ -477,7 +534,7 @@ jobs:
 
 
   sheapi-proxy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
