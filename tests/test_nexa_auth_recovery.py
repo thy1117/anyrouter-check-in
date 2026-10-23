@@ -92,3 +92,12 @@ def test_recovery_workflow_is_fixed_scope_and_serialized():
 	step = next(step for step in job['steps'] if 'scripts.recover_nexa27' in step.get('run', ''))
 	assert {key for key in step['env'] if key.startswith('EXTRA_ACCOUNTS')} == {'EXTRA_ACCOUNTS_94'}
 	assert not any('TELEGRAM' in key or 'PROXY_SUBSCRIPTION' in key for key in step['env'])
+
+
+def test_scripts_resolve_as_one_package_for_cli_and_type_checks():
+	from pathlib import Path
+
+	import scripts
+
+	assert scripts.__file__ is not None
+	assert Path(scripts.__file__).name == '__init__.py'
