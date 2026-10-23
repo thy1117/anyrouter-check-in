@@ -303,6 +303,8 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 `Sidrune-27` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_104`，参与常规签到及福利余额兑换。
 
+`Sidrune-28` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_105`，参与常规签到及福利余额兑换。
+
 单独验证兑换时，在 Actions 的手动运行选项中勾选 `sidrune_exchange_only`。该入口只加载上述六个账号，不执行任何签到、抽奖或其他站点任务；记录每个账号兑换前后的钱包余额，必要时安全刷新并保存加密令牌状态。
 
 ### Aotera
