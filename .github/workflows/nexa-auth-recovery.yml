@@ -1,0 +1,42 @@
+name: Nexa27 authentication recovery (no check-in)
+on:
+  workflow_dispatch:
+concurrency:
+  group: checkin-session-state-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  nexa27-auth-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    environment: production
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        version: "latest"
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+    - run: uv sync --frozen --no-dev
+    - name: Recover only NexaVlinks-27 authentication and read check-in status
+      env:
+        PYTHONUNBUFFERED: '1'
+        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
+        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
+        EXTRA_ACCOUNTS_94: ${{ secrets.EXTRA_ACCOUNTS_94 }}
+        PROVIDERS: ${{ secrets.PROVIDERS }}
+        EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
+      run: uv run python -m scripts.recover_nexa27
+    - name: Preserve encrypted recovery checkpoint
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nexa27-encrypted-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+        path: .xiaobai-token-recovery/*.fernet
+        include-hidden-files: true
+        if-no-files-found: ignore
+        retention-days: 14
