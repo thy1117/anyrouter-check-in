@@ -44,16 +44,16 @@ async def test_retired_or_unknown_status_group_fails_before_account_loading(monk
 		await check_gorouter.run()
 
 
-def test_retired_aotera_status_workflow_keeps_only_legacy_group():
+def test_retired_aotera_status_workflow_keeps_only_explicit_groups():
 	from pathlib import Path
 
 	workflow = yaml.safe_load(Path('.github/workflows/checkin.yml').read_text())
 	trigger = workflow.get('on') or workflow[True]
 	group = trigger['workflow_dispatch']['inputs']['gorouter_status_group']
 	assert group['default'] == 'legacy'
-	assert group['options'] == ['legacy']
+	assert group['options'] == ['legacy', 'nexa']
 	description = trigger['workflow_dispatch']['inputs']['gorouter_status_only']['description']
-	assert 'three' in description
+	assert 'exact account group' in description
 	assert 'Aotera' not in description
 	job = workflow['jobs']['gorouter-status']
 	assert job['permissions'] == {'contents': 'read'}
