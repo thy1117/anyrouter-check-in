@@ -2733,7 +2733,7 @@ async def main():
 		else:
 			print('[INFO] No balance changes detected')
 
-	if current_balance_hash:
+	if current_balance_hash and not target_accounts_env:
 		save_balance_hash(current_balance_hash)
 
 	notify_every_run = should_notify_every_run()
@@ -2829,8 +2829,11 @@ async def main():
 			notify_content += f'\n\n{screenshot_hint}'
 
 		print(notify_content)
-		notify.push_message('AnyRouter Check-in Alert', notify_content, msg_type='text')
-		print('[NOTIFY] Notification sent after check-in run')
+		if target_accounts_env:
+			print('[INFO] Manual targeted account run: external push notification skipped')
+		else:
+			notify.push_message('AnyRouter Check-in Alert', notify_content, msg_type='text')
+			print('[NOTIFY] Notification sent after check-in run')
 	else:
 		print('[INFO] All accounts successful and no balance changes detected, notification skipped')
 
