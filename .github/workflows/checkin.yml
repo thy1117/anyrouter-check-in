@@ -2,6 +2,10 @@ name: AnyRouter 自动签到
 on:
   workflow_dispatch:
     inputs:
+      target_accounts:
+        description: 'Only check in accounts matching these names/providers (comma-separated, e.g. "Lunora,Sidrune-tthx1,Nianhua-1117"); leave empty for all'
+        type: string
+        default: ''
       gorouter_status_only:
         description: 'Read identity and current-day status for an exact account group; no challenges or check-in writes'
         type: boolean
@@ -63,6 +67,7 @@ jobs:
       CHECKIN_DISABLED_PROVIDERS: qingjiu
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
+      CHECKIN_TARGET_ACCOUNTS: ${{ inputs.target_accounts }}
     steps:
     - uses: actions/checkout@v6
 
@@ -143,6 +148,7 @@ jobs:
     - name: 执行签到
       env:
         DEBUG_MODE: ${{ env.DEBUG_MODE }}
+        CHECKIN_TARGET_ACCOUNTS: ${{ inputs.target_accounts }}
         CHECKIN_HEADLESS: false
         CHECKIN_HUMANIZE: true
         CHECKIN_WAIT_TIMEOUT_MS: 120000
