@@ -505,7 +505,7 @@ jobs:
         PROXY_SUBSCRIPTION_URL: ''
         PROXY_NODES: ${{ secrets.PROXY_NODES_XIAOBAI_ORACLE_SG }}
         PROXY_TEST_URL: https://token.dialoguedui.com/custom/checkin_bonus_user
-        PROXY_NODE_NAME: oracle-sg
+        PROXY_NODE_NAME: Oracle-SG
         MIHOMO_VERSION: v1.19.27
         PROXY_REQUIRED: true
       run: bash scripts/setup_mihomo_proxy.sh

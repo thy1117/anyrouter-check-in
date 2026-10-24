@@ -94,7 +94,7 @@ def test_single_account_test_cannot_run_production_job():
 	assert 'run checkin.py' not in test_job
 	assert 'TELEGRAM_BOT_TOKEN' not in test_job
 	assert 'ANYROUTER_ACCOUNTS' not in test_job
-	assert 'PROXY_NODE_NAME: oracle-sg' in test_job
+	assert 'PROXY_NODE_NAME: Oracle-SG' in test_job
 	assert 'XIAOBAI_STATUS_ONLY: ${{ inputs.xiaobai_status_only }}' in test_job
 
 
