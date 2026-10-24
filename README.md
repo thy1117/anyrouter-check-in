@@ -332,6 +332,23 @@ Aotera（`https://aotera.cc`）使用新版 NewAPI，签到接口 `POST /api/use
 ]
 ```
 
+### SuperQiyu
+
+SuperQiyu（`https://www.superqiyu.org/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和用户 ID（`api_user`）。内置 `superqiyu` Provider 复用浏览器 Turnstile 签到流程，先读取今日状态，未签到时提交一次，再由服务端状态确认结果。
+
+`SuperQiyu-554` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_110`：
+
+```json
+[
+  {
+    "name": "SuperQiyu-554",
+    "provider": "superqiyu",
+    "access_token": "个人访问令牌",
+    "api_user": "554"
+  }
+]
+```
+
 ### Lunora 每日签到
 
 内置 `lunora` Provider 使用 `https://www.uselunora.com/checkin` 的网页登录令牌。`Lunora-1125`、`Lunora-5237`、`Lunora-8746`、`Lunora-9308`、`Lunora-3069` 分别保存在 `production` Environment Secret `EXTRA_ACCOUNTS_78`、`EXTRA_ACCOUNTS_79`、`EXTRA_ACCOUNTS_80`、`EXTRA_ACCOUNTS_81`、`EXTRA_ACCOUNTS_82`（后续账号可用 `EXTRA_ACCOUNTS_83` ~ `EXTRA_ACCOUNTS_87`）：
