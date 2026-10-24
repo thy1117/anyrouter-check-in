@@ -689,6 +689,10 @@ def load_accounts_config() -> list[AccountConfig] | None:
 				continue
 
 			name = account_dict.get('name')
+			if name == 'Nianhua-Dodo':
+				name = 'Nianhua-1117'
+				account_dict['name'] = name
+
 			if name and name in account_indexes_by_name:
 				merged_account_sources[account_indexes_by_name[name]] = account_dict
 				continue
