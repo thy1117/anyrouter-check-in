@@ -2549,6 +2549,37 @@ def write_run_summary(success_count: int, total_count: int) -> None:
 		print('[WARN] Could not write GitHub Actions job summary')
 
 
+def filter_accounts_by_target(accounts: list[AccountConfig], target_expr: str) -> list[AccountConfig]:
+	"""Filter accounts by target names or providers.
+
+	target_expr is a comma-separated list of account names or provider names.
+	Matching rules:
+	1. Target matches account display name exactly (case-insensitive).
+	2. Target matches account provider exactly (case-insensitive, e.g. 'lunora').
+	3. Account display name starts with target prefix (e.g. 'lunora' matches 'Lunora-1125').
+	"""
+	if not target_expr or not target_expr.strip():
+		return accounts
+
+	targets = [t.strip().lower() for t in target_expr.split(',') if t.strip()]
+	if not targets:
+		return accounts
+
+	filtered: list[AccountConfig] = []
+	for i, acc in enumerate(accounts):
+		name = acc.get_display_name(i).strip().lower()
+		provider = (acc.provider or '').strip().lower()
+		for t in targets:
+			if t == name or t == provider:
+				filtered.append(acc)
+				break
+			if name.startswith(f'{t}-') or name.startswith(f'{t}_'):
+				filtered.append(acc)
+				break
+
+	return filtered
+
+
 async def main():
 	"""主函数"""
 	if is_debug_enabled():
@@ -2581,6 +2612,17 @@ async def main():
 		sys.exit(1)
 
 	print(f'[INFO] Found {len(accounts)} account configurations')
+
+	target_accounts_env = os.getenv('CHECKIN_TARGET_ACCOUNTS', '').strip()
+	if target_accounts_env:
+		accounts = filter_accounts_by_target(accounts, target_accounts_env)
+		display_names = [acc.get_display_name(i) for i, acc in enumerate(accounts)]
+		print(f'[INFO] Filtered to {len(accounts)} target account(s) by CHECKIN_TARGET_ACCOUNTS: {display_names}')
+		if not accounts:
+			error_msg = f'[FAILED] No accounts matched CHECKIN_TARGET_ACCOUNTS="{target_accounts_env}", program exits'
+			print(error_msg)
+			notify.push_message('AnyRouter Check-in Alert', error_msg, msg_type='text')
+			sys.exit(1)
 
 	last_balance_hash = load_balance_hash()
 
