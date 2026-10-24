@@ -170,6 +170,37 @@ def test_lunora_checkin_respects_status(monkeypatch, checked, eligible, success,
 	assert len([request for request in requests if request.method == 'POST']) == submissions
 
 
+def test_lunora_ineligible_reason_extracted(monkeypatch):
+	provider = lunora_provider(monkeypatch)
+	account = AccountConfig(cookies=None, name='Lunora-8746', provider='lunora', access_token='test-access')
+
+	def handler(request):
+		if request.url.path == '/api/v1/auth/me':
+			return httpx.Response(200, json={'code': 0, 'data': {'balance': 1.36}})
+		if request.url.path == '/api/v1/checkin/status':
+			return httpx.Response(
+				200,
+				json={
+					'code': 0,
+					'data': {
+						'checked_today': False,
+						'eligible': False,
+						'ineligible_reason': 'recent_usage_required',
+					},
+				},
+			)
+		return httpx.Response(404)
+
+	client = httpx.Client
+	monkeypatch.setattr(
+		'checkin.httpx.Client', lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs)
+	)
+	monkeypatch.setattr('checkin.create_xiaobai_token_state', lambda *args: None)
+	result, before, after = run_bearer_check_in(account, 'Lunora-8746', provider)
+	assert result is False
+	assert '近 30 天内需有真实 API 使用记录' in after['check_in_error']
+
+
 def test_solve_safeline_guard_valid_and_invalid():
 	assert solve_safeline_guard('28cd9ec3O1Ac24') is not None
 	assert solve_safeline_guard(None) is None
