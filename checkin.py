@@ -4,10 +4,12 @@ AnyRouter.top 自动签到脚本
 """
 
 import asyncio
+import base64
 import hashlib
 import json
 import math
 import os
+import re
 import sys
 import time
 from datetime import datetime
@@ -859,6 +861,8 @@ def parse_sub2api_profile_response(status_code: int, body: str) -> dict:
 	try:
 		payload = json.loads(body)
 	except json.JSONDecodeError:
+		if '/_guard/auto.js' in body:
+			return {'success': False, 'error': 'Failed to get user info: SafeLine WAF challenge intercepted'}
 		return {'success': False, 'error': 'Failed to get user info: invalid JSON'}
 
 	if isinstance(payload, dict) and payload.get('code') not in (None, 0):
@@ -1245,6 +1249,78 @@ def _bearer_login(client, account: AccountConfig, account_name: str, provider_co
 	raise RuntimeError('Bearer login retry loop ended unexpectedly')
 
 
+def solve_safeline_guard(guard: str | None) -> str | None:
+	"""Solve SafeLine WAF challenge cookie (guard -> guardret via RC4)."""
+	if not guard or len(guard) < 13:
+		return None
+	key = guard[:8]
+	digits_match = re.search(r'^\d+', guard[12:])
+	if not digits_match:
+		return None
+	num_plain = int(digits_match.group(0))
+	guard_arg = str(num_plain * 2 + 16)
+	s = list(range(256))
+	j = 0
+	for i in range(256):
+		j = (j + s[i] + ord(key[i % len(key)])) % 256
+		s[i], s[j] = s[j], s[i]
+	i = j = 0
+	res = []
+	for char in guard_arg:
+		i = (i + 1) % 256
+		j = (j + s[i]) % 256
+		s[i], s[j] = s[j], s[i]
+		res.append(chr(ord(char) ^ s[(s[i] + s[j]) % 256]))
+	enc = ''.join(res)
+	return base64.b64encode(enc.encode('latin1')).decode('ascii')
+
+
+class SafeLineAuth(httpx.Auth):
+	"""Bypass SafeLine WAF challenge (/_guard/auto.js) on HTTP requests."""
+
+	requires_response_body = True
+
+	def __init__(self):
+		self.cached_guard: str | None = None
+		self.cached_guardret: str | None = None
+
+	def auth_flow(self, request: httpx.Request):
+		if self.cached_guard and self.cached_guardret:
+			self._inject_cookies(request, self.cached_guard, self.cached_guardret)
+
+		response = yield request
+
+		if b'/_guard/auto.js' in response.content:
+			guard = self._extract_guard(response)
+			if guard:
+				guardret = solve_safeline_guard(guard)
+				if guardret:
+					self.cached_guard = guard
+					self.cached_guardret = guardret
+					self._inject_cookies(request, guard, guardret)
+					yield request
+
+	@staticmethod
+	def _extract_guard(response: httpx.Response) -> str | None:
+		guard = response.cookies.get('guard')
+		if guard:
+			return guard
+		for header in response.headers.get_list('set-cookie'):
+			match = re.search(r'guard=([^;]+)', header)
+			if match:
+				return match.group(1).strip()
+		return None
+
+	@staticmethod
+	def _inject_cookies(request: httpx.Request, guard: str, guardret: str) -> None:
+		existing = request.headers.get('Cookie', '')
+		parts = [c.strip() for c in existing.split(';') if c.strip()]
+		parts = [c for c in parts if not c.startswith(('guard=', 'guardret='))]
+		parts.append(f'guard={guard}')
+		parts.append(f'guardret={guardret}')
+		request.headers['Cookie'] = '; '.join(parts)
+
+
 def run_bearer_check_in(
 	account: AccountConfig,
 	account_name: str,
@@ -1258,7 +1334,12 @@ def run_bearer_check_in(
 		return False, None, attach_check_in_error(None, 'Check-in-only mode is restricted to Sidrune')
 	if exchange_only and provider_config.name != 'sidrune':
 		return False, None, attach_check_in_error(None, 'Exchange-only mode is restricted to Sidrune')
-	client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0, 'trust_env': False}
+	client_kwargs: dict = {
+		'http2': provider_config.http2,
+		'timeout': 30.0,
+		'trust_env': False,
+		'auth': SafeLineAuth(),
+	}
 	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
 	if proxy_url:
 		client_kwargs['proxy'] = proxy_url
@@ -2342,7 +2423,7 @@ def run_check_in_requests(
 ) -> tuple[bool, dict | None, dict | None]:
 	"""执行 HTTP 签到请求（同步，避免在 async 上下文中使用阻塞 httpx）。"""
 	try:
-		client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0}
+		client_kwargs: dict = {'http2': provider_config.http2, 'timeout': 30.0, 'auth': SafeLineAuth()}
 		if not provider_config.http2:
 			debug_print(f'[INFO] {account_name}: HTTP/2 disabled for this provider (Cloudflare h2 fingerprinting)')
 		proxy_url = get_proxy_server(use_proxy=use_proxy)

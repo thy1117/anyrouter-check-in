@@ -4,7 +4,12 @@ from pathlib import Path
 import httpx
 import pytest
 
-from checkin import run_bearer_check_in
+from checkin import (
+	SafeLineAuth,
+	parse_sub2api_profile_response,
+	run_bearer_check_in,
+	solve_safeline_guard,
+)
 from utils.config import AccountConfig, AppConfig, _account_env_names, load_accounts_config
 
 
@@ -163,3 +168,82 @@ def test_lunora_checkin_respects_status(monkeypatch, checked, eligible, success,
 	assert before is not None and after is not None
 	assert before['quota'] == after['quota'] == 0.0828
 	assert len([request for request in requests if request.method == 'POST']) == submissions
+
+
+def test_solve_safeline_guard_valid_and_invalid():
+	assert solve_safeline_guard('28cd9ec3O1Ac24') is not None
+	assert solve_safeline_guard(None) is None
+	assert solve_safeline_guard('') is None
+	assert solve_safeline_guard('short') is None
+	assert solve_safeline_guard('28cd9ec3O1Acnotdigits') is None
+
+
+def test_parse_sub2api_profile_response_safeline_intercepted():
+	safeline_html = '<script src="/_guard/auto.js"></script>'
+	res = parse_sub2api_profile_response(200, safeline_html)
+	assert res['success'] is False
+	assert res['error'] == 'Failed to get user info: SafeLine WAF challenge intercepted'
+
+
+def test_safeline_auth_flow():
+	calls = []
+
+	def handler(request: httpx.Request):
+		calls.append(request)
+		cookie_header = request.headers.get('cookie', '')
+		if 'guard=' not in cookie_header or 'guardret=' not in cookie_header:
+			return httpx.Response(
+				200,
+				text='<script src="/_guard/auto.js"></script>',
+				headers={'Set-Cookie': 'guard=28cd9ec3O1Ac24; path=/'},
+			)
+		return httpx.Response(200, json={'code': 0, 'data': {'ok': True}})
+
+	client = httpx.Client(transport=httpx.MockTransport(handler), auth=SafeLineAuth())
+	resp1 = client.get('https://www.uselunora.com/api/v1/auth/me')
+	assert resp1.status_code == 200
+	assert resp1.json() == {'code': 0, 'data': {'ok': True}}
+	# First request caused 2 transport calls (initial challenge + solved retry)
+	assert len(calls) == 2
+
+	# Second request should use cached cookies directly without triggering challenge
+	resp2 = client.get('https://www.uselunora.com/api/v1/checkin/status')
+	assert resp2.status_code == 200
+	assert len(calls) == 3
+
+
+def test_lunora_checkin_with_safeline_waf_challenge(monkeypatch):
+	provider = lunora_provider(monkeypatch)
+	account = AccountConfig(cookies=None, name='Lunora-1125', provider='lunora', access_token='test-access')
+	solved_cookies = {}
+
+	def handler(request: httpx.Request):
+		cookie = request.headers.get('cookie', '')
+		if 'guard=' not in cookie or 'guardret=' not in cookie:
+			return httpx.Response(
+				200,
+				text='<script src="/_guard/auto.js"></script>',
+				headers={'Set-Cookie': 'guard=701b9bdcgFN968; path=/'},
+			)
+		solved_cookies['guard'] = True
+		if request.url.path == '/api/v1/auth/me':
+			return httpx.Response(200, json={'code': 0, 'data': {'balance': 1.5}})
+		if request.url.path == '/api/v1/checkin/status':
+			return httpx.Response(200, json={'code': 0, 'data': {'checked_today': False, 'eligible': True}})
+		if request.url.path == '/api/v1/checkin/claim':
+			return httpx.Response(
+				200, json={'code': 0, 'data': {'record': {'attendance_day': 1, 'reward_amount': 0.1}, 'created': True}}
+			)
+		return httpx.Response(404)
+
+	client = httpx.Client
+	monkeypatch.setattr(
+		'checkin.httpx.Client', lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs)
+	)
+	monkeypatch.setattr('checkin.create_xiaobai_token_state', lambda *args: None)
+	result, before, after = run_bearer_check_in(account, 'Lunora-1125', provider)
+	assert result is True
+	assert solved_cookies.get('guard') is True
+	assert before is not None and after is not None
+	assert before['quota'] == 1.5
+	assert after['quota'] == 1.5

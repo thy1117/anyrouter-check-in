@@ -246,7 +246,9 @@ def welfare_session(monkeypatch):
 		monkeypatch.setattr(
 			'checkin.httpx.Client', lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs)
 		)
-		return run_bearer_check_in(account, name, provider, exchange_only=exchange_only, checkin_only=checkin_only), requests
+		return run_bearer_check_in(
+			account, name, provider, exchange_only=exchange_only, checkin_only=checkin_only
+		), requests
 
 	return run
 
