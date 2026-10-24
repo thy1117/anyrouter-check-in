@@ -13,7 +13,10 @@ def test_gorouter_status_dispatch_is_isolated_and_read_only():
 	assert trigger['workflow_dispatch']['inputs']['gorouter_status_only']['default'] is False
 	assert 'inputs.gorouter_status_only' in config['jobs']['checkin']['if']
 	job = config['jobs']['gorouter-status']
-	assert job['if'] == "${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}"
+	assert (
+		job['if']
+		== "${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}"
+	)
 	assert job['permissions'] == {'contents': 'read'}
 	steps = job['steps']
 	commands = '\n'.join(step.get('run', '') for step in steps)
@@ -59,13 +62,22 @@ def test_gorouter_status_only_excludes_every_conflicting_dispatch_job(values):
 
 	runs = {
 		name: _workflow_job_runs(config['jobs'][name]['if'], flags)
-		for name in ('checkin', 'gorouter-status', 'sidrune-exchange-test', 'xiaobai-test', 'sheapi-proxy-test', 'sidrune-checkin-test')
+		for name in (
+			'checkin',
+			'gorouter-status',
+			'sidrune-exchange-test',
+			'xiaobai-test',
+			'sheapi-proxy-test',
+			'sidrune-checkin-test',
+		)
 	}
 	assert runs == {
 		'checkin': not any(flags.values()),
 		'sidrune-checkin-test': flags['sidrune_checkin_only'],
 		'gorouter-status': not flags['sidrune_checkin_only'] and flags['gorouter_status_only'],
-		'sidrune-exchange-test': not flags['sidrune_checkin_only'] and flags['sidrune_exchange_only'] and not flags['gorouter_status_only'],
+		'sidrune-exchange-test': not flags['sidrune_checkin_only']
+		and flags['sidrune_exchange_only']
+		and not flags['gorouter_status_only'],
 		'xiaobai-test': (
 			not flags['sidrune_checkin_only']
 			and not flags['gorouter_status_only']
@@ -75,6 +87,8 @@ def test_gorouter_status_only_excludes_every_conflicting_dispatch_job(values):
 		),
 		'sheapi-proxy-test': (
 			not flags['sidrune_checkin_only']
-			and not flags['gorouter_status_only'] and not flags['sidrune_exchange_only'] and flags['sheapi_proxy_only']
+			and not flags['gorouter_status_only']
+			and not flags['sidrune_exchange_only']
+			and flags['sheapi_proxy_only']
 		),
 	}

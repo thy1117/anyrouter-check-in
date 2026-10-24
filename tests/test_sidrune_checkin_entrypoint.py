@@ -49,6 +49,12 @@ def test_checkin_workflow_uses_only_sidrune_secrets_and_no_notifications():
 	job = config['jobs']['sidrune-checkin-test']
 	assert job['environment'] == 'production' and job['permissions'] == {'contents': 'write'}
 	step = next(step for step in job['steps'] if step.get('run') == 'uv run --no-dev python -m scripts.check_sidrune')
-	assert set(step['env']) == {*CHECKIN_SLOTS, 'PYTHONUNBUFFERED', 'CHECKIN_TIMEZONE', 'XIAOBAI_TOKEN_STATE_KEY', 'XIAOBAI_STATE_GITHUB_TOKEN'}
+	assert set(step['env']) == {
+		*CHECKIN_SLOTS,
+		'PYTHONUNBUFFERED',
+		'CHECKIN_TIMEZONE',
+		'XIAOBAI_TOKEN_STATE_KEY',
+		'XIAOBAI_STATE_GITHUB_TOKEN',
+	}
 	for slot in CHECKIN_SLOTS:
 		assert step['env'][slot] == '${{ secrets.' + slot + ' }}'
