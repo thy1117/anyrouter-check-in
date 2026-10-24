@@ -14,7 +14,7 @@ async def test_legacy_status_reads_only_three_nianhua_accounts(monkeypatch, caps
 		monkeypatch.delenv('GOROUTER_STATUS_GROUP', raising=False)
 	else:
 		monkeypatch.setenv('GOROUTER_STATUS_GROUP', group)
-	names = ['Nianhua-Dodo', 'Nianhua-thy1119', 'Nianhua-thy1121']
+	names = ['Nianhua-1117', 'Nianhua-thy1119', 'Nianhua-thy1121']
 	accounts = [
 		AccountConfig(cookies=None, provider='nianhua', name=name, access_token='dummy', api_user='1')
 		for name in reversed(names)
@@ -69,3 +69,20 @@ def test_workflows_do_not_wire_retired_aotera_slots(slot):
 
 	for workflow in Path('.github/workflows').glob('*.y*ml'):
 		assert f'EXTRA_ACCOUNTS_{slot}' not in workflow.read_text(), workflow.name
+
+
+def test_load_accounts_aliases_nianhua_dodo_to_nianhua_1117(monkeypatch):
+	import json
+
+	from utils.config import _account_env_names, load_accounts_config
+
+	for name in _account_env_names():
+		monkeypatch.delenv(name, raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_9',
+		json.dumps([{'name': 'Nianhua-Dodo', 'provider': 'nianhua', 'access_token': 'pat', 'api_user': '1'}]),
+	)
+	accounts = load_accounts_config()
+	assert accounts is not None
+	assert len(accounts) == 1
+	assert accounts[0].name == 'Nianhua-1117'

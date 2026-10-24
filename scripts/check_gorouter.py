@@ -8,7 +8,7 @@ from checkin import run_gorouter_check_in_in_page
 from utils.config import AccountConfig, AppConfig, load_accounts_config
 
 RECOVERY_ACCOUNTS = {
-	'Nianhua-Dodo': 'nianhua',
+	'Nianhua-1117': 'nianhua',
 	'Nianhua-thy1119': 'nianhua',
 	'Nianhua-thy1121': 'nianhua',
 }
