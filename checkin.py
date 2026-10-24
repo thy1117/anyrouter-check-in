@@ -1466,7 +1466,15 @@ def run_bearer_check_in(
 				and isinstance(status_payload, dict)
 				and status_payload.get('eligible') is False
 			):
-				check_in_error = 'Daily check-in is currently not eligible'
+				reason_key = status_payload.get('ineligible_reason') or status_payload.get('reason') or ''
+				reason_map = {
+					'recent_usage_required': '近 30 天内需有真实 API 使用记录',
+					'account_too_new': '账号注册满 24 小时后方可参与',
+					'account_inactive': '当前账号状态暂不符合参与条件',
+					'feature_disabled': '签到活动暂未开放',
+				}
+				detail = reason_map.get(str(reason_key), str(reason_key)) if reason_key else ''
+				check_in_error = f'Daily check-in is currently not eligible{": " + detail if detail else ""}'
 				print(f'[FAILED] {account_name}: {check_in_error}')
 				success = False
 			else:
