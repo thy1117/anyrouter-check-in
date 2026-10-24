@@ -236,6 +236,7 @@ jobs:
         EXTRA_ACCOUNTS_106: ${{ secrets.EXTRA_ACCOUNTS_106 }}
         EXTRA_ACCOUNTS_107: ${{ secrets.EXTRA_ACCOUNTS_107 }}
         EXTRA_ACCOUNTS_108: ${{ secrets.EXTRA_ACCOUNTS_108 }}
+        EXTRA_ACCOUNTS_109: ${{ secrets.EXTRA_ACCOUNTS_109 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
@@ -414,6 +415,7 @@ jobs:
         EXTRA_ACCOUNTS_106: ${{ secrets.EXTRA_ACCOUNTS_106 }}
         EXTRA_ACCOUNTS_107: ${{ secrets.EXTRA_ACCOUNTS_107 }}
         EXTRA_ACCOUNTS_108: ${{ secrets.EXTRA_ACCOUNTS_108 }}
+        EXTRA_ACCOUNTS_109: ${{ secrets.EXTRA_ACCOUNTS_109 }}
       run: uv run --no-dev python -m scripts.check_sidrune
     - name: 保存加密 Token 恢复检查点
       if: always()

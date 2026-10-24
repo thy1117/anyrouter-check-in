@@ -15,7 +15,7 @@ def account_slots():
 	}
 
 
-def test_checkin_entrypoint_only_runs_all_seventeen_sidrune_accounts(monkeypatch, capsys):
+def test_checkin_entrypoint_only_runs_all_eighteen_sidrune_accounts(monkeypatch, capsys):
 	import scripts.check_sidrune as entrypoint
 
 	for slot, value in account_slots().items():
@@ -30,9 +30,9 @@ def test_checkin_entrypoint_only_runs_all_seventeen_sidrune_accounts(monkeypatch
 
 	monkeypatch.setattr(entrypoint, 'run_bearer_check_in', checkin)
 	assert entrypoint.main() == 0
-	assert requests == [f'account-{index}' for index in range(17)]
+	assert requests == [f'account-{index}' for index in range(18)]
 	output = capsys.readouterr().out
-	assert 'private-' not in output and output.count('"status": "checked_in"') == 17
+	assert 'private-' not in output and output.count('"status": "checked_in"') == 18
 
 
 @pytest.mark.parametrize('value', ['', 'private-invalid-json', '{}', '[]', '[{}]', '[{"provider":"nexa"}]'])

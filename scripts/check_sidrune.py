@@ -7,7 +7,7 @@ from checkin import resolve_check_in_error, run_bearer_check_in
 from scripts.exchange_sidrune import SIDRUNE_SLOTS, select_accounts
 from utils.config import AppConfig
 
-CHECKIN_SLOTS = SIDRUNE_SLOTS + tuple(f'EXTRA_ACCOUNTS_{number}' for number in range(98, 109))
+CHECKIN_SLOTS = SIDRUNE_SLOTS + tuple(f'EXTRA_ACCOUNTS_{number}' for number in range(98, 110))
 
 
 def main():
