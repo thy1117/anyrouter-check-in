@@ -261,6 +261,16 @@ class AppConfig:
 				checkin_turnstile=True,
 				turnstile_site_key='0x4AAAAAAEh1ff_X89vLWoIM',
 			),
+			'chuanapi': ProviderConfig(
+				name='chuanapi',
+				domain='https://chuanapi.com',
+				login_path='/profile',
+				sign_in_path='/api/user/checkin',
+				check_in_status_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				api_user_key='New-Api-User',
+				use_proxy=False,
+			),
 			'lunora': ProviderConfig(
 				name='lunora',
 				domain='https://www.uselunora.com',
