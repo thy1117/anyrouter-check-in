@@ -27,13 +27,19 @@ def test_zerocat_configuration_and_account_slot(monkeypatch):
 	monkeypatch.setenv('ANYROUTER_ACCOUNTS', json.dumps([{'name': 'Existing', 'access_token': 'old'}]))
 	monkeypatch.setenv(
 		'EXTRA_ACCOUNTS_111',
-		json.dumps([{'name': 'ZeroCat-19163', 'provider': 'zerocat', 'api_user': '19163', 'access_token': 'test'}]),
+		json.dumps([{'name': 'ZeroCat-1117', 'provider': 'zerocat', 'api_user': '19163', 'access_token': 'test'}]),
+	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_112',
+		json.dumps([{'name': 'ZeroCat-1118', 'provider': 'zerocat', 'api_user': '19170', 'access_token': 'test-2'}]),
 	)
 	accounts = load_accounts_config()
-	assert [account.name for account in accounts] == ['Existing', 'ZeroCat-19163']
-	assert accounts[-1].provider == 'zerocat' and accounts[-1].api_user == '19163'
+	assert [account.name for account in accounts] == ['Existing', 'ZeroCat-1117', 'ZeroCat-1118']
+	assert accounts[1].provider == 'zerocat' and accounts[1].api_user == '19163'
+	assert accounts[2].provider == 'zerocat' and accounts[2].api_user == '19170'
 	workflow = Path('.github/workflows/checkin.yml').read_text().split('\n  gorouter-status:', 1)[0]
 	assert 'EXTRA_ACCOUNTS_111: ${{ secrets.EXTRA_ACCOUNTS_111 }}' in workflow
+	assert 'EXTRA_ACCOUNTS_112: ${{ secrets.EXTRA_ACCOUNTS_112 }}' in workflow
 
 
 @pytest.mark.parametrize('checked', [False, True])
