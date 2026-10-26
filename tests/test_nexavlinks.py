@@ -63,6 +63,17 @@ def test_provider_and_overrides_keep_rotation_defaults(monkeypatch):
 	)
 
 
+@pytest.mark.parametrize('env_name', ['PROVIDERS', 'EXTRA_PROVIDERS'])
+@pytest.mark.parametrize('host', ['asia', 'api'])
+def test_provider_env_cannot_redirect_nexa_api_away_from_www(monkeypatch, env_name, host):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+	monkeypatch.setenv(env_name, json.dumps({'nexavlinks': {'domain': f'https://{host}.nexavlinks.com'}}))
+	provider = AppConfig.load_from_env().providers['nexavlinks']
+	assert provider.domain == 'https://www.nexavlinks.com'
+	assert provider.token_state_domain == 'https://asia.nexavlinks.com'
+
+
 def response(data):
 	return httpx.Response(200, json={'code': 0, 'data': data})
 
