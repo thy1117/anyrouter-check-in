@@ -734,6 +734,9 @@ def load_accounts_config() -> list[AccountConfig] | None:
 				continue
 
 			name = account_dict.get('name')
+			if provider == 'kapibala' and name == 'Kapibala-Dodo':
+				print('[INFO] Skipping duplicate account "Kapibala-Dodo"; keeping "Kapibala-thy1117"')
+				continue
 			if name == 'Nianhua-Dodo':
 				name = 'Nianhua-1117'
 				account_dict['name'] = name

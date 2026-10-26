@@ -606,7 +606,10 @@ def test_superapi_fifth_slot_61_loads_login_credentials(monkeypatch):
 
 
 def test_kapibala_slot_62_loads_multiple_login_accounts(monkeypatch):
-	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
+	monkeypatch.setenv(
+		'ANYROUTER_ACCOUNTS',
+		json.dumps([{'name': 'Kapibala-Dodo', 'provider': 'kapibala', 'access_token': 'duplicate-token'}]),
+	)
 	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
 	monkeypatch.setenv(
 		'EXTRA_ACCOUNTS_62',
