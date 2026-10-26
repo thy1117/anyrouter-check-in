@@ -38,6 +38,7 @@ class ProviderConfig:
 	turnstile_site_key: str = ''
 	captcha_path: str = '/api/captcha?scene=checkin'
 	captcha_code_key: str = 'captcha_code'
+	token_state_domain: str | None = None
 
 	def __post_init__(self):
 		if isinstance(self.proxy_nodes, str):
@@ -117,6 +118,7 @@ class ProviderConfig:
 			turnstile_site_key=data.get('turnstile_site_key', default_turnstile_site_key),
 			captcha_path=data.get('captcha_path', default_captcha_path),
 			captcha_code_key=data.get('captcha_code_key', default_captcha_code_key),
+			token_state_domain=data.get('token_state_domain', defaults.token_state_domain if defaults else None),
 		)
 
 	def needs_waf_cookies(self) -> bool:
@@ -196,7 +198,8 @@ class AppConfig:
 			),
 			'nexavlinks': ProviderConfig(
 				name='nexavlinks',
-				domain='https://asia.nexavlinks.com',
+				domain='https://www.nexavlinks.com',
+				token_state_domain='https://asia.nexavlinks.com',
 				api_style='sub2api',
 				login_path='/check-in',
 				sign_in_path='/api/v1/check-in',

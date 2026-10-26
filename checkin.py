@@ -1061,7 +1061,7 @@ def run_xiaobai_check_in(
 	access_token, refresh_token = account.access_token or '', account.refresh_token or ''
 	mask_tokens(access_token, refresh_token)
 	try:
-		state = create_xiaobai_token_state(account, provider_config.domain)
+		state = create_xiaobai_token_state(account, provider_config.token_state_domain or provider_config.domain)
 		if state:
 			access_token, refresh_token = state.load()
 		if not access_token and not refresh_token:
@@ -1363,7 +1363,7 @@ def run_bearer_check_in(
 		# Password-login accounts can recover by logging in again. Token-only
 		# accounts must use the latest durable state, never stale Secret tokens.
 		if not account.has_login_credentials():
-			state = create_xiaobai_token_state(account, provider_config.domain)
+			state = create_xiaobai_token_state(account, provider_config.token_state_domain or provider_config.domain)
 			if state:
 				access_token, refresh_token = state.load()
 		with httpx.Client(headers=headers, **client_kwargs) as client:

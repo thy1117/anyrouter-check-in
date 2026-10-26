@@ -47,7 +47,8 @@ def test_provider_and_overrides_keep_rotation_defaults(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
 	provider = AppConfig.load_from_env().providers['nexavlinks']
-	assert provider.domain == 'https://asia.nexavlinks.com'
+	assert provider.domain == 'https://www.nexavlinks.com'
+	assert provider.token_state_domain == 'https://asia.nexavlinks.com'
 	assert provider.api_style == 'sub2api'
 	assert provider.user_info_path == '/api/v1/auth/me'
 	assert provider.auth_refresh_path == '/api/v1/auth/refresh'
@@ -56,6 +57,10 @@ def test_provider_and_overrides_keep_rotation_defaults(monkeypatch):
 	assert provider.checkin_rotate is True and provider.use_proxy is False
 	assert provider.login_api_path is None
 	assert ProviderConfig.from_dict('nexavlinks', {'domain': provider.domain}, defaults=provider).checkin_rotate is True
+	assert (
+		ProviderConfig.from_dict('nexavlinks', {'domain': provider.domain}, defaults=provider).token_state_domain
+		== 'https://asia.nexavlinks.com'
+	)
 
 
 def response(data):
@@ -106,6 +111,21 @@ def test_already_checked_in_skips_challenge_and_submission(monkeypatch):
 	assert run()[0] is True
 	assert [r.url.path for r in requests] == ['/api/v1/auth/me', '/api/v1/check-in', '/api/v1/auth/me']
 	state.close.assert_called_once()
+
+
+def test_www_requests_keep_original_encrypted_token_scope(monkeypatch):
+	run, requests, state = setup_session(monkeypatch, status=CHECKED)
+	scopes = []
+
+	def load_state(account, domain):
+		scopes.append(domain)
+		return state
+
+	monkeypatch.setattr('checkin.create_xiaobai_token_state', load_state)
+	assert run()[0] is True
+	assert scopes == ['https://asia.nexavlinks.com']
+	assert {request.url.host for request in requests} == {'www.nexavlinks.com'}
+	assert all(request.method == 'GET' for request in requests)
 
 
 def test_rotation_submits_once_and_requires_server_confirmation(monkeypatch):
