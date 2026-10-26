@@ -605,6 +605,11 @@ class AppConfig:
 			except Exception as e:
 				print(f'[WARNING] Error loading {env_name}: {e}, ignoring it')
 
+		# Old write-only Secrets must not override the Nexa API migration.
+		nexa = providers['nexavlinks']
+		if nexa.domain.rstrip('/') in ('https://asia.nexavlinks.com', 'https://api.nexavlinks.com'):
+			nexa.domain = 'https://www.nexavlinks.com'
+
 		return cls(providers=providers)
 
 	def get_provider(self, name: str) -> ProviderConfig | None:
