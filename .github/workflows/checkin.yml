@@ -54,7 +54,7 @@ concurrency:
 
 jobs:
   checkin:
-    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only || inputs.target_accounts == 'NexaVlinks-5237') }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -328,6 +328,43 @@ jobs:
           ls -la checkin_screenshots/
         fi
 
+
+  nexa5237-status-only:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target_accounts == 'NexaVlinks-5237' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        version: "latest"
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+    - run: uv sync --frozen --no-dev
+    - name: Read only NexaVlinks-5237 identity and daily status
+      env:
+        PYTHONUNBUFFERED: '1'
+        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
+        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
+        PROVIDERS: ${{ secrets.PROVIDERS }}
+        EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
+        EXTRA_ACCOUNTS_64: ${{ secrets.EXTRA_ACCOUNTS_64 }}
+        EXTRA_ACCOUNTS_65: ${{ secrets.EXTRA_ACCOUNTS_65 }}
+      run: uv run python -m scripts.check_nexa5237_status
+    - name: Upload status result
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nexa5237-status
+        path: nexa5237-status.json
+        if-no-files-found: warn
+        retention-days: 3
 
   gorouter-status:
     if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}
