@@ -47,6 +47,7 @@ from utils.browser import (
 )
 from utils.config import AccountConfig, AppConfig, load_accounts_config
 from utils.debug import debug_print, is_debug_enabled
+from utils.nexa_balance_snapshot import write_snapshot
 from utils.notify import notify
 from utils.proxy import (
 	ProxyNodeAllocator,
@@ -2639,6 +2640,7 @@ async def main():
 	notification_content = []
 	check_in_success_items = []
 	current_balances = {}
+	nexa_balances = []
 	account_check_in_details = {}
 	need_notify = False
 	balance_changed = False
@@ -2678,6 +2680,8 @@ async def main():
 				current_quota = user_info_after['quota']
 				current_used = user_info_after['used_quota']
 				current_balances[account_key] = {'quota': current_quota, 'used': current_used}
+				if account.provider == 'nexavlinks':
+					nexa_balances.append((account.get_display_name(i), current_quota))
 
 				if user_info_before and user_info_before.get('success'):
 					before_quota = user_info_before['quota']
@@ -2719,6 +2723,8 @@ async def main():
 			print(f'[FAILED] {account_name} processing exception: {e}')
 			need_notify = True
 			notification_content.append(f'[FAIL] {account_name} exception: {str(e)[:50]}...')
+
+	write_snapshot(nexa_balances)
 
 	current_balance_hash = generate_balance_hash(current_balances) if current_balances else None
 	if current_balance_hash:

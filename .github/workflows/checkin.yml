@@ -269,6 +269,15 @@ jobs:
       run: |
         xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
 
+    - name: 上传 Nexa 余额快照
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nexa-balances-${{ github.run_id }}-${{ github.run_attempt }}
+        path: nexa-balances.json
+        if-no-files-found: ignore
+        retention-days: 3
+
     - name: 保存加密 Token 恢复检查点
       if: always()
       uses: actions/upload-artifact@v4
