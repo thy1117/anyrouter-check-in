@@ -2203,12 +2203,20 @@ async def run_check_in_in_page(
 	"""
 	reuse_page = page is not None
 	browser = None
+	settings = None
 
 	if reuse_page:
 		print(f'[PROCESSING] {account_name}: Reusing logged-in page for in-page requests...')
 	else:
 		print(f'[PROCESSING] {account_name}: Starting browser for in-page requests...')
-		launch_kwargs: dict = {'headless': True}
+		settings = load_browser_login_settings(
+			account_name,
+			provider_config.name,
+			persist_profile=provider_config.persist_profile,
+		)
+		launch_kwargs: dict = {'headless': settings.headless if provider_config.name == 'vsllm' else True}
+		if provider_config.name == 'vsllm':
+			launch_kwargs['humanize'] = settings.humanize
 		proxy = get_playwright_proxy(use_proxy=provider_config.use_proxy)
 		if proxy:
 			launch_kwargs['proxy'] = proxy
@@ -2216,11 +2224,7 @@ async def run_check_in_in_page(
 
 	try:
 		if not reuse_page:
-			settings = load_browser_login_settings(
-				account_name,
-				provider_config.name,
-				persist_profile=provider_config.persist_profile,
-			)
+			assert settings is not None
 			timeout_ms = settings.wait_timeout_ms
 			page = await browser.new_page()
 			await prepare_browser_page(page)
