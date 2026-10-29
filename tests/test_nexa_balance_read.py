@@ -175,8 +175,9 @@ def test_workflow_isolates_balances_even_with_other_inputs():
 			continue
 		assert ('!(inputs.nexa_balance_only ||' if name == 'checkin' else '!inputs.nexa_balance_only &&') in other['if']
 	step = next(s for s in job['steps'] if 'scripts.read_nexa_balances' in s.get('run', ''))
-	account_slots = {key for key in step['env'] if key.startswith('EXTRA_ACCOUNTS')}
-	assert {f'EXTRA_ACCOUNTS_{i}' for i in (64, 65, *range(88, 118))} <= account_slots
+	assert {key for key in step['env'] if key.startswith('EXTRA_ACCOUNTS')} == {
+		f'EXTRA_ACCOUNTS_{i}' for i in (64, 65, 83, 84, 85, *range(88, 98))
+	}
 	assert not any('TELEGRAM' in key or 'PROXY' in key for key in step['env'])
 	assert all('checkin.py' not in s.get('run', '') for s in job['steps'])
 	assert job['permissions'] == {'contents': 'write'}
