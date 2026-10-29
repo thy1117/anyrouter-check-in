@@ -9,6 +9,10 @@ on:
         description: 'Only check in accounts matching these names/providers (comma-separated, e.g. "Lunora,Sidrune-tthx1,Nianhua-1117"); leave empty for all'
         type: string
         default: ''
+      nexa_balance_only:
+        description: 'Read all NexaVlinks balances; safe login refresh only, no status, challenge or check-in requests'
+        type: boolean
+        default: false
       gorouter_status_only:
         description: 'Read identity and current-day status for an exact account group; no challenges or check-in writes'
         type: boolean
@@ -57,7 +61,7 @@ concurrency:
 
 jobs:
   checkin:
-    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.nexa_balance_only || inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only) }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -343,9 +347,67 @@ jobs:
           ls -la checkin_screenshots/
         fi
 
+  nexa-balance-read-only:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.nexa_balance_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        version: "latest"
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+    - name: 安装依赖（不启动浏览器或代理）
+      run: uv sync --frozen --no-dev
+    - name: 只读取 NexaVlinks 实时余额
+      env:
+        PYTHONUNBUFFERED: '1'
+        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
+        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
+        EXTRA_ACCOUNTS_64: ${{ secrets.EXTRA_ACCOUNTS_64 }}
+        EXTRA_ACCOUNTS_65: ${{ secrets.EXTRA_ACCOUNTS_65 }}
+        EXTRA_ACCOUNTS_88: ${{ secrets.EXTRA_ACCOUNTS_88 }}
+        EXTRA_ACCOUNTS_89: ${{ secrets.EXTRA_ACCOUNTS_89 }}
+        EXTRA_ACCOUNTS_90: ${{ secrets.EXTRA_ACCOUNTS_90 }}
+        EXTRA_ACCOUNTS_91: ${{ secrets.EXTRA_ACCOUNTS_91 }}
+        EXTRA_ACCOUNTS_92: ${{ secrets.EXTRA_ACCOUNTS_92 }}
+        EXTRA_ACCOUNTS_93: ${{ secrets.EXTRA_ACCOUNTS_93 }}
+        EXTRA_ACCOUNTS_94: ${{ secrets.EXTRA_ACCOUNTS_94 }}
+        EXTRA_ACCOUNTS_95: ${{ secrets.EXTRA_ACCOUNTS_95 }}
+        EXTRA_ACCOUNTS_96: ${{ secrets.EXTRA_ACCOUNTS_96 }}
+        EXTRA_ACCOUNTS_97: ${{ secrets.EXTRA_ACCOUNTS_97 }}
+        PROVIDERS: ${{ secrets.PROVIDERS }}
+        EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
+      run: uv run --no-dev python -m scripts.read_nexa_balances
+    - name: 上传 Nexa 实时余额快照
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nexa-live-balances-${{ github.run_id }}-${{ github.run_attempt }}
+        path: nexa-balances.json
+        if-no-files-found: ignore
+        retention-days: 3
+
+    - name: Save encrypted authentication recovery checkpoint
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nexa-balance-encrypted-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+        path: .xiaobai-token-recovery/*.fernet
+        include-hidden-files: true
+        if-no-files-found: ignore
+        retention-days: 14
+
 
   gorouter-status:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -399,7 +461,7 @@ jobs:
       run: uv run python -m scripts.check_nexa_status
 
   sidrune-checkin-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.sidrune_checkin_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && inputs.sidrune_checkin_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -453,7 +515,7 @@ jobs:
         retention-days: 14
 
   sidrune-exchange-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
@@ -494,7 +556,7 @@ jobs:
         retention-days: 14
 
   xiaobai-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
     runs-on: ubuntu-latest
     timeout-minutes: 7
     environment: production
@@ -561,7 +623,7 @@ jobs:
 
 
   sheapi-proxy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production

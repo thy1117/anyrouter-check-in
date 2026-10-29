@@ -15,7 +15,7 @@ def test_gorouter_status_dispatch_is_isolated_and_read_only():
 	job = config['jobs']['gorouter-status']
 	assert (
 		job['if']
-		== "${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}"
+		== "${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}"
 	)
 	assert job['permissions'] == {'contents': 'read'}
 	steps = job['steps']
@@ -43,12 +43,13 @@ def _workflow_job_runs(job_if, flags):
 	return bool(eval(expression, {'__builtins__': {}}, {}))
 
 
-@pytest.mark.parametrize('values', product([False, True], repeat=6))
+@pytest.mark.parametrize('values', product([False, True], repeat=7))
 def test_gorouter_status_only_excludes_every_conflicting_dispatch_job(values):
 	config = yaml.safe_load(WORKFLOW.read_text())
 	flags = dict(
 		zip(
 			(
+				'nexa_balance_only',
 				'sidrune_checkin_only',
 				'gorouter_status_only',
 				'sidrune_exchange_only',
@@ -63,6 +64,7 @@ def test_gorouter_status_only_excludes_every_conflicting_dispatch_job(values):
 	runs = {
 		name: _workflow_job_runs(config['jobs'][name]['if'], flags)
 		for name in (
+			'nexa-balance-read-only',
 			'checkin',
 			'gorouter-status',
 			'sidrune-exchange-test',
@@ -71,7 +73,11 @@ def test_gorouter_status_only_excludes_every_conflicting_dispatch_job(values):
 			'sidrune-checkin-test',
 		)
 	}
+	if flags['nexa_balance_only']:
+		assert {name for name, enabled in runs.items() if enabled} == {'nexa-balance-read-only'}
+		return
 	assert runs == {
+		'nexa-balance-read-only': False,
 		'checkin': not any(flags.values()),
 		'sidrune-checkin-test': flags['sidrune_checkin_only'],
 		'gorouter-status': not flags['sidrune_checkin_only'] and flags['gorouter_status_only'],

@@ -83,15 +83,15 @@ def test_sheapi_secrets_are_wired_without_removing_existing_secrets():
 def test_single_account_test_cannot_run_production_job():
 	text = WORKFLOW.read_text(encoding='utf-8')
 	assert (
-		"github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only)"
+		"github.event_name != 'workflow_dispatch' || !(inputs.nexa_balance_only || inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only)"
 		in text
 	)
 	assert (
-		"github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only)"
+		"github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only)"
 		in text
 	)
 	assert (
-		"github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only"
+		"github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only"
 		in text
 	)
 	test_job = text.split('\n  xiaobai-test:')[1]
@@ -135,7 +135,7 @@ def test_sheapi_proxy_test_only_loads_subscription_and_requires_five_ips():
 	text = WORKFLOW.read_text(encoding='utf-8')
 	job = text.split('\n  sheapi-proxy-test:')[1]
 	assert (
-		"github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only"
+		"github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only"
 		in job
 	)
 	assert 'contents: read' in job

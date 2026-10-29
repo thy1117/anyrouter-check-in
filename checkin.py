@@ -50,7 +50,7 @@ from utils.browser import (
 )
 from utils.config import AccountConfig, AppConfig, load_accounts_config
 from utils.debug import debug_print, is_debug_enabled
-from utils.nexa_balance_snapshot import write_snapshot
+from utils.nexa_balance_snapshot import parse_balance, write_snapshot
 from utils.notify import notify
 from utils.proxy import (
 	ProxyNodeAllocator,
@@ -1332,8 +1332,20 @@ def run_bearer_check_in(
 	*,
 	exchange_only: bool = False,
 	checkin_only: bool = False,
+	balance_only: bool = False,
 ) -> tuple[bool, dict | None, dict | None]:
 	"""使用 Bearer API 登录、查询余额并签到。"""
+	if balance_only and (
+		exchange_only
+		or checkin_only
+		or account.has_login_credentials()
+		or account.provider != 'nexavlinks'
+		or provider_config.name != 'nexavlinks'
+		or provider_config.domain != 'https://www.nexavlinks.com'
+		or provider_config.user_info_path != '/api/v1/auth/me'
+		or provider_config.auth_refresh_path != '/api/v1/auth/refresh'
+	):
+		return False, None, attach_check_in_error(None, 'Invalid Nexa balance-only configuration; nothing was run')
 	if checkin_only and (exchange_only or provider_config.name != 'sidrune'):
 		return False, None, attach_check_in_error(None, 'Check-in-only mode is restricted to Sidrune')
 	if exchange_only and provider_config.name != 'sidrune':
@@ -1342,7 +1354,7 @@ def run_bearer_check_in(
 		'http2': provider_config.http2,
 		'timeout': 30.0,
 		'trust_env': False,
-		'auth': SafeLineAuth(),
+		'auth': None if balance_only else SafeLineAuth(),
 	}
 	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
 	if proxy_url:
@@ -1429,13 +1441,23 @@ def run_bearer_check_in(
 
 			def get_profile():
 				response = client.get(profile_url, headers=headers, timeout=30)
-				return response, parse_sub2api_profile_response(response.status_code, response.text)
+				return response, None if balance_only else parse_sub2api_profile_response(
+					response.status_code, response.text
+				)
 
 			profile_response, user_info_before = get_profile()
 			if profile_response.status_code == 401 and refresh_token:
 				refresh()
 				headers['Authorization'] = f'Bearer {access_token}'
-				_, user_info_before = get_profile()
+				profile_response, user_info_before = get_profile()
+
+			# Exit before every check-in/status/challenge path; keep the existing safe token refresh.
+			if balance_only:
+				try:
+					info = {'success': True, 'balance': str(parse_balance(profile_response))}
+				except ValueError as exc:
+					return False, None, attach_check_in_error(None, str(exc))
+				return True, info, info
 
 			if not user_info_before.get('success'):
 				error = authentication_error or user_info_before.get('error', 'Unable to get profile')
