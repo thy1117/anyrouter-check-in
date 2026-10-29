@@ -97,7 +97,7 @@ def run() -> int:
 			failures += 1
 			error = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
 			print(json.dumps({'account': account.name, 'error': error}, ensure_ascii=False), flush=True)
-	write_snapshot(balances)
+	write_snapshot(balances, request_id=os.getenv('NEXA_BALANCE_REQUEST_ID'))
 	print(json.dumps({'read': len(balances), 'failed': failures, 'snapshot': 'nexa-balances.json'}, ensure_ascii=False))
 	return int(bool(failures))
 

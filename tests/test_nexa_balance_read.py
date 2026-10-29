@@ -137,6 +137,7 @@ def test_snapshot_contains_only_fresh_successes(monkeypatch, tmp_path, capsys, f
 	monkeypatch.setattr(read_nexa_balances, 'load_accounts_config', lambda: accounts)
 	monkeypatch.setenv('GITHUB_RUN_ID', '123')
 	monkeypatch.setenv('GITHUB_RUN_ATTEMPT', '2')
+	monkeypatch.setenv('NEXA_BALANCE_REQUEST_ID', 'request-123')
 
 	def read(a, provider):
 		if failed and a.name == accounts[0].name:
@@ -147,6 +148,7 @@ def test_snapshot_contains_only_fresh_successes(monkeypatch, tmp_path, capsys, f
 	assert read_nexa_balances.run() == int(failed)
 	payload = json.loads(Path('nexa-balances.json').read_text())
 	assert payload['run_id'] == '123' and payload['run_attempt'] == '2'
+	assert payload['request_id'] == 'request-123' and payload['version'] == 2
 	assert len(payload['balances']) == 18 - int(failed)
 	assert set(payload['balances'].values()) == {'0.15000123'}
 	assert 'stale' not in payload and 'observed_at' in payload

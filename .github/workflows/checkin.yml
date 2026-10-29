@@ -1,4 +1,5 @@
 name: AnyRouter 自动签到
+run-name: ${{ inputs.nexa_balance_request_id && format('Nexa balance {0}', inputs.nexa_balance_request_id) || github.workflow }}
 on:
   # 主站继续由 Muse 调度；VSLLM 单独每 4 小时运行一次签到和免费翻牌。
   schedule:
@@ -13,6 +14,10 @@ on:
         description: 'Read all NexaVlinks balances; safe login refresh only, no status, challenge or check-in requests'
         type: boolean
         default: false
+      nexa_balance_request_id:
+        description: 'Unique request id used to match a balance-only run with its artifact'
+        type: string
+        default: ''
       gorouter_status_only:
         description: 'Read identity and current-day status for an exact account group; no challenges or check-in writes'
         type: boolean
@@ -56,7 +61,7 @@ on:
 
 # Serialize scheduled/manual runs sharing rotating Xiaobai credentials.
 concurrency:
-  group: checkin-session-state-${{ github.repository }}
+  group: ${{ inputs.nexa_balance_only && 'nexa-balance-read-only' || format('checkin-session-state-{0}', github.repository) }}
   cancel-in-progress: false
 
 jobs:
@@ -369,6 +374,7 @@ jobs:
     - name: 只读取 NexaVlinks 实时余额
       env:
         PYTHONUNBUFFERED: '1'
+        NEXA_BALANCE_REQUEST_ID: ${{ inputs.nexa_balance_request_id }}
         XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
         XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
         EXTRA_ACCOUNTS_64: ${{ secrets.EXTRA_ACCOUNTS_64 }}

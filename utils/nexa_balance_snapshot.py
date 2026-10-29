@@ -27,7 +27,7 @@ def parse_balance(response) -> Decimal:
 	return balance
 
 
-def write_snapshot(accounts, path='nexa-balances.json'):
+def write_snapshot(accounts, path='nexa-balances.json', request_id=None):
 	balances = {}
 	for name, value in accounts:
 		balance = Decimal(str(value))
@@ -39,9 +39,10 @@ def write_snapshot(accounts, path='nexa-balances.json'):
 	Path(path).write_text(
 		json.dumps(
 			{
-				'version': 1,
+				'version': 2,
 				'run_id': os.getenv('GITHUB_RUN_ID', ''),
 				'run_attempt': os.getenv('GITHUB_RUN_ATTEMPT', ''),
+				'request_id': request_id or os.getenv('NEXA_BALANCE_REQUEST_ID', ''),
 				'observed_at': datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(),
 				'balances': balances,
 			},
