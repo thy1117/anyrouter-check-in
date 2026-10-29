@@ -41,7 +41,7 @@ chmod +x "mihomo-linux-amd64-${MIHOMO_VERSION}"
 MIHOMO_BIN="${PROXY_DIR}/mihomo-linux-amd64-${MIHOMO_VERSION}"
 
 if [[ -n "${PROXY_SUBSCRIPTION_URL:-}" ]]; then
-	echo "[INFO] Using remote Mihomo subscription provider: ${PROXY_SUBSCRIPTION_URL}"
+	echo "[INFO] Using remote Mihomo subscription provider"
 	PROXY_PROVIDER_BLOCK="type: http
     url: \"${PROXY_SUBSCRIPTION_URL}\"
     interval: 3600

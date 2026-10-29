@@ -131,7 +131,7 @@ jobs:
     - name: 配置 Mihomo 代理池
       env:
         PROXY_SUBSCRIPTION_URL: ${{ secrets.PROXY_SUBSCRIPTION_URL }}
-        PROXY_TEST_URL: https://www.sheapi.top/api/status
+        PROXY_TEST_URL: https://vsllm.cc/api/status
         MIHOMO_VERSION: v1.19.27
         PROXY_REQUIRED: true
       run: bash scripts/setup_mihomo_proxy.sh
@@ -248,6 +248,8 @@ jobs:
         EXTRA_ACCOUNTS_112: ${{ secrets.EXTRA_ACCOUNTS_112 }}
         EXTRA_ACCOUNTS_113: ${{ secrets.EXTRA_ACCOUNTS_113 }}
         EXTRA_ACCOUNTS_114: ${{ secrets.EXTRA_ACCOUNTS_114 }}
+        EXTRA_ACCOUNTS_115: ${{ secrets.EXTRA_ACCOUNTS_115 }}
+        EXTRA_ACCOUNTS_116: ${{ secrets.EXTRA_ACCOUNTS_116 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}

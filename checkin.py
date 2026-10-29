@@ -2118,6 +2118,70 @@ async def run_gorouter_check_in_in_page(
 			await context.close()
 
 
+async def run_vsllm_rewards_in_page(page, account_name: str, provider_config, headers: dict):
+	async def request_data(path: str, method: str = 'GET') -> dict:
+		status, body = await request_in_page(page, path, method=method, headers=headers)
+		if status != 200:
+			raise ValueError(f'{method} {path}: HTTP {status}')
+		try:
+			payload = json.loads(body)
+		except ValueError:
+			raise ValueError(f'{method} {path}: invalid JSON') from None
+		if not isinstance(payload, dict) or payload.get('success') is not True:
+			raise ValueError(f'{method} {path}: server rejected request')
+		if not isinstance(payload.get('data'), dict):
+			raise ValueError(f'{method} {path}: missing response data')
+		return payload['data']
+
+	def available_draws(data: dict) -> int:
+		if data.get('enabled') is False:
+			return 0
+		counts = (data.get('charges_current'), data.get('extra_draws_left'))
+		if data.get('enabled') is not True or any(type(count) is not int or count < 0 for count in counts):
+			raise ValueError('Invalid free card draw status')
+		return sum(counts)
+
+	try:
+		status_path = _gorouter_status_path(
+			provider_config, datetime.now(ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)).strftime('%Y-%m')
+		)
+		status = await request_data(status_path)
+		checked_today = (status.get('stats') or {}).get('checked_in_today')
+		if type(checked_today) is not bool:
+			raise ValueError('Invalid daily check-in status; no submission attempted')
+		if not checked_today:
+			try:
+				await request_in_page(page, provider_config.sign_in_path, method='POST', headers=headers)
+			except Exception:
+				print(f'[WARN] {account_name}: Check-in result uncertain; checking status without resubmitting')
+			confirmed = await request_data(status_path)
+			if (confirmed.get('stats') or {}).get('checked_in_today') is not True:
+				raise ValueError('Daily check-in was not confirmed; no card draws attempted')
+		print(f'[SUCCESS] {account_name}: Daily check-in confirmed')
+
+		state = await request_data('/api/gwent/status')
+		budget = available_draws(state)
+		if not budget:
+			print(f'[INFO] {account_name}: No free card draws available; skipped')
+		# Do not extend this run if charges regenerate, and never replay a draw POST.
+		for index in range(budget):
+			if not available_draws(state):
+				break
+			result = await request_data('/api/gwent/draw', method='POST')
+			prize = result.get('prize')
+			quota = prize.get('quota') if isinstance(prize, dict) else None
+			if type(quota) not in (int, float) or not math.isfinite(quota) or quota < 0:
+				raise ValueError('Card draw prize was not confirmed')
+			print(f'[REWARD] {account_name}: Free card draw {index + 1}/{budget}, awarded {quota} quota')
+			state = await request_data('/api/gwent/status')
+		return True, None
+	except Exception as exc:
+		detail = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
+		error = f'VSLLM check-in/card reward failed - {detail}; no write retried'
+		print(f'[FAILED] {account_name}: {error}')
+		return False, error
+
+
 async def run_check_in_in_page(
 	account: AccountConfig,
 	account_name: str,
@@ -2207,6 +2271,20 @@ async def run_check_in_in_page(
 				print(f'[FAILED] {account_name}: {error}')
 				return False, user_info_before, attach_check_in_error(user_info_before, error)
 
+		if provider_config.name == 'vsllm':
+			if not user_info_before.get('success') or str(user_info_before.get('user_id')) != str(api_user):
+				error = 'VSLLM identity was not verified; no rewards submitted'
+				return False, user_info_before, attach_check_in_error(user_info_before, error)
+			success, check_in_error = await run_vsllm_rewards_in_page(page, account_name, provider_config, headers)
+			try:
+				status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+				user_info_after = parse_user_info_response(status, body)
+			except Exception as exc:
+				user_info_after = {'success': False, 'error': f'Final balance read failed - {type(exc).__name__}'}
+			if not success:
+				user_info_after = attach_check_in_error(user_info_after, check_in_error)
+			return success, user_info_before, user_info_after
+
 		success = True
 		check_in_error: str | None = None
 		if provider_config.needs_manual_check_in():
@@ -2253,18 +2331,19 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 	if account.proxy_node or provider_config.proxy_node or provider_config.proxy_nodes:
 		raise ValueError(f'Provider "{account.provider}" contains a fixed proxy node configuration')
 	# 未启用代理或本地无 Mihomo 端点（如本地/测试）时不切换节点。
+	requires_distinct_ip = account.provider in ('sheapi', 'vsllm')
 	if not provider_config.use_proxy or not get_proxy_server(use_proxy=provider_config.use_proxy):
-		if account.provider == 'sheapi':
-			raise ProxyNodeSwitchError('SheApi requires a proxy with a verified distinct exit IP')
+		if requires_distinct_ip:
+			raise ProxyNodeSwitchError(f'{account.provider} requires a proxy with a verified distinct exit IP')
 		return None
 	nodes = get_mihomo_nodes()
 	if not nodes:
-		if account.provider == 'sheapi':
-			raise ProxyNodeSwitchError('SheApi proxy node pool is unavailable')
+		if requires_distinct_ip:
+			raise ProxyNodeSwitchError(f'{account.provider} proxy node pool is unavailable')
 		return None
 	if _PROXY_ALLOCATOR is None or _PROXY_ALLOCATOR.nodes != nodes:
 		_PROXY_ALLOCATOR = ProxyNodeAllocator(nodes)
-	ip_probe = (lambda node: probe_proxy_ip(node, provider_config.domain)) if account.provider == 'sheapi' else None
+	ip_probe = (lambda node: probe_proxy_ip(node, provider_config.domain)) if requires_distinct_ip else None
 	return _PROXY_ALLOCATOR.assign(
 		account.provider, account.name or f'account-{provider_account_index + 1}', ip_probe=ip_probe
 	)
