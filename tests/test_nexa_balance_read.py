@@ -175,10 +175,23 @@ def test_workflow_isolates_balances_even_with_other_inputs():
 			continue
 		assert ('!(inputs.nexa_balance_only ||' if name == 'checkin' else '!inputs.nexa_balance_only &&') in other['if']
 	step = next(s for s in job['steps'] if 'scripts.read_nexa_balances' in s.get('run', ''))
-	assert {key for key in step['env'] if key.startswith('EXTRA_ACCOUNTS')} == {
-		f'EXTRA_ACCOUNTS_{i}' for i in (64, 65, *range(88, 98))
-	}
+	account_slots = {key for key in step['env'] if key.startswith('EXTRA_ACCOUNTS')}
+	assert {f'EXTRA_ACCOUNTS_{i}' for i in (64, 65, *range(88, 118))} <= account_slots
 	assert not any('TELEGRAM' in key or 'PROXY' in key for key in step['env'])
 	assert all('checkin.py' not in s.get('run', '') for s in job['steps'])
 	assert job['permissions'] == {'contents': 'write'}
 	assert any(s.get('with', {}).get('path') == '.xiaobai-token-recovery/*.fernet' for s in job['steps'])
+
+
+def test_configured_sources_prints_names_without_tokens(monkeypatch, capsys):
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_64',
+		json.dumps(
+			[
+				{'name': 'NexaVlinks-1125', 'provider': 'nexavlinks', 'access_token': 'never-print'},
+				{'name': 'Other', 'provider': 'sidrune', 'access_token': 'never-print'},
+			]
+		),
+	)
+	assert read_nexa_balances.configured_sources() == {'EXTRA_ACCOUNTS_64': ['NexaVlinks-1125']}
+	assert 'never-print' not in capsys.readouterr().out

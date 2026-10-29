@@ -1,6 +1,8 @@
 """Read NexaVlinks wallet balances without check-in or status requests."""
 
 import json
+import os
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -31,6 +33,30 @@ EXPECTED_ACCOUNTS = {
 ALIASES = {'tthxyc': 'tthx', 'g12': '12'}
 
 
+def configured_sources() -> dict[str, list[str]]:
+	sources = {}
+	names = ['ANYROUTER_ACCOUNTS', 'EXTRA_ACCOUNTS']
+	names += sorted(
+		(name for name in os.environ if re.fullmatch(r'EXTRA_ACCOUNTS_\d+', name)),
+		key=lambda name: int(name.rsplit('_', 1)[1]),
+	)
+	for env_name in names:
+		try:
+			accounts = json.loads(os.getenv(env_name, '[]'))
+		except (TypeError, ValueError):
+			continue
+		if not isinstance(accounts, list):
+			continue
+		matches = [
+			str(item.get('name'))
+			for item in accounts
+			if isinstance(item, dict) and str(item.get('provider', '')).strip().lower() == 'nexavlinks'
+		]
+		if matches:
+			sources[env_name] = matches
+	return sources
+
+
 def select_accounts(accounts: list[AccountConfig]) -> list[AccountConfig]:
 	selected = [account for account in accounts if account.provider == 'nexavlinks']
 	if not selected:
@@ -57,6 +83,7 @@ def read_balance(account: AccountConfig, provider) -> Decimal:
 def run() -> int:
 	Path('nexa-balances.json').unlink(missing_ok=True)
 	provider = AppConfig.load_from_env().providers['nexavlinks']
+	print('[BALANCE] Account sources: ' + json.dumps(configured_sources(), ensure_ascii=False), flush=True)
 	accounts = select_accounts(load_accounts_config() or [])
 	balances = []
 	failures = 0
