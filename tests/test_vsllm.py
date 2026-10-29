@@ -60,8 +60,12 @@ def test_vsllm_provider_and_workflow_slot(monkeypatch):
 	jobs = workflow['jobs']
 	assert 'EXTRA_ACCOUNTS_115' in yaml.safe_dump(jobs['checkin'])
 	assert 'EXTRA_ACCOUNTS_116' in yaml.safe_dump(jobs['checkin'])
+	assert 'EXTRA_ACCOUNTS_117' in yaml.safe_dump(jobs['checkin'])
 	assert all(
-		'EXTRA_ACCOUNTS_115' not in yaml.safe_dump(job) and 'EXTRA_ACCOUNTS_116' not in yaml.safe_dump(job)
+		all(
+			slot not in yaml.safe_dump(job)
+			for slot in ('EXTRA_ACCOUNTS_115', 'EXTRA_ACCOUNTS_116', 'EXTRA_ACCOUNTS_117')
+		)
 		for name, job in jobs.items()
 		if name != 'checkin'
 	)
@@ -69,7 +73,7 @@ def test_vsllm_provider_and_workflow_slot(monkeypatch):
 	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
 	monkeypatch.delenv('EXTRA_ACCOUNTS', raising=False)
 	monkeypatch.setenv(
-		'EXTRA_ACCOUNTS_115',
+		'EXTRA_ACCOUNTS_117',
 		json.dumps([{'name': 'Vsllm', 'provider': 'vsllm', 'cookies': {'session': 'test'}, 'api_user': '42'}]),
 	)
 	accounts = load_accounts_config()
@@ -81,16 +85,20 @@ def test_vsllm_accounts_require_distinct_proxy_ips(monkeypatch, tmp_path):
 	monkeypatch.setenv('PROXY_ASSIGNMENTS_FILE', str(tmp_path / 'assignments.json'))
 	monkeypatch.setattr(checkin, '_PROXY_ALLOCATOR', None)
 	monkeypatch.setattr(checkin, 'get_proxy_server', lambda **_: 'http://127.0.0.1:7890')
-	monkeypatch.setattr(checkin, 'get_mihomo_nodes', lambda: ['node-a', 'node-b'])
+	monkeypatch.setattr(checkin, 'get_mihomo_nodes', lambda: ['node-a', 'node-b', 'node-c'])
 	monkeypatch.setattr(
-		checkin, 'probe_proxy_ip', lambda node, _domain: {'node-a': '203.0.113.1', 'node-b': '203.0.113.2'}[node]
+		checkin,
+		'probe_proxy_ip',
+		lambda node, _domain: {'node-a': '203.0.113.1', 'node-b': '203.0.113.2', 'node-c': '203.0.113.3'}[node],
 	)
 	provider = AppConfig.load_from_env().providers['vsllm']
 	first = AccountConfig(cookies=None, name='vsllm-github', provider='vsllm', access_token='a', api_user='3380')
 	second = AccountConfig(cookies=None, name='vsllm-tthx', provider='vsllm', access_token='b', api_user='23647')
+	third = AccountConfig(cookies=None, name='vsllm-tthx1', provider='vsllm', access_token='c', api_user='23653')
 
 	assert checkin.resolve_account_proxy_node(first, provider, 0) == 'node-a'
 	assert checkin.resolve_account_proxy_node(second, provider, 1) == 'node-b'
+	assert checkin.resolve_account_proxy_node(third, provider, 2) == 'node-c'
 
 
 def test_vsllm_fails_closed_without_proxy(monkeypatch):
