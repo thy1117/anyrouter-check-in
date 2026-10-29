@@ -24,10 +24,12 @@ if hasattr(sys.stderr, 'reconfigure'):
 import httpx
 from cloakbrowser import launch_async
 from dotenv import load_dotenv
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from utils.browser import (
 	BrowserLoginResult,
+	click_turnstile_checkbox,
 	has_session_cookie,
 	is_logged_in,
 	launch_login_context,
@@ -41,6 +43,7 @@ from utils.browser import (
 	save_login_screenshot,
 	solve_turnstile_in_page,
 	take_pending_screenshots,
+	turnstile_widget_box,
 	verify_browser_login,
 	wait_for_cookies,
 	wait_for_waf_ready,
@@ -2184,12 +2187,24 @@ async def run_vsllm_rewards_in_page(page, account_name: str, provider_config, he
 
 async def wait_for_vsllm_clearance(page, timeout_ms: int) -> None:
 	deadline = time.monotonic() + timeout_ms / 1000
-	markers = ('just a moment', '请稍候', '正在进行安全验证', 'checking your browser')
+	markers = ('just a moment', '请稍候', '正在进行安全验证', 'checking your browser', 'verify you are human')
+	clicked_frame_urls: set[str] = set()
 	while time.monotonic() < deadline:
-		title, text = await page.evaluate('() => [document.title || "", document.body?.innerText || ""]')
-		if not any(marker in f'{title}\n{text}'.lower() for marker in markers):
-			return
+		try:
+			title, text = await page.evaluate('() => [document.title || "", document.body?.innerText || ""]')
+			if not any(marker in f'{title}\n{text}'.lower() for marker in markers):
+				return
+			box = await turnstile_widget_box(page, clicked_frame_urls)
+			if box:
+				frame_urls = {frame.url for frame in page.frames if 'challenges.cloudflare.com' in frame.url}
+				await click_turnstile_checkbox(page, box)
+				clicked_frame_urls.update(frame_urls)
+				print('[INFO] VSLLM: Clicked visible Cloudflare verification checkbox')
+		except PlaywrightError as exc:
+			if 'Execution context was destroyed' not in str(exc) and 'navigation' not in str(exc).lower():
+				raise
 		await asyncio.sleep(2)
+	print(f'[WARN] VSLLM: Cloudflare clearance timed out; interacted with {len(clicked_frame_urls)} challenge frame(s)')
 	raise RuntimeError('Cloudflare challenge did not clear; no request submitted')
 
 
@@ -2225,13 +2240,14 @@ async def run_check_in_in_page(
 			provider_config.name,
 			persist_profile=provider_config.persist_profile,
 		)
-		launch_kwargs: dict = {'headless': settings.headless if provider_config.name == 'vsllm' else True}
 		if provider_config.name == 'vsllm':
-			launch_kwargs['humanize'] = settings.humanize
-		proxy = get_playwright_proxy(use_proxy=provider_config.use_proxy)
-		if proxy:
-			launch_kwargs['proxy'] = proxy
-		browser = await launch_async(**launch_kwargs)
+			browser = await launch_login_context(settings, use_proxy=provider_config.use_proxy)
+		else:
+			launch_kwargs: dict = {'headless': True}
+			proxy = get_playwright_proxy(use_proxy=provider_config.use_proxy)
+			if proxy:
+				launch_kwargs['proxy'] = proxy
+			browser = await launch_async(**launch_kwargs)
 
 	try:
 		if not reuse_page:
@@ -2239,6 +2255,11 @@ async def run_check_in_in_page(
 			timeout_ms = settings.wait_timeout_ms
 			page = await browser.new_page()
 			await prepare_browser_page(page)
+			if provider_config.name == 'vsllm':
+				print(f'[INFO] {account_name}: Warming up VSLLM with a persistent browser profile')
+				await page.goto(f'{provider_config.domain}/', wait_until='domcontentloaded', timeout=timeout_ms)
+				await wait_for_waf_ready(page, timeout_ms)
+				await wait_for_vsllm_clearance(page, timeout_ms)
 			login_url = f'{provider_config.domain}{provider_config.login_path}'
 			await page.goto(login_url, wait_until='domcontentloaded', timeout=timeout_ms)
 			await wait_for_waf_ready(page, timeout_ms)

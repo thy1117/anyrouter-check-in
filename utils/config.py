@@ -294,6 +294,7 @@ class AppConfig:
 				auth_refresh_path=None,
 				use_proxy=True,
 				request_in_page=True,
+				persist_profile=True,
 			),
 			'lunora': ProviderConfig(
 				name='lunora',

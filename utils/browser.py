@@ -741,7 +741,7 @@ _TURNSTILE_CLEANUP_JS = """
 """
 
 
-async def _turnstile_widget_box(page: Page, known_frame_urls: set[str]) -> dict | None:
+async def turnstile_widget_box(page: Page, known_frame_urls: set[str]) -> dict | None:
 	"""找到新出现的 Turnstile challenge iframe 的可见区域。
 
 	widget 挂在 closed shadow root 里，``document.querySelectorAll('iframe')``
@@ -757,6 +757,19 @@ async def _turnstile_widget_box(page: Page, known_frame_urls: set[str]) -> dict 
 		if box and box['width'] > 100 and box['height'] > 30:
 			return box
 	return None
+
+
+async def click_turnstile_checkbox(page: Page, box: dict) -> None:
+	# Use the iframe's visible bounds because the checkbox lives in a closed shadow root.
+	x = box['x'] + TURNSTILE_CHECKBOX_OFFSET_X
+	y = box['y'] + box['height'] / 2
+	await page.mouse.move(x - 150, y - 80)
+	await page.wait_for_timeout(380)
+	await page.mouse.move(x, y, steps=14)
+	await page.wait_for_timeout(260)
+	await page.mouse.down()
+	await page.wait_for_timeout(80)
+	await page.mouse.up()
 
 
 async def solve_turnstile_in_page(
@@ -794,7 +807,7 @@ async def solve_turnstile_in_page(
 			return state['token'], None
 		if state['error']:
 			return None, f'Turnstile failed - {state["error"][:80]}'
-		box = await _turnstile_widget_box(page, known_frame_urls)
+		box = await turnstile_widget_box(page, known_frame_urls)
 		if box:
 			break
 		await asyncio.sleep(1)
@@ -802,16 +815,7 @@ async def solve_turnstile_in_page(
 	if not box:
 		return None, 'Turnstile widget did not become interactive'
 
-	# 勾选框在 widget 左侧，先移动再点，纯 click 会被判定为脚本行为。
-	x = box['x'] + TURNSTILE_CHECKBOX_OFFSET_X
-	y = box['y'] + box['height'] / 2
-	await page.mouse.move(x - 150, y - 80)
-	await page.wait_for_timeout(380)
-	await page.mouse.move(x, y, steps=14)
-	await page.wait_for_timeout(260)
-	await page.mouse.down()
-	await page.wait_for_timeout(80)
-	await page.mouse.up()
+	await click_turnstile_checkbox(page, box)
 
 	# 交互后 Cloudflare 通常 1-2 秒内回调，慢的时候要等挑战跑完。
 	click_deadline = min(deadline, time.monotonic() + post_click_timeout_ms / 1000)
