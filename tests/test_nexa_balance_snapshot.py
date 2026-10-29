@@ -16,12 +16,18 @@ def test_snapshot_contains_only_confirmed_balances(tmp_path, monkeypatch):
 	assert set(data) == {'version', 'run_id', 'run_attempt', 'observed_at', 'balances'}
 
 
-@pytest.mark.parametrize('items', [[('x', float('nan'))], [('x', -1)], [('x', 1), ('x', 2)]])
+@pytest.mark.parametrize('items', [[('x', float('nan'))], [('x', 1), ('x', 2)]])
 def test_invalid_balances_are_not_exported(tmp_path, items):
 	path = tmp_path / 'balances.json'
 	with pytest.raises(ValueError):
 		write_snapshot(items, path)
 	assert not path.exists()
+
+
+def test_negative_balance_is_preserved(tmp_path):
+	path = tmp_path / 'balances.json'
+	write_snapshot([('NexaVlinks-1125', -0.15)], path)
+	assert json.loads(path.read_text())['balances'] == {'NexaVlinks-1125': '-0.15'}
 
 
 def test_empty_snapshot_is_not_written(tmp_path):

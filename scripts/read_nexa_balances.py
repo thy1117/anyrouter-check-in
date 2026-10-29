@@ -9,28 +9,26 @@ from utils.config import AccountConfig, AppConfig, load_accounts_config
 from utils.nexa_balance_snapshot import write_snapshot
 
 EXPECTED_ACCOUNTS = {
-	'NexaVlinks-' + name
-	for name in (
-		'9308',
-		'1125',
-		'5237',
-		'8746',
-		'3069',
-		'tthxyc',
-		'g12',
-		'13',
-		'15',
-		'24',
-		'26',
-		'27',
-		'28',
-		'37',
-		'38',
-		'31',
-		'tthx1',
-		'hotmail',
-	)
+	'9308',
+	'1125',
+	'5237',
+	'8746',
+	'3069',
+	'tthx',
+	'12',
+	'13',
+	'15',
+	'24',
+	'26',
+	'27',
+	'28',
+	'37',
+	'38',
+	'31',
+	'tthx1',
+	'hotmail',
 }
+ALIASES = {'tthxyc': 'tthx', 'g12': '12'}
 
 
 def select_accounts(accounts: list[AccountConfig]) -> list[AccountConfig]:
@@ -40,8 +38,12 @@ def select_accounts(accounts: list[AccountConfig]) -> list[AccountConfig]:
 	names = [account.name for account in selected]
 	if any(not name for name in names) or len(set(names)) != len(names):
 		raise ValueError('NexaVlinks accounts must have unique names')
-	if set(names) != EXPECTED_ACCOUNTS:
-		raise ValueError('Expected exactly the 18 configured NexaVlinks accounts; nothing was run')
+	identities = [ALIASES.get(name.removeprefix('NexaVlinks-'), name.removeprefix('NexaVlinks-')) for name in names]
+	if len(set(identities)) != len(identities):
+		raise ValueError('NexaVlinks account aliases resolve to duplicate identities; nothing was run')
+	missing = EXPECTED_ACCOUNTS - set(identities)
+	if missing:
+		raise ValueError(f'Missing NexaVlinks identities: {sorted(missing)}; nothing was run')
 	return selected
 
 
@@ -58,7 +60,7 @@ def run() -> int:
 	accounts = select_accounts(load_accounts_config() or [])
 	balances = []
 	failures = 0
-	print('[BALANCE] NexaVlinks balance only; safe authentication refresh if needed, no check-in/status/challenge.')
+	print(f'[BALANCE] {len(accounts)} NexaVlinks accounts; no check-in/status/challenge.')
 	for account in accounts:
 		try:
 			balance = read_balance(account, provider)

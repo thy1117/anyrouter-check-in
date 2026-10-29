@@ -95,7 +95,6 @@ def test_authentication_failure_never_replays_or_checks_in(monkeypatch, mode):
 		httpx.Response(401),
 		httpx.Response(200, text='not-json'),
 		httpx.Response(200, json={'code': 0, 'data': {}}),
-		httpx.Response(200, json={'code': 0, 'data': {'balance': '-1'}}),
 		httpx.Response(200, json={'code': 0, 'data': {'balance': 'NaN'}}),
 		httpx.Response(200, json={'code': 0, 'data': {'balance': 'Infinity'}}),
 		httpx.Response(200, json={'code': 1, 'data': {'balance': '1'}}),
@@ -106,16 +105,28 @@ def test_parse_balance_rejects_untrusted_values(response):
 		parse_balance(response)
 
 
+def test_parse_balance_preserves_negative_debt():
+	assert parse_balance(httpx.Response(200, json={'code': 0, 'data': {'balance': '-0.15000123'}})) == Decimal(
+		'-0.15000123'
+	)
+
+
 def test_select_accounts_requires_all_18_and_ignores_other_providers():
-	accounts = [account(name) for name in sorted(read_nexa_balances.EXPECTED_ACCOUNTS)]
+	accounts = [account('NexaVlinks-' + name) for name in sorted(read_nexa_balances.EXPECTED_ACCOUNTS)]
 	selected = read_nexa_balances.select_accounts(
 		accounts + [AccountConfig(cookies=None, name='Other', provider='sidrune')]
 	)
 	assert selected == accounts
 	with pytest.raises(ValueError, match='unique'):
 		read_nexa_balances.select_accounts(accounts + accounts[:1])
-	with pytest.raises(ValueError, match='18'):
+	with pytest.raises(ValueError, match='Missing'):
 		read_nexa_balances.select_accounts(accounts[:17])
+
+
+def test_select_accounts_accepts_known_aliases_and_extra_configured_names():
+	accounts = [account('NexaVlinks-' + name) for name in sorted(read_nexa_balances.EXPECTED_ACCOUNTS - {'tthx', '12'})]
+	accounts += [account('NexaVlinks-tthxyc'), account('NexaVlinks-g12'), account('NexaVlinks-extra')]
+	assert read_nexa_balances.select_accounts(accounts) == accounts
 
 
 @pytest.mark.parametrize('failed', [False, True])

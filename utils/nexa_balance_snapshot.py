@@ -22,7 +22,7 @@ def parse_balance(response) -> Decimal:
 		balance = Decimal(str(data['balance']))
 	except (KeyError, InvalidOperation, TypeError, ValueError):
 		raise ValueError('Balance read failed: invalid balance') from None
-	if not balance.is_finite() or balance < 0:
+	if not balance.is_finite():
 		raise ValueError('Balance read failed: invalid balance')
 	return balance
 
@@ -31,7 +31,7 @@ def write_snapshot(accounts, path='nexa-balances.json'):
 	balances = {}
 	for name, value in accounts:
 		balance = Decimal(str(value))
-		if not balance.is_finite() or balance < 0 or name in balances:
+		if not balance.is_finite() or name in balances:
 			raise ValueError('Invalid or duplicate Nexa balance')
 		balances[name] = str(balance)
 	if not balances:
