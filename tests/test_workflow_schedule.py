@@ -3,11 +3,16 @@ from pathlib import Path
 WORKFLOW = Path(__file__).parent.parent / '.github' / 'workflows' / 'checkin.yml'
 
 
-def test_checkin_workflow_runs_every_eight_hours_from_beijing_02():
+def test_checkin_workflow_runs_vsllm_independently_every_four_hours():
 	text = WORKFLOW.read_text(encoding='utf-8')
 
-	assert "- cron: '0 2,10,18 * * *'" not in text
-	assert '# 内置定时已移除：改由 Muse 外部定时任务准时触发' in text
+	assert "- cron: '17 */4 * * *'" in text
+	assert (
+		"CHECKIN_TARGET_ACCOUNTS: ${{ github.event_name == 'schedule' && 'vsllm' || inputs.target_accounts }}" in text
+	)
+	assert "contains(inputs.target_accounts || '', 'vsllm')" in text
+	assert '主站由 Muse 外部定时任务触发；上面的 schedule 只负责 VSLLM。' in text
+	assert 'CHECKIN_TARGET_ACCOUNTS: ${{ inputs.target_accounts }}' not in text
 	assert 'workflow_dispatch:' in text
 	assert 'NOTIFY_EVERY_RUN: true' in text
 
