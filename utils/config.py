@@ -274,6 +274,16 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=False,
 			),
+			'hyxware': ProviderConfig(
+				name='hyxware',
+				domain='https://hyxware.com',
+				login_path='/topup',
+				sign_in_path='/api/user/checkin',
+				check_in_status_path='/api/user/checkin',
+				user_info_path='/api/user/self',
+				api_user_key='New-Api-User',
+				use_proxy=False,
+			),
 			'lunora': ProviderConfig(
 				name='lunora',
 				domain='https://www.uselunora.com',
