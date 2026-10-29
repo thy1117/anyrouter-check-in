@@ -2189,17 +2189,33 @@ async def wait_for_vsllm_clearance(page, timeout_ms: int) -> None:
 	deadline = time.monotonic() + timeout_ms / 1000
 	markers = ('just a moment', '请稍候', '正在进行安全验证', 'checking your browser', 'verify you are human')
 	clicked_frame_urls: set[str] = set()
+	click_attempts = 0
+	next_click_at = 0.0
 	while time.monotonic() < deadline:
 		try:
 			title, text = await page.evaluate('() => [document.title || "", document.body?.innerText || ""]')
 			if not any(marker in f'{title}\n{text}'.lower() for marker in markers):
 				return
-			box = await turnstile_widget_box(page, clicked_frame_urls)
+			box = (
+				await turnstile_widget_box(page, set())
+				if click_attempts < 2 and time.monotonic() >= next_click_at
+				else None
+			)
 			if box:
 				frame_urls = {frame.url for frame in page.frames if 'challenges.cloudflare.com' in frame.url}
 				await click_turnstile_checkbox(page, box)
 				clicked_frame_urls.update(frame_urls)
+				click_attempts += 1
+				next_click_at = time.monotonic() + 15
 				print(f'[INFO] VSLLM: Clicked visible Cloudflare verification checkbox; bounds={box}')
+				await asyncio.sleep(3)
+				try:
+					os.makedirs('checkin_screenshots', exist_ok=True)
+					await page.screenshot(
+						path=f'checkin_screenshots/vsllm-click-{click_attempts}.png', full_page=True, timeout=10_000
+					)
+				except Exception:
+					pass
 		except PlaywrightError as exc:
 			if 'Execution context was destroyed' not in str(exc) and 'navigation' not in str(exc).lower():
 				raise
@@ -2208,6 +2224,13 @@ async def wait_for_vsllm_clearance(page, timeout_ms: int) -> None:
 	try:
 		os.makedirs('checkin_screenshots', exist_ok=True)
 		await page.screenshot(path='checkin_screenshots/vsllm-challenge.png', full_page=True, timeout=10_000)
+		for frame in page.frames:
+			if 'challenges.cloudflare.com' in frame.url:
+				state = await frame.evaluate(
+					'() => ({text: document.body?.innerText?.slice(0, 300), '
+					'checkboxes: document.querySelectorAll("input[type=checkbox]").length})'
+				)
+				print(f'[INFO] VSLLM: Verification frame state: {state}')
 	except Exception:
 		print('[WARN] VSLLM: Could not save the challenge page screenshot')
 	raise RuntimeError('Cloudflare challenge did not clear; no request submitted')

@@ -161,6 +161,45 @@ async def test_vsllm_clearance_clicks_visible_challenge_once(monkeypatch):
 	assert widget.await_count >= 1
 
 
+async def test_vsllm_clearance_caps_checkbox_clicks_at_two(monkeypatch):
+	frame = SimpleNamespace(url='https://challenges.cloudflare.com/cdn-cgi/challenge-platform/flow')
+	box = {'x': 20, 'y': 30, 'width': 300, 'height': 70}
+	clock = [0.0]
+	click_times = []
+
+	def now():
+		return clock[0]
+
+	async def sleep(seconds):
+		clock[0] += seconds
+
+	async def click(*_args):
+		click_times.append(clock[0])
+
+	async def evaluate(_script):
+		if clock[0] >= 24:
+			return ['VSLLM', '控制台']
+		return ['Just a moment...', 'Verify you are human']
+
+	page = SimpleNamespace(
+		evaluate=AsyncMock(side_effect=evaluate),
+		frames=[frame],
+		screenshot=AsyncMock(),
+	)
+	widget = AsyncMock(return_value=box)
+	monkeypatch.setattr(checkin, 'time', SimpleNamespace(monotonic=now))
+	monkeypatch.setattr(checkin.asyncio, 'sleep', sleep)
+	monkeypatch.setattr(checkin, 'turnstile_widget_box', widget)
+	monkeypatch.setattr(checkin, 'click_turnstile_checkbox', AsyncMock(side_effect=click))
+	monkeypatch.setattr(checkin, 'os', SimpleNamespace(makedirs=Mock()))
+
+	await checkin.wait_for_vsllm_clearance(page, 60_000)
+
+	assert click_times == [0.0, 15.0]
+	assert widget.await_count == 2
+	assert page.screenshot.await_count == 2
+
+
 async def test_vsllm_clearance_retries_navigation_destroyed_error(monkeypatch):
 	page = SimpleNamespace(
 		evaluate=AsyncMock(
