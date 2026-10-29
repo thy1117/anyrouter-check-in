@@ -2182,6 +2182,17 @@ async def run_vsllm_rewards_in_page(page, account_name: str, provider_config, he
 		return False, error
 
 
+async def wait_for_vsllm_clearance(page, timeout_ms: int) -> None:
+	deadline = time.monotonic() + timeout_ms / 1000
+	markers = ('just a moment', '请稍候', '正在进行安全验证', 'checking your browser')
+	while time.monotonic() < deadline:
+		title, text = await page.evaluate('() => [document.title || "", document.body?.innerText || ""]')
+		if not any(marker in f'{title}\n{text}'.lower() for marker in markers):
+			return
+		await asyncio.sleep(2)
+	raise RuntimeError('Cloudflare challenge did not clear; no request submitted')
+
+
 async def run_check_in_in_page(
 	account: AccountConfig,
 	account_name: str,
@@ -2231,6 +2242,8 @@ async def run_check_in_in_page(
 			login_url = f'{provider_config.domain}{provider_config.login_path}'
 			await page.goto(login_url, wait_until='domcontentloaded', timeout=timeout_ms)
 			await wait_for_waf_ready(page, timeout_ms)
+			if provider_config.name == 'vsllm':
+				await wait_for_vsllm_clearance(page, timeout_ms)
 			await wait_for_cookies(page, provider_config.waf_cookie_names or [])
 
 			# When email/password login was performed just before this function, the

@@ -102,6 +102,23 @@ def test_vsllm_fails_closed_without_proxy(monkeypatch):
 		checkin.resolve_account_proxy_node(account, provider, 0)
 
 
+async def test_vsllm_waits_for_cloudflare_clearance(monkeypatch):
+	responses = iter(
+		[
+			['Just a moment...', 'Checking your browser'],
+			['VSLLM', '控制台'],
+		]
+	)
+	page = SimpleNamespace(evaluate=AsyncMock(side_effect=lambda _: next(responses)))
+	sleep = AsyncMock()
+	monkeypatch.setattr(checkin.asyncio, 'sleep', sleep)
+
+	await checkin.wait_for_vsllm_clearance(page, 60_000)
+
+	assert page.evaluate.await_count == 2
+	sleep.assert_awaited_once_with(2)
+
+
 @pytest.mark.parametrize('status', [_gwent(charges=0), _gwent(enabled=False), _gwent(charges=0, extra=0)])
 async def test_no_available_draws_is_success(monkeypatch, status):
 	async def handler(_page, path, *, method='GET', headers=None):
