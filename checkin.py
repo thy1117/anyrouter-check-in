@@ -2199,12 +2199,17 @@ async def wait_for_vsllm_clearance(page, timeout_ms: int) -> None:
 				frame_urls = {frame.url for frame in page.frames if 'challenges.cloudflare.com' in frame.url}
 				await click_turnstile_checkbox(page, box)
 				clicked_frame_urls.update(frame_urls)
-				print('[INFO] VSLLM: Clicked visible Cloudflare verification checkbox')
+				print(f'[INFO] VSLLM: Clicked visible Cloudflare verification checkbox; bounds={box}')
 		except PlaywrightError as exc:
 			if 'Execution context was destroyed' not in str(exc) and 'navigation' not in str(exc).lower():
 				raise
 		await asyncio.sleep(2)
 	print(f'[WARN] VSLLM: Cloudflare clearance timed out; interacted with {len(clicked_frame_urls)} challenge frame(s)')
+	try:
+		os.makedirs('checkin_screenshots', exist_ok=True)
+		await page.screenshot(path='checkin_screenshots/vsllm-challenge.png', full_page=True, timeout=10_000)
+	except Exception:
+		print('[WARN] VSLLM: Could not save the challenge page screenshot')
 	raise RuntimeError('Cloudflare challenge did not clear; no request submitted')
 
 

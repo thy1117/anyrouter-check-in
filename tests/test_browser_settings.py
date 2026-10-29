@@ -45,6 +45,40 @@ async def test_launch_login_context_uses_persistent_context_when_enabled(monkeyp
 
 	assert result is context
 	assert calls['profile_dir'] == str(settings.profile_dir)
+	assert 'args' not in calls['kwargs']
+
+
+@pytest.mark.asyncio
+async def test_vsllm_profile_uses_stable_fingerprint_per_account(monkeypatch, tmp_path):
+	calls = []
+	context = SimpleNamespace()
+
+	async def fake_launch_persistent_context_async(profile_dir, **kwargs):
+		calls.append({'profile_dir': profile_dir, 'kwargs': kwargs})
+		return context
+
+	monkeypatch.setitem(
+		sys.modules,
+		'cloakbrowser',
+		SimpleNamespace(launch_persistent_context_async=fake_launch_persistent_context_async),
+	)
+	monkeypatch.setenv('CHECKIN_BROWSER_PROFILE_DIR', str(tmp_path / 'profiles'))
+
+	first_account = load_browser_login_settings('Account 1', 'vsllm', persist_profile=True)
+	second_account = load_browser_login_settings('Account 2', 'vsllm', persist_profile=True)
+
+	await launch_login_context(first_account)
+	await launch_login_context(first_account)
+	await launch_login_context(second_account)
+
+	fingerprints = []
+	for call in calls:
+		matching = [arg for arg in call['kwargs']['args'] if arg.startswith('--fingerprint=')]
+		assert len(matching) == 1
+		fingerprints.append(matching[0])
+
+	assert fingerprints[0] == fingerprints[1]
+	assert fingerprints[0] != fingerprints[2]
 
 
 @pytest.mark.asyncio
@@ -97,4 +131,5 @@ async def test_launch_login_context_closes_browser_for_ephemeral_context(monkeyp
 
 	assert context.closed is True
 	assert browser.closed is True
+	assert 'args' not in browser.launch_kwargs
 	assert not settings.profile_dir.exists()

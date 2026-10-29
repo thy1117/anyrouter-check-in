@@ -293,7 +293,7 @@ jobs:
         retention-days: 14
 
     - name: 上传调试截图
-      if: always() && env.DEBUG_MODE == 'true'
+      if: always() && (env.DEBUG_MODE == 'true' || startsWith(inputs.target_accounts, 'VSLLM-'))
       env:
         HTTP_PROXY: ''
         HTTPS_PROXY: ''

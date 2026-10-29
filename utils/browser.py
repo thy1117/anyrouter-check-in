@@ -7,6 +7,7 @@ import json
 import os
 import re
 import time
+import zlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -255,6 +256,9 @@ async def launch_login_context(settings: BrowserLoginSettings, *, use_proxy: boo
 		from cloakbrowser import launch_persistent_context_async
 
 		settings.profile_dir.mkdir(parents=True, exist_ok=True)
+		if settings.profile_dir.parent.name == 'vsllm':
+			seed = 10000 + zlib.crc32(str(settings.profile_dir).encode()) % 90000
+			launch_kwargs['args'] = [f'--fingerprint={seed}']
 		return await launch_persistent_context_async(str(settings.profile_dir), **launch_kwargs)
 
 	from cloakbrowser import launch_async
