@@ -2345,11 +2345,15 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 		if requires_distinct_ip:
 			raise ProxyNodeSwitchError(f'{account.provider} proxy node pool is unavailable')
 		return None
+	if account.provider == 'vsllm':
+		# Fixed-IP exits pass VSLLM's per-account Cloudflare checks more reliably.
+		nodes = sorted(nodes, key=lambda node: ('Fixed' not in node, node))
 	if _PROXY_ALLOCATOR is None or _PROXY_ALLOCATOR.nodes != nodes:
 		_PROXY_ALLOCATOR = ProxyNodeAllocator(nodes)
 	ip_probe = (lambda node: probe_proxy_ip(node, provider_config.domain)) if requires_distinct_ip else None
+	allocation_provider = 'vsllm-fixed' if account.provider == 'vsllm' else account.provider
 	return _PROXY_ALLOCATOR.assign(
-		account.provider, account.name or f'account-{provider_account_index + 1}', ip_probe=ip_probe
+		allocation_provider, account.name or f'account-{provider_account_index + 1}', ip_probe=ip_probe
 	)
 
 
