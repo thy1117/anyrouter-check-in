@@ -198,7 +198,7 @@ class AppConfig:
 			),
 			'nexavlinks': ProviderConfig(
 				name='nexavlinks',
-				domain='https://www.nexavlinks.com',
+				domain='https://asia.nexavlinks.com',
 				token_state_domain='https://asia.nexavlinks.com',
 				api_style='sub2api',
 				login_path='/check-in',
@@ -629,8 +629,8 @@ class AppConfig:
 
 		# Old write-only Secrets must not override the Nexa API migration.
 		nexa = providers['nexavlinks']
-		if nexa.domain.rstrip('/') in ('https://asia.nexavlinks.com', 'https://api.nexavlinks.com'):
-			nexa.domain = 'https://www.nexavlinks.com'
+		if nexa.domain.rstrip('/') in ('https://www.nexavlinks.com', 'https://api.nexavlinks.com'):
+			nexa.domain = 'https://asia.nexavlinks.com'
 
 		return cls(providers=providers)
 

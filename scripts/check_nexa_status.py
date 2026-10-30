@@ -62,7 +62,7 @@ def read_status(account, provider):
 	result = {'account': account.name, 'provider': account.provider, 'status_read_ok': False}
 	state = None
 	try:
-		if provider.name != 'nexavlinks' or provider.domain != 'https://www.nexavlinks.com':
+		if provider.name != 'nexavlinks' or provider.domain != 'https://asia.nexavlinks.com':
 			raise ValueError('Unexpected provider identity; nothing was run')
 		state = create_xiaobai_token_state(account, provider.token_state_domain or provider.domain)
 		access, refresh = state.load() if state else (account.access_token or '', '')
