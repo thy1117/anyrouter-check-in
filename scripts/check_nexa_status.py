@@ -1,5 +1,6 @@
-"""Read-only identity and check-in eligibility for exactly two Nexa accounts."""
+"""Read-only identity, eligibility, and group diagnostics for two Nexa accounts."""
 
+import base64
 import json
 from decimal import Decimal, InvalidOperation
 
@@ -58,7 +59,16 @@ def _number(value):
 		return None
 
 
-def read_status(account, provider):
+def _diagnostic_payload(response):
+	result = {'status': response.status_code}
+	try:
+		result['payload'] = response.json()
+	except ValueError:
+		result['invalid_json'] = True
+	return result
+
+
+def read_status(account, provider, include_diagnostics=False):
 	result = {'account': account.name, 'provider': account.provider, 'status_read_ok': False}
 	state = None
 	try:
@@ -81,6 +91,17 @@ def read_status(account, provider):
 			result.update(status_read_ok=True, checked_in_today=status['checked_in_today'], eligible=status['eligible'])
 			result['usage_fields'] = {key: _number(status[key]) for key in NUMERIC_STATUS_FIELDS if key in status}
 			result['submission'] = 'not_attempted_status_only'
+			if include_diagnostics:
+				result['diagnostics'] = {
+					path: _diagnostic_payload(client.get(provider.domain + path))
+					for path in (
+						'/api/v1/announcements',
+						'/api/v1/groups/available',
+						'/api/v1/groups/rates',
+						'/api/v1/channels/available',
+						'/api/v1/status',
+					)
+				}
 	except ValueError as exc:
 		result['error'] = str(exc)
 	except Exception as exc:
@@ -99,8 +120,12 @@ def run() -> int:
 		'[STATUS] Exactly two Nexa accounts; GET identity and daily status only. No refresh, challenge or check-in POST.'
 	)
 	for account in accounts:
-		result = read_status(account, provider)
+		result = read_status(account, provider, include_diagnostics=account is accounts[0])
+		diagnostics = result.pop('diagnostics', None)
 		print('NEXA_STATUS ' + json.dumps(result, ensure_ascii=False), flush=True)
+		if diagnostics is not None:
+			encoded = base64.b64encode(json.dumps(diagnostics, ensure_ascii=False).encode()).decode()
+			print('NEXA_DIAGNOSTICS_B64 ' + encoded, flush=True)
 		failures += not result['status_read_ok']
 	return int(bool(failures))
 
