@@ -17,7 +17,7 @@ def select_account(accounts: list[AccountConfig]) -> AccountConfig:
 def recover(account, provider):
 	if account.name != 'NexaVlinks-27' or account.provider != 'nexavlinks':
 		raise ValueError('Recovery is restricted to NexaVlinks-27')
-	if provider.name != 'nexavlinks' or provider.domain != 'https://www.nexavlinks.com':
+	if provider.name != 'nexavlinks' or provider.domain != 'https://asia.nexavlinks.com':
 		raise ValueError('Unexpected provider identity; nothing was run')
 	# Reuse the existing compare-and-swap encrypted refresh path. Its explicit
 	# status-only return occurs before any challenge or check-in submission.

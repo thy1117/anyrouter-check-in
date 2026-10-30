@@ -47,7 +47,7 @@ def test_provider_and_overrides_keep_rotation_defaults(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
 	provider = AppConfig.load_from_env().providers['nexavlinks']
-	assert provider.domain == 'https://www.nexavlinks.com'
+	assert provider.domain == 'https://asia.nexavlinks.com'
 	assert provider.token_state_domain == 'https://asia.nexavlinks.com'
 	assert provider.api_style == 'sub2api'
 	assert provider.user_info_path == '/api/v1/auth/me'
@@ -64,13 +64,13 @@ def test_provider_and_overrides_keep_rotation_defaults(monkeypatch):
 
 
 @pytest.mark.parametrize('env_name', ['PROVIDERS', 'EXTRA_PROVIDERS'])
-@pytest.mark.parametrize('host', ['asia', 'api'])
-def test_provider_env_cannot_redirect_nexa_api_away_from_www(monkeypatch, env_name, host):
+@pytest.mark.parametrize('host', ['www', 'api', 'asia'])
+def test_provider_env_normalizes_nexa_api_to_asia(monkeypatch, env_name, host):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
 	monkeypatch.setenv(env_name, json.dumps({'nexavlinks': {'domain': f'https://{host}.nexavlinks.com'}}))
 	provider = AppConfig.load_from_env().providers['nexavlinks']
-	assert provider.domain == 'https://www.nexavlinks.com'
+	assert provider.domain == 'https://asia.nexavlinks.com'
 	assert provider.token_state_domain == 'https://asia.nexavlinks.com'
 
 
@@ -124,7 +124,7 @@ def test_already_checked_in_skips_challenge_and_submission(monkeypatch):
 	state.close.assert_called_once()
 
 
-def test_www_requests_keep_original_encrypted_token_scope(monkeypatch):
+def test_asia_requests_keep_original_encrypted_token_scope(monkeypatch):
 	run, requests, state = setup_session(monkeypatch, status=CHECKED)
 	scopes = []
 
@@ -135,7 +135,7 @@ def test_www_requests_keep_original_encrypted_token_scope(monkeypatch):
 	monkeypatch.setattr('checkin.create_xiaobai_token_state', load_state)
 	assert run()[0] is True
 	assert scopes == ['https://asia.nexavlinks.com']
-	assert {request.url.host for request in requests} == {'www.nexavlinks.com'}
+	assert {request.url.host for request in requests} == {'asia.nexavlinks.com'}
 	assert all(request.method == 'GET' for request in requests)
 
 

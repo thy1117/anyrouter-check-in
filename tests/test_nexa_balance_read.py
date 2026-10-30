@@ -27,7 +27,7 @@ def test_balance_uses_saved_auth_and_never_requests_checkin(monkeypatch, expired
 
 	def handler(request):
 		requests.append(request)
-		assert request.url.host == 'www.nexavlinks.com'
+		assert request.url.host == 'asia.nexavlinks.com'
 		if request.method == 'POST':
 			assert request.url.path == '/api/v1/auth/refresh'
 			assert json.loads(request.content) == {'refresh_token': 'saved-refresh'}

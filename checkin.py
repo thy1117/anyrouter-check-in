@@ -1341,7 +1341,7 @@ def run_bearer_check_in(
 		or account.has_login_credentials()
 		or account.provider != 'nexavlinks'
 		or provider_config.name != 'nexavlinks'
-		or provider_config.domain != 'https://www.nexavlinks.com'
+		or provider_config.domain != 'https://asia.nexavlinks.com'
 		or provider_config.user_info_path != '/api/v1/auth/me'
 		or provider_config.auth_refresh_path != '/api/v1/auth/refresh'
 	):
