@@ -9,8 +9,8 @@ gh workflow run checkin.yml --ref feat/nexavlinks-readonly-balance -f nexa_balan
 This selects only `nexa-balance-read-only`. All check-in, exchange, proxy and
 diagnostic jobs are skipped, even when conflicting inputs are supplied.
 
-The reader requires all 18 Nexa accounts from the existing production Secrets
-(64, 65, 88-97). It reads `/api/v1/auth/me` and preserves the returned balance
+The reader requires all 19 Nexa accounts from the existing production Secrets
+(64, 65, 88-97, 112). It reads `/api/v1/auth/me` and preserves the returned balance
 precision. If authentication expires, it reuses the existing encrypted,
 compare-and-swap token refresh flow. It never reads check-in status, requests a
 challenge, submits a check-in, sends notifications or calls an inference API.

@@ -432,6 +432,8 @@ ChuanAPI（`https://chuanapi.com/profile`）使用 NewAPI 的个人访问令牌�
 
 新增账号 `NexaVlinks-g12`、`NexaVlinks-tthxyc`、`NexaVlinks-13`、`NexaVlinks-15`、`NexaVlinks-24`、`NexaVlinks-26`、`NexaVlinks-27`、`NexaVlinks-28`、`NexaVlinks-37`、`NexaVlinks-38` 分别单独保存在 `production` Environment Secret `EXTRA_ACCOUNTS_88`、`EXTRA_ACCOUNTS_89`、`EXTRA_ACCOUNTS_90`、`EXTRA_ACCOUNTS_91`、`EXTRA_ACCOUNTS_92`、`EXTRA_ACCOUNTS_93`、`EXTRA_ACCOUNTS_94`、`EXTRA_ACCOUNTS_95`、`EXTRA_ACCOUNTS_96`、`EXTRA_ACCOUNTS_97`，避免覆盖 `EXTRA_ACCOUNTS_64` 中的已有账号。
 
+新增账号 `NexaVlinks-wechat` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_112`。
+
 令牌刷新复用现有的 `XIAOBAI_TOKEN_STATE_KEY` 和 `checkin-token-state` 加密存储；未配置持久化存储时拒绝刷新，以免丢失轮换后的令牌。只合并代码不会自动添加账号 Secret，请勿把令牌提交到仓库。
 
 ### GoRouter

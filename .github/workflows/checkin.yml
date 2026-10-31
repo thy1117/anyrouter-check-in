@@ -392,6 +392,7 @@ jobs:
         EXTRA_ACCOUNTS_95: ${{ secrets.EXTRA_ACCOUNTS_95 }}
         EXTRA_ACCOUNTS_96: ${{ secrets.EXTRA_ACCOUNTS_96 }}
         EXTRA_ACCOUNTS_97: ${{ secrets.EXTRA_ACCOUNTS_97 }}
+        EXTRA_ACCOUNTS_112: ${{ secrets.EXTRA_ACCOUNTS_112 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
       run: uv run --no-dev python -m scripts.read_nexa_balances
