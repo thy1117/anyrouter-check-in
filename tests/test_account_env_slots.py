@@ -308,7 +308,7 @@ def test_disabled_provider_skips_legacy_qingjiu_accounts_without_clobbering_othe
 	assert [account.provider for account in accounts] == ['anyrouter', 'xiaobai', 'xiaobai']
 
 
-def test_xiaobai_wechat_slot_122_appends_without_clobbering_existing_account(monkeypatch):
+def test_xiaobai_wechat_slots_append_without_clobbering_existing_accounts(monkeypatch):
 	_clear(monkeypatch)
 	monkeypatch.setenv(
 		'EXTRA_ACCOUNTS_13',
@@ -336,15 +336,30 @@ def test_xiaobai_wechat_slot_122_appends_without_clobbering_existing_account(mon
 			]
 		),
 	)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_123',
+		json.dumps(
+			[
+				{
+					'name': '小白Code-wechat1',
+					'provider': 'xiaobai',
+					'access_token': 'newer-fake-access',
+					'refresh_token': 'newer-fake-refresh-value',
+				}
+			]
+		),
+	)
 
 	accounts = load_accounts_config()
 	assert accounts is not None
-	assert [account.name for account in accounts] == ['小白Code-existing', '小白Code-wechat']
-	assert [account.provider for account in accounts] == ['xiaobai', 'xiaobai']
+	assert [account.name for account in accounts] == ['小白Code-existing', '小白Code-wechat', '小白Code-wechat1']
+	assert [account.provider for account in accounts] == ['xiaobai', 'xiaobai', 'xiaobai']
 	assert accounts[0].access_token == 'old-fake-access'
 	assert accounts[0].refresh_token == 'old-fake-refresh'
 	assert accounts[1].access_token == 'new-fake-access'
 	assert accounts[1].refresh_token == 'new-fake-refresh'
+	assert accounts[2].access_token == 'newer-fake-access'
+	assert accounts[2].refresh_token == 'newer-fake-refresh-value'
 
 
 def test_superapi_second_slot_appends_account_without_clobbering(monkeypatch):
