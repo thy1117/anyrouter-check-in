@@ -272,6 +272,8 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 该站的账号密码登录带 Turnstile 校验，GitHub Actions 不使用账号密码登录。请把上述 JSON 保存到 production Environment Secret `EXTRA_ACCOUNTS_13`，不要把 token 提交到仓库。
 
+新增账号 `小白Code-wechat` 保存在仓库级 Secret `EXTRA_ACCOUNTS_122`（`production` Environment Secret 已达到 GitHub 的 100 个上限），随普通签到任务运行；不加入 `xiaobai-test` 专用入口。
+
 ### Sidrune 福利签到
 
 内置 `sidrune` Provider 使用 `https://sidrune.ai/welfare` 的网页登录令牌。`Sidrune-dodo`、`Sidrune-tthxyc`、`Sidrune-5237`、`Sidrune-8746`、`Sidrune-3069`、`Sidrune-9308` 分别保存在 `production` Environment Secret `EXTRA_ACCOUNTS_67`、`EXTRA_ACCOUNTS_68`、`EXTRA_ACCOUNTS_69`、`EXTRA_ACCOUNTS_70`、`EXTRA_ACCOUNTS_71`、`EXTRA_ACCOUNTS_72`，不会覆盖已有账号：
