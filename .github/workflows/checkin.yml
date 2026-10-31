@@ -262,6 +262,9 @@ jobs:
         EXTRA_ACCOUNTS_115: ${{ secrets.EXTRA_ACCOUNTS_115 }}
         EXTRA_ACCOUNTS_116: ${{ secrets.EXTRA_ACCOUNTS_116 }}
         EXTRA_ACCOUNTS_117: ${{ secrets.EXTRA_ACCOUNTS_117 }}
+        EXTRA_ACCOUNTS_118: ${{ secrets.EXTRA_ACCOUNTS_118 }}
+        EXTRA_ACCOUNTS_119: ${{ secrets.EXTRA_ACCOUNTS_119 }}
+        EXTRA_ACCOUNTS_120: ${{ secrets.EXTRA_ACCOUNTS_120 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
@@ -392,7 +395,8 @@ jobs:
         EXTRA_ACCOUNTS_95: ${{ secrets.EXTRA_ACCOUNTS_95 }}
         EXTRA_ACCOUNTS_96: ${{ secrets.EXTRA_ACCOUNTS_96 }}
         EXTRA_ACCOUNTS_97: ${{ secrets.EXTRA_ACCOUNTS_97 }}
-        EXTRA_ACCOUNTS_112: ${{ secrets.EXTRA_ACCOUNTS_112 }}
+        EXTRA_ACCOUNTS_118: ${{ secrets.EXTRA_ACCOUNTS_118 }}
+        EXTRA_ACCOUNTS_119: ${{ secrets.EXTRA_ACCOUNTS_119 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
       run: uv run --no-dev python -m scripts.read_nexa_balances

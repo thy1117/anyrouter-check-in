@@ -66,9 +66,10 @@ def test_exchange_workflow_loads_no_other_sites_or_notifications():
 	job = text.split('\n  sidrune-exchange-test:', 1)[1].split('\n  xiaobai-test:', 1)[0]
 	assert 'run: uv run python -m scripts.exchange_sidrune' in job
 	assert 'environment: production' in job and 'contents: write' in job
-	assert 'checkin-session-state-${{ github.repository }}' in text
+	assert "format('checkin-session-state-{0}', github.repository)" in text
 	assert 'run checkin.py' not in job and 'TELEGRAM_BOT_TOKEN' not in job
 	assert 'PROXY_' not in job and 'ANYROUTER_ACCOUNTS' not in job
 	for slot in SIDRUNE_SLOTS:
 		assert f'{slot}: ${{{{ secrets.{slot} }}}}' in job
 	assert 'EXTRA_ACCOUNTS_13:' not in job
+	assert 'EXTRA_ACCOUNTS_120:' not in job

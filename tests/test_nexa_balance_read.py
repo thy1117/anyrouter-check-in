@@ -111,8 +111,8 @@ def test_parse_balance_preserves_negative_debt():
 	)
 
 
-def test_select_accounts_requires_all_19_and_ignores_other_providers():
-	assert 'wechat' in read_nexa_balances.EXPECTED_ACCOUNTS
+def test_select_accounts_requires_all_20_and_ignores_other_providers():
+	assert {'wechat', 'wechat1'} <= read_nexa_balances.EXPECTED_ACCOUNTS
 	accounts = [account('NexaVlinks-' + name) for name in sorted(read_nexa_balances.EXPECTED_ACCOUNTS)]
 	selected = read_nexa_balances.select_accounts(
 		accounts + [AccountConfig(cookies=None, name='Other', provider='sidrune')]
@@ -150,7 +150,7 @@ def test_snapshot_contains_only_fresh_successes(monkeypatch, tmp_path, capsys, f
 	payload = json.loads(Path('nexa-balances.json').read_text())
 	assert payload['run_id'] == '123' and payload['run_attempt'] == '2'
 	assert payload['request_id'] == 'request-123' and payload['version'] == 2
-	assert len(payload['balances']) == 19 - int(failed)
+	assert len(payload['balances']) == 20 - int(failed)
 	assert set(payload['balances'].values()) == {'0.15000123'}
 	assert 'stale' not in payload and 'observed_at' in payload
 	if failed:
@@ -179,7 +179,7 @@ def test_workflow_isolates_balances_even_with_other_inputs():
 		assert ('!(inputs.nexa_balance_only ||' if name == 'checkin' else '!inputs.nexa_balance_only &&') in other['if']
 	step = next(s for s in job['steps'] if 'scripts.read_nexa_balances' in s.get('run', ''))
 	assert {key for key in step['env'] if key.startswith('EXTRA_ACCOUNTS')} == {
-		f'EXTRA_ACCOUNTS_{i}' for i in (64, 65, 83, 84, 85, *range(88, 98), 112)
+		f'EXTRA_ACCOUNTS_{i}' for i in (64, 65, 83, 84, 85, *range(88, 98), 118, 119)
 	}
 	assert not any('TELEGRAM' in key or 'PROXY' in key for key in step['env'])
 	assert all('checkin.py' not in s.get('run', '') for s in job['steps'])

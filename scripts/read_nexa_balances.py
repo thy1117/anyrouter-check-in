@@ -30,6 +30,7 @@ EXPECTED_ACCOUNTS = {
 	'tthx1',
 	'hotmail',
 	'wechat',
+	'wechat1',
 }
 ALIASES = {'tthxyc': 'tthx', 'g12': '12'}
 

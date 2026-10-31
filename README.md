@@ -313,6 +313,8 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 `Sidrune-hotmail` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_109`，参与常规签到及福利余额兑换。
 
+`Sidrune-wechat` 保存在仓库级 Secret `EXTRA_ACCOUNTS_120`，随普通签到任务运行；不加入 `sidrune_exchange_only` 专用入口。
+
 单独验证兑换时，在 Actions 的手动运行选项中勾选 `sidrune_exchange_only`。该入口只加载上述六个账号，不执行任何签到、抽奖或其他站点任务；记录每个账号兑换前后的钱包余额，必要时安全刷新并保存加密令牌状态。
 
 ### Aotera
@@ -432,7 +434,7 @@ ChuanAPI（`https://chuanapi.com/profile`）使用 NewAPI 的个人访问令牌�
 
 新增账号 `NexaVlinks-g12`、`NexaVlinks-tthxyc`、`NexaVlinks-13`、`NexaVlinks-15`、`NexaVlinks-24`、`NexaVlinks-26`、`NexaVlinks-27`、`NexaVlinks-28`、`NexaVlinks-37`、`NexaVlinks-38` 分别单独保存在 `production` Environment Secret `EXTRA_ACCOUNTS_88`、`EXTRA_ACCOUNTS_89`、`EXTRA_ACCOUNTS_90`、`EXTRA_ACCOUNTS_91`、`EXTRA_ACCOUNTS_92`、`EXTRA_ACCOUNTS_93`、`EXTRA_ACCOUNTS_94`、`EXTRA_ACCOUNTS_95`、`EXTRA_ACCOUNTS_96`、`EXTRA_ACCOUNTS_97`，避免覆盖 `EXTRA_ACCOUNTS_64` 中的已有账号。
 
-新增账号 `NexaVlinks-wechat` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_112`。
+新增账号 `NexaVlinks-wechat`、`NexaVlinks-wechat1` 分别保存在仓库级 Secret `EXTRA_ACCOUNTS_118`、`EXTRA_ACCOUNTS_119`（`production` Environment Secret 已达到 GitHub 的 100 个上限）。
 
 令牌刷新复用现有的 `XIAOBAI_TOKEN_STATE_KEY` 和 `checkin-token-state` 加密存储；未配置持久化存储时拒绝刷新，以免丢失轮换后的令牌。只合并代码不会自动添加账号 Secret，请勿把令牌提交到仓库。
 
