@@ -67,7 +67,7 @@ jobs:
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: 1
       CHECKIN_TIMEZONE: Asia/Shanghai
-      CHECKIN_DISABLED_PROVIDERS: ${{ (github.event_name == 'schedule' || contains(inputs.target_accounts || '', 'vsllm')) && 'qingjiu' || 'qingjiu,vsllm' }}
+      CHECKIN_DISABLED_PROVIDERS: ${{ (github.event_name == 'schedule' || contains(inputs.target_accounts || '', 'vsllm')) && 'qingjiu' || 'qingjiu,vsllm,nexavlinks' }}
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
       CHECKIN_TARGET_ACCOUNTS: ${{ github.event_name == 'schedule' && 'vsllm' || inputs.target_accounts }}
