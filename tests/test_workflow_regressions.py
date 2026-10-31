@@ -23,18 +23,19 @@ def test_caches_use_valid_expressions_and_save_after_partial_failure():
 
 def test_added_accounts_and_credentials_survive_the_repair():
 	text = (ROOT / '.github/workflows/checkin.yml').read_text()
-	for slot in (57, 58, 59, 60, 118, 119, 120, 121, 122):
+	for slot in (57, 58, 59, 60, 118, 119, 120, 121, 122, 123):
 		assert 'EXTRA_ACCOUNTS_' + str(slot) + ': ${{ secrets.EXTRA_ACCOUNTS_' + str(slot) + ' }}' in text
 	assert 'cryptography' in (ROOT / 'pyproject.toml').read_text()
 	assert 'from utils.xiaobai_token_state import' in (ROOT / 'checkin.py').read_text()
 
 
-def test_xiaobai_wechat_secret_is_only_in_the_ordinary_checkin_job():
+def test_xiaobai_wechat_secrets_are_only_in_the_ordinary_checkin_job():
 	text = (ROOT / '.github/workflows/checkin.yml').read_text()
 	checkin_job = re.search(r'\n  checkin:\n(.*?)(?=\n  [a-z][a-z0-9-]*:\n)', text, re.DOTALL)
 	assert checkin_job is not None
-	assert 'EXTRA_ACCOUNTS_122:' in checkin_job.group(1)
-	assert text.count('EXTRA_ACCOUNTS_122:') == 1
+	for slot in ('EXTRA_ACCOUNTS_122', 'EXTRA_ACCOUNTS_123'):
+		assert f'{slot}:' in checkin_job.group(1)
+		assert text.count(f'{slot}:') == 1
 
 
 @pytest.mark.parametrize('check_id', ['ruff-lint', 'ruff-format', 'mypy', 'pytest'])
