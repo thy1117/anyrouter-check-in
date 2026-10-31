@@ -315,6 +315,8 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 `Sidrune-wechat` 保存在仓库级 Secret `EXTRA_ACCOUNTS_120`，随普通签到任务运行；不加入 `sidrune_exchange_only` 专用入口。
 
+`Sidrune-wechat1` 保存在仓库级 Secret `EXTRA_ACCOUNTS_121`，随普通签到任务运行；不加入 `sidrune_exchange_only` 专用入口。
+
 单独验证兑换时，在 Actions 的手动运行选项中勾选 `sidrune_exchange_only`。该入口只加载上述六个账号，不执行任何签到、抽奖或其他站点任务；记录每个账号兑换前后的钱包余额，必要时安全刷新并保存加密令牌状态。
 
 ### Aotera

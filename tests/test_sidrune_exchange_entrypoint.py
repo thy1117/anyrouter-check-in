@@ -73,3 +73,4 @@ def test_exchange_workflow_loads_no_other_sites_or_notifications():
 		assert f'{slot}: ${{{{ secrets.{slot} }}}}' in job
 	assert 'EXTRA_ACCOUNTS_13:' not in job
 	assert 'EXTRA_ACCOUNTS_120:' not in job
+	assert 'EXTRA_ACCOUNTS_121:' not in job
