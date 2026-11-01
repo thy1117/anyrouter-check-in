@@ -1706,6 +1706,10 @@ def run_newapi_password_check_in(
 			session_id = session.get('sid')
 			user = data.get('user') or {}
 			api_user = str(user.get('id')) if user.get('id') is not None else None
+			if provider_config.name == 'thousandyuan' and user.get('username') != identifier:
+				error = 'Login identity did not match configured username'
+				print(f'[FAILED] {account_name}: {error}')
+				return False, None, attach_check_in_error(None, error)
 			if not access_token:
 				error = 'Login response did not include access token'
 				print(f'[FAILED] {account_name}: {error}')
