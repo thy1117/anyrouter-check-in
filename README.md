@@ -257,6 +257,10 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
 
+### GuysCode 签到
+
+`GuysCode-wechat` 保存在仓库级 Secret `EXTRA_ACCOUNTS_127`，`GuysCode-wechat1` 保存在仓库级 Secret `EXTRA_ACCOUNTS_128`。两个账号都使用 `provider: "guyscode"`、`access_token` 和 `refresh_token`，随普通签到任务运行，不覆盖已有 GuysCode 账号。
+
 ### 小白 Code 外站签到
 
 小白 Code 使用独立签到页 `https://token.dialoguedui.com/checkin/`，不是 NewAPI 的通用签到接口。内置 `xiaobai` Provider 会先读取签到状态，未签到时再提交签到；access token 失效后会使用 refresh token 自动刷新。
