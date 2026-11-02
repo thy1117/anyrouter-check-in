@@ -1,4 +1,5 @@
 import json
+import os
 
 from utils.config import _account_env_names, load_accounts_config
 
@@ -606,6 +607,35 @@ def test_sheapi_thy1117_slot_59_appends_without_clobbering(monkeypatch):
 	assert accounts[0].username == 'thy1117'
 	assert accounts[0].password == 'a1989723'
 	assert accounts[0].provider == 'sheapi'
+
+
+def test_sheapi_thy1123_slot_125_loads_pat_and_username(monkeypatch):
+	for name in tuple(os.environ):
+		if name == 'ANYROUTER_ACCOUNTS' or name.startswith('EXTRA_ACCOUNTS'):
+			monkeypatch.delenv(name, raising=False)
+	monkeypatch.setenv(
+		'EXTRA_ACCOUNTS_125',
+		json.dumps(
+			[
+				{
+					'name': 'SheApi-thy1123',
+					'provider': 'sheapi',
+					'username': 'thy1123',
+					'access_token': 'nap_test',
+					'api_user': '6875',
+				}
+			]
+		),
+	)
+
+	accounts = load_accounts_config()
+
+	assert accounts is not None
+	assert [account.name for account in accounts] == ['SheApi-thy1123']
+	assert accounts[0].provider == 'sheapi'
+	assert accounts[0].username == 'thy1123'
+	assert accounts[0].access_token == 'nap_test'
+	assert accounts[0].api_user == '6875'
 
 
 def test_superapi_fourth_slot_60_appends_without_clobbering(monkeypatch):
