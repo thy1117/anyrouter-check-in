@@ -79,6 +79,7 @@ def test_sheapi_secrets_are_wired_without_removing_existing_secrets():
 	assert 'EXTRA_ACCOUNTS_39: ${{ secrets.EXTRA_ACCOUNTS_39 }}' in text
 	assert 'EXTRA_ACCOUNTS_41: ${{ secrets.EXTRA_ACCOUNTS_41 }}' in text
 	assert 'EXTRA_ACCOUNTS_125: ${{ secrets.EXTRA_ACCOUNTS_125 }}' in text
+	assert 'EXTRA_ACCOUNTS_126: ${{ secrets.EXTRA_ACCOUNTS_126 }}' in text
 
 
 def test_single_account_test_cannot_run_production_job():

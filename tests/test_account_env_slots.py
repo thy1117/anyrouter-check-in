@@ -609,33 +609,37 @@ def test_sheapi_thy1117_slot_59_appends_without_clobbering(monkeypatch):
 	assert accounts[0].provider == 'sheapi'
 
 
-def test_sheapi_thy1123_slot_125_loads_pat_and_username(monkeypatch):
+def test_sheapi_pat_slots_125_and_126_load_usernames_and_api_users(monkeypatch):
 	for name in tuple(os.environ):
 		if name == 'ANYROUTER_ACCOUNTS' or name.startswith('EXTRA_ACCOUNTS'):
 			monkeypatch.delenv(name, raising=False)
-	monkeypatch.setenv(
-		'EXTRA_ACCOUNTS_125',
-		json.dumps(
-			[
-				{
-					'name': 'SheApi-thy1123',
-					'provider': 'sheapi',
-					'username': 'thy1123',
-					'access_token': 'nap_test',
-					'api_user': '6875',
-				}
-			]
-		),
-	)
+	for slot, name, username, api_user in (
+		(125, 'SheApi-thy1123', 'thy1123', '6875'),
+		(126, 'SheApi-thy1122', 'thy1122', '6874'),
+	):
+		monkeypatch.setenv(
+			f'EXTRA_ACCOUNTS_{slot}',
+			json.dumps(
+				[
+					{
+						'name': name,
+						'provider': 'sheapi',
+						'username': username,
+						'access_token': f'nap_test_{username}',
+						'api_user': api_user,
+					}
+				]
+			),
+		)
 
 	accounts = load_accounts_config()
 
 	assert accounts is not None
-	assert [account.name for account in accounts] == ['SheApi-thy1123']
-	assert accounts[0].provider == 'sheapi'
-	assert accounts[0].username == 'thy1123'
-	assert accounts[0].access_token == 'nap_test'
-	assert accounts[0].api_user == '6875'
+	assert [account.name for account in accounts] == ['SheApi-thy1123', 'SheApi-thy1122']
+	assert [account.provider for account in accounts] == ['sheapi', 'sheapi']
+	assert [account.username for account in accounts] == ['thy1123', 'thy1122']
+	assert [account.access_token for account in accounts] == ['nap_test_thy1123', 'nap_test_thy1122']
+	assert [account.api_user for account in accounts] == ['6875', '6874']
 
 
 def test_superapi_fourth_slot_60_appends_without_clobbering(monkeypatch):
