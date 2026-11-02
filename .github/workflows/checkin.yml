@@ -1,8 +1,5 @@
 name: AnyRouter 自动签到
 on:
-  # 主站继续由 Muse 调度；VSLLM 单独每 4 小时运行一次签到和免费翻牌。
-  schedule:
-    - cron: '17 */4 * * *'
   workflow_dispatch:
     inputs:
       target_accounts:
@@ -48,7 +45,7 @@ on:
         description: 'Validate authentication/status without submitting check-in'
         type: boolean
         default: true
-  # 主站由 Muse 外部定时任务触发；上面的 schedule 只负责 VSLLM。
+  
 
 # Serialize scheduled/manual runs sharing rotating Xiaobai credentials.
 concurrency:
@@ -67,10 +64,10 @@ jobs:
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: 1
       CHECKIN_TIMEZONE: Asia/Shanghai
-      CHECKIN_DISABLED_PROVIDERS: ${{ (github.event_name == 'schedule' || contains(inputs.target_accounts || '', 'vsllm')) && 'qingjiu' || 'qingjiu,vsllm,nexavlinks' }}
+      CHECKIN_DISABLED_PROVIDERS: qingjiu,vsllm,nexavlinks
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
-      CHECKIN_TARGET_ACCOUNTS: ${{ github.event_name == 'schedule' && 'vsllm' || inputs.target_accounts }}
+      CHECKIN_TARGET_ACCOUNTS: ${{ inputs.target_accounts }}
     steps:
     - uses: actions/checkout@v6
 
@@ -134,7 +131,7 @@ jobs:
     - name: 配置 Mihomo 代理池
       env:
         PROXY_SUBSCRIPTION_URL: ${{ secrets.PROXY_SUBSCRIPTION_URL }}
-        PROXY_TEST_URL: https://vsllm.cc/api/status
+        
         MIHOMO_VERSION: v1.19.27
         PROXY_REQUIRED: true
       run: bash scripts/setup_mihomo_proxy.sh
@@ -306,7 +303,7 @@ jobs:
         retention-days: 14
 
     - name: 上传调试截图
-      if: always() && (env.DEBUG_MODE == 'true' || startsWith(inputs.target_accounts, 'VSLLM-') || github.event_name == 'schedule')
+      if: always() && env.DEBUG_MODE == 'true'
       env:
         HTTP_PROXY: ''
         HTTPS_PROXY: ''
