@@ -2199,11 +2199,11 @@ async def run_check_in_in_page(
 			await prepare_browser_page(page)
 			login_url = f'{provider_config.domain}{provider_config.login_path}'
 			await page.goto(login_url, wait_until='domcontentloaded', timeout=timeout_ms)
-				await wait_for_waf_ready(page, timeout_ms)
+			await wait_for_waf_ready(page, timeout_ms)
 			await wait_for_cookies(page, provider_config.waf_cookie_names or [])
 
 			# When email/password login was performed just before this function, the
-		# authenticated cookies live in ``cookies_override`` rather than in the
+			# authenticated cookies live in ``cookies_override`` rather than in the
 			# original account configuration.  Reuse them in the browser context so
 			# providers whose Python client stalls can still use the browser network
 			# stack without losing the login session.
