@@ -295,18 +295,6 @@ class AppConfig:
 				api_user_key='New-Api-User',
 				use_proxy=False,
 			),
-			'vsllm': ProviderConfig(
-				name='vsllm',
-				domain='https://vsllm.cc',
-				login_path='/console/personal',
-				sign_in_path='/api/user/checkin',
-				check_in_status_path='/api/user/checkin',
-				api_user_key='New-Api-User',
-				auth_refresh_path=None,
-				use_proxy=True,
-				request_in_page=True,
-				persist_profile=True,
-			),
 			'thousandyuan': ProviderConfig(
 				name='thousandyuan',
 				domain='https://api.thousandyuan.dpdns.org',
