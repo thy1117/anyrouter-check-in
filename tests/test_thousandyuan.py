@@ -22,7 +22,7 @@ def test_thousandyuan_provider_and_workflow_slot(monkeypatch):
 	assert provider.use_proxy is False
 
 	workflow = Path('.github/workflows/checkin.yml').read_text()
-	assert 'EXTRA_ACCOUNTS_124: ${{ secrets.EXTRA_ACCOUNTS_124 }}' in workflow
+	assert 'EXTRA_ACCOUNTS_124: ' not in workflow
 	assert (
 		"CHECKIN_TARGET_ACCOUNTS: ${{ github.event_name == 'schedule' && 'vsllm' || inputs.target_accounts }}"
 		in workflow
