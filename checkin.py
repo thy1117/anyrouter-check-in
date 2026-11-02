@@ -546,7 +546,9 @@ def parse_check_in_response(account_name: str, status_code: int, body: str) -> b
 
 def is_checked_in_status(payload: object) -> bool:
 	"""兼容不同 Bearer API 的今日签到状态字段。"""
-	return isinstance(payload, dict) and bool(payload.get('checked_today') or payload.get('checked_in_today'))
+	return isinstance(payload, dict) and bool(
+		payload.get('checked_today') or payload.get('checked_in_today') or payload.get('checked_in') is True
+	)
 
 
 def _response_message(body: str) -> str:
@@ -1452,11 +1454,24 @@ def run_bearer_check_in(
 				if not success:
 					user_info_after = attach_check_in_error(user_info_after, rotation_error)
 				return success, user_info_before, user_info_after
-			status_payload = None
+			status_document = None
 			try:
-				status_payload = unwrap_api_data(status_response.json())
-			except json.JSONDecodeError:
+				status_document = status_response.json()
+			except ValueError:
 				pass
+			status_payload = unwrap_api_data(status_document)
+
+			if provider_config.name == 'livelove':
+				if (
+					status_response.status_code != 200
+					or not isinstance(status_document, dict)
+					or status_document.get('code') != 0
+					or not isinstance(status_payload, dict)
+					or any(type(status_payload.get(key)) is not bool for key in ('checked_in', 'enabled', 'eligible'))
+				):
+					raise TokenStateError('LiveLove check-in status invalid; no submission attempted')
+				if not status_payload['checked_in'] and not status_payload['enabled']:
+					raise TokenStateError('LiveLove daily check-in is disabled; no submission attempted')
 
 			check_in_error: str | None = None
 			if exchange_only:
@@ -1483,10 +1498,21 @@ def run_bearer_check_in(
 				success = False
 			else:
 				print(f'[NETWORK] {account_name}: Executing Bearer daily check-in')
-				check_response = client.post(check_in_url, headers=headers, timeout=30)
+				if provider_config.name == 'livelove':
+					check_response = client.post(check_in_url, headers=headers, json={}, timeout=30)
+				else:
+					check_response = client.post(check_in_url, headers=headers, timeout=30)
 				success, check_in_error = parse_check_in_result(
 					account_name, check_response.status_code, check_response.text
 				)
+				if success and provider_config.name == 'livelove':
+					confirmed = client.get(status_url, headers=headers, timeout=30)
+					try:
+						confirmed_data = _rotation_response_data(confirmed, 'LiveLove check-in confirmation')
+					except ValueError as exc:
+						raise TokenStateError(str(exc)) from exc
+					if confirmed_data.get('checked_in') is not True:
+						raise TokenStateError('LiveLove check-in not confirmed by server; no retry')
 
 			welfare_profile = None
 			if (success or checkin_only) and provider_config.name == 'sidrune':

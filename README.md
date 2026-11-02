@@ -257,6 +257,12 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
 
+### LiveLove 签到
+
+LiveLove 已内置，`LiveLove-112581647` 使用仓库级 Secret `EXTRA_ACCOUNTS_129`，随普通签到任务运行。账号配置为 `provider: "livelove"`、`access_token` 和 `refresh_token`，不保存登录密码。读取 `/api/v1/user/checkin` 的 `checked_in` 状态后再决定是否提交，已签到时不重复 POST。
+
+令牌刷新复用现有 `XIAOBAI_TOKEN_STATE_KEY` 和 `checkin-token-state` 加密存储；未配置持久化存储时拒绝轮换 refresh token。
+
 ### GuysCode 签到
 
 `GuysCode-wechat` 保存在仓库级 Secret `EXTRA_ACCOUNTS_127`，`GuysCode-wechat1` 保存在仓库级 Secret `EXTRA_ACCOUNTS_128`。两个账号都使用 `provider: "guyscode"`、`access_token` 和 `refresh_token`，随普通签到任务运行，不覆盖已有 GuysCode 账号。
@@ -635,7 +641,7 @@ MotoMoto（<https://motomoto.lol/console/personal>）使用 NewAPI，签到接�
 
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`nhh123`、`superapi`、`gemai`、`motomoto`、`ruachat` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`livelove`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`nhh123`、`superapi`、`gemai`、`motomoto`、`ruachat` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 
