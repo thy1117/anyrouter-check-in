@@ -2151,119 +2151,6 @@ async def run_gorouter_check_in_in_page(
 			await context.close()
 
 
-async def run_vsllm_rewards_in_page(page, account_name: str, provider_config, headers: dict):
-	async def request_data(path: str, method: str = 'GET') -> dict:
-		status, body = await request_in_page(page, path, method=method, headers=headers)
-		if status != 200:
-			raise ValueError(f'{method} {path}: HTTP {status}')
-		try:
-			payload = json.loads(body)
-		except ValueError:
-			raise ValueError(f'{method} {path}: invalid JSON') from None
-		if not isinstance(payload, dict) or payload.get('success') is not True:
-			raise ValueError(f'{method} {path}: server rejected request')
-		if not isinstance(payload.get('data'), dict):
-			raise ValueError(f'{method} {path}: missing response data')
-		return payload['data']
-
-	def available_draws(data: dict) -> int:
-		if data.get('enabled') is False:
-			return 0
-		counts = (data.get('charges_current'), data.get('extra_draws_left'))
-		if data.get('enabled') is not True or any(type(count) is not int or count < 0 for count in counts):
-			raise ValueError('Invalid free card draw status')
-		return sum(counts)
-
-	try:
-		status_path = _gorouter_status_path(
-			provider_config, datetime.now(ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)).strftime('%Y-%m')
-		)
-		status = await request_data(status_path)
-		checked_today = (status.get('stats') or {}).get('checked_in_today')
-		if type(checked_today) is not bool:
-			raise ValueError('Invalid daily check-in status; no submission attempted')
-		if not checked_today:
-			try:
-				await request_in_page(page, provider_config.sign_in_path, method='POST', headers=headers)
-			except Exception:
-				print(f'[WARN] {account_name}: Check-in result uncertain; checking status without resubmitting')
-			confirmed = await request_data(status_path)
-			if (confirmed.get('stats') or {}).get('checked_in_today') is not True:
-				raise ValueError('Daily check-in was not confirmed; no card draws attempted')
-		print(f'[SUCCESS] {account_name}: Daily check-in confirmed')
-
-		state = await request_data('/api/gwent/status')
-		budget = available_draws(state)
-		if not budget:
-			print(f'[INFO] {account_name}: No free card draws available; skipped')
-		# Do not extend this run if charges regenerate, and never replay a draw POST.
-		for index in range(budget):
-			if not available_draws(state):
-				break
-			result = await request_data('/api/gwent/draw', method='POST')
-			prize = result.get('prize')
-			quota = prize.get('quota') if isinstance(prize, dict) else None
-			if type(quota) not in (int, float) or not math.isfinite(quota) or quota < 0:
-				raise ValueError('Card draw prize was not confirmed')
-			print(f'[REWARD] {account_name}: Free card draw {index + 1}/{budget}, awarded {quota} quota')
-			state = await request_data('/api/gwent/status')
-		return True, None
-	except Exception as exc:
-		detail = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
-		error = f'VSLLM check-in/card reward failed - {detail}; no write retried'
-		print(f'[FAILED] {account_name}: {error}')
-		return False, error
-
-
-async def wait_for_vsllm_clearance(page, timeout_ms: int) -> None:
-	deadline = time.monotonic() + timeout_ms / 1000
-	markers = ('just a moment', '请稍候', '正在进行安全验证', 'checking your browser', 'verify you are human')
-	clicked_frame_urls: set[str] = set()
-	click_attempts = 0
-	next_click_at = 0.0
-	while time.monotonic() < deadline:
-		try:
-			title, text = await page.evaluate('() => [document.title || "", document.body?.innerText || ""]')
-			if not any(marker in f'{title}\n{text}'.lower() for marker in markers):
-				return
-			box = (
-				await turnstile_widget_box(page, set())
-				if click_attempts < 2 and time.monotonic() >= next_click_at
-				else None
-			)
-			if box:
-				frame_urls = {frame.url for frame in page.frames if 'challenges.cloudflare.com' in frame.url}
-				await click_turnstile_checkbox(page, box)
-				clicked_frame_urls.update(frame_urls)
-				click_attempts += 1
-				next_click_at = time.monotonic() + 15
-				print(f'[INFO] VSLLM: Clicked visible Cloudflare verification checkbox; bounds={box}')
-				await asyncio.sleep(3)
-				try:
-					os.makedirs('checkin_screenshots', exist_ok=True)
-					await page.screenshot(
-						path=f'checkin_screenshots/vsllm-click-{click_attempts}.png', full_page=True, timeout=10_000
-					)
-				except Exception:
-					pass
-		except PlaywrightError as exc:
-			if 'Execution context was destroyed' not in str(exc) and 'navigation' not in str(exc).lower():
-				raise
-		await asyncio.sleep(2)
-	print(f'[WARN] VSLLM: Cloudflare clearance timed out; interacted with {len(clicked_frame_urls)} challenge frame(s)')
-	try:
-		os.makedirs('checkin_screenshots', exist_ok=True)
-		await page.screenshot(path='checkin_screenshots/vsllm-challenge.png', full_page=True, timeout=10_000)
-		for frame in page.frames:
-			if 'challenges.cloudflare.com' in frame.url:
-				state = await frame.evaluate(
-					'() => ({text: document.body?.innerText?.slice(0, 300), '
-					'checkboxes: document.querySelectorAll("input[type=checkbox]").length})'
-				)
-				print(f'[INFO] VSLLM: Verification frame state: {state}')
-	except Exception:
-		print('[WARN] VSLLM: Could not save the challenge page screenshot')
-	raise RuntimeError('Cloudflare challenge did not clear; no request submitted')
 
 
 async def run_check_in_in_page(
@@ -2298,14 +2185,11 @@ async def run_check_in_in_page(
 			provider_config.name,
 			persist_profile=provider_config.persist_profile,
 		)
-		if provider_config.name == 'vsllm':
-			browser = await launch_login_context(settings, use_proxy=provider_config.use_proxy)
-		else:
-			launch_kwargs: dict = {'headless': True}
-			proxy = get_playwright_proxy(use_proxy=provider_config.use_proxy)
-			if proxy:
-				launch_kwargs['proxy'] = proxy
-			browser = await launch_async(**launch_kwargs)
+		launch_kwargs: dict = {'headless': True}
+		proxy = get_playwright_proxy(use_proxy=provider_config.use_proxy)
+		if proxy:
+			launch_kwargs['proxy'] = proxy
+		browser = await launch_async(**launch_kwargs)
 
 	try:
 		if not reuse_page:
@@ -2313,16 +2197,9 @@ async def run_check_in_in_page(
 			timeout_ms = settings.wait_timeout_ms
 			page = await browser.new_page()
 			await prepare_browser_page(page)
-			if provider_config.name == 'vsllm':
-				print(f'[INFO] {account_name}: Warming up VSLLM with a persistent browser profile')
-				await page.goto(f'{provider_config.domain}/', wait_until='domcontentloaded', timeout=timeout_ms)
-				await wait_for_waf_ready(page, timeout_ms)
-				await wait_for_vsllm_clearance(page, timeout_ms)
 			login_url = f'{provider_config.domain}{provider_config.login_path}'
 			await page.goto(login_url, wait_until='domcontentloaded', timeout=timeout_ms)
-			await wait_for_waf_ready(page, timeout_ms)
-			if provider_config.name == 'vsllm':
-				await wait_for_vsllm_clearance(page, timeout_ms)
+				await wait_for_waf_ready(page, timeout_ms)
 			await wait_for_cookies(page, provider_config.waf_cookie_names or [])
 
 			# When email/password login was performed just before this function, the
@@ -2367,20 +2244,7 @@ async def run_check_in_in_page(
 				print(f'[FAILED] {account_name}: {error}')
 				return False, user_info_before, attach_check_in_error(user_info_before, error)
 
-		if provider_config.name == 'vsllm':
-			if not user_info_before.get('success') or str(user_info_before.get('user_id')) != str(api_user):
-				error = 'VSLLM identity was not verified; no rewards submitted'
-				return False, user_info_before, attach_check_in_error(user_info_before, error)
-			success, check_in_error = await run_vsllm_rewards_in_page(page, account_name, provider_config, headers)
-			try:
-				status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
-				user_info_after = parse_user_info_response(status, body)
-			except Exception as exc:
-				user_info_after = {'success': False, 'error': f'Final balance read failed - {type(exc).__name__}'}
-			if not success:
-				user_info_after = attach_check_in_error(user_info_after, check_in_error)
-			return success, user_info_before, user_info_after
-
+		
 		success = True
 		check_in_error: str | None = None
 		if provider_config.needs_manual_check_in():
@@ -2427,7 +2291,7 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 	if account.proxy_node or provider_config.proxy_node or provider_config.proxy_nodes:
 		raise ValueError(f'Provider "{account.provider}" contains a fixed proxy node configuration')
 	# 未启用代理或本地无 Mihomo 端点（如本地/测试）时不切换节点。
-	requires_distinct_ip = account.provider in ('sheapi', 'vsllm')
+	requires_distinct_ip = account.provider == 'sheapi'
 	if not provider_config.use_proxy or not get_proxy_server(use_proxy=provider_config.use_proxy):
 		if requires_distinct_ip:
 			raise ProxyNodeSwitchError(f'{account.provider} requires a proxy with a verified distinct exit IP')
@@ -2437,13 +2301,10 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 		if requires_distinct_ip:
 			raise ProxyNodeSwitchError(f'{account.provider} proxy node pool is unavailable')
 		return None
-	if account.provider == 'vsllm':
-		# Fixed-IP exits pass VSLLM's per-account Cloudflare checks more reliably.
-		nodes = sorted(nodes, key=lambda node: ('Fixed' not in node, node))
 	if _PROXY_ALLOCATOR is None or _PROXY_ALLOCATOR.nodes != nodes:
 		_PROXY_ALLOCATOR = ProxyNodeAllocator(nodes)
 	ip_probe = (lambda node: probe_proxy_ip(node, provider_config.domain)) if requires_distinct_ip else None
-	allocation_provider = 'vsllm-fixed' if account.provider == 'vsllm' else account.provider
+	allocation_provider = account.provider
 	return _PROXY_ALLOCATOR.assign(
 		allocation_provider, account.name or f'account-{provider_account_index + 1}', ip_probe=ip_probe
 	)
