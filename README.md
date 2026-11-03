@@ -257,6 +257,12 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 请只把凭据保存到 GitHub Actions 的 Secret，不要提交到仓库。
 
+### MTN API 签到
+
+MTN API（`https://mtnapi.com/checkin`）使用 Sub2API Bearer 认证。`MTNAPI-1125` 单独保存在仓库级 Secret `EXTRA_ACCOUNTS_130`，配置 `provider: "mtnapi"`、`access_token` 和 `refresh_token`，随普通签到任务运行。`GET /api/v1/redeem/checkin` 返回 `claimed: true` 时跳过提交；未签到时向同一路径 POST。
+
+令牌刷新复用现有 `XIAOBAI_TOKEN_STATE_KEY` 和 `checkin-token-state` 加密存储，凭据不写入代码。
+
 ### LiveLove 签到
 
 LiveLove 已内置，`LiveLove-112581647` 使用仓库级 Secret `EXTRA_ACCOUNTS_129`，随普通签到任务运行。账号配置为 `provider: "livelove"`、`access_token` 和 `refresh_token`，不保存登录密码。读取 `/api/v1/user/checkin` 的 `checked_in` 状态后再决定是否提交，已签到时不重复 POST。

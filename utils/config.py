@@ -211,6 +211,18 @@ class AppConfig:
 				checkin_rotate=True,
 				captcha_path='/api/v1/check-in/challenge',
 			),
+			'mtnapi': ProviderConfig(
+				name='mtnapi',
+				domain='https://mtnapi.com',
+				api_style='sub2api',
+				login_path='/checkin',
+				sign_in_path='/api/v1/redeem/checkin',
+				check_in_status_path='/api/v1/redeem/checkin',
+				user_info_path='/api/v1/auth/me',
+				auth_refresh_path='/api/v1/auth/refresh',
+				api_user_key='',
+				use_proxy=False,
+			),
 			'livelove': ProviderConfig(
 				name='livelove',
 				domain='https://livelove.dev',

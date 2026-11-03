@@ -1460,6 +1460,14 @@ def run_bearer_check_in(
 			except ValueError:
 				pass
 			status_payload = unwrap_api_data(status_document)
+			if provider_config.name == 'mtnapi' and (
+				status_response.status_code != 200
+				or not isinstance(status_document, dict)
+				or status_document.get('code') != 0
+				or not isinstance(status_payload, dict)
+				or type(status_payload.get('claimed')) is not bool
+			):
+				raise TokenStateError('MTN API check-in status invalid; no submission attempted')
 
 			if provider_config.name == 'livelove':
 				if (
@@ -1477,7 +1485,10 @@ def run_bearer_check_in(
 			if exchange_only:
 				print(f'[TEST] {account_name}: Exchange only; no check-in submitted')
 				success = True
-			elif status_response.status_code == 200 and is_checked_in_status(status_payload):
+			elif status_response.status_code == 200 and (
+				is_checked_in_status(status_payload)
+				or provider_config.name == 'mtnapi' and status_payload['claimed'] is True
+			):
 				print(f'[SUCCESS] {account_name}: Already checked in today')
 				success = True
 			elif (
@@ -1513,6 +1524,14 @@ def run_bearer_check_in(
 						raise TokenStateError(str(exc)) from exc
 					if confirmed_data.get('checked_in') is not True:
 						raise TokenStateError('LiveLove check-in not confirmed by server; no retry')
+				if success and provider_config.name == 'mtnapi':
+					confirmed = client.get(status_url, headers=headers, timeout=30)
+					try:
+						confirmed_data = _rotation_response_data(confirmed, 'MTN API check-in confirmation')
+					except ValueError as exc:
+						raise TokenStateError(str(exc)) from exc
+					if confirmed_data.get('claimed') is not True:
+						raise TokenStateError('MTN API check-in not confirmed by server; no retry')
 
 			welfare_profile = None
 			if (success or checkin_only) and provider_config.name == 'sidrune':
