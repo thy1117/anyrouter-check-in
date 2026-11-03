@@ -15,6 +15,7 @@ class GitHubStore:
 	def __init__(self):
 		self.blobs = {}
 		self.puts = []
+		self.read_refs = []
 		self.deny_writes = False
 		self.deny_reads = False
 		self.lose_ack = False
@@ -25,6 +26,7 @@ class GitHubStore:
 		assert request.url.host == 'api.github.com'
 		assert request.headers['Authorization'] == 'Bearer repo-scoped-test-token'
 		if request.method == 'GET':
+			self.read_refs.append(request.url.params.get('ref'))
 			if self.deny_reads:
 				return httpx.Response(403)
 			if path not in self.blobs:
@@ -34,7 +36,7 @@ class GitHubStore:
 		assert request.method == 'PUT'
 		body = json.loads(request.content)
 		self.puts.append(body)
-		assert body['branch'] == 'checkin-token-state'
+		assert body['branch'] == 'main'
 		if self.deny_writes:
 			return httpx.Response(403)
 		if self.always_503:
@@ -74,6 +76,17 @@ def context(monkeypatch, tmp_path):
 		)
 
 	return key, api, factory
+
+
+def test_state_reads_and_writes_main_without_a_separate_runtime_branch(context):
+	_, api, factory = context
+	state = factory()
+	assert state.load() == ('bootstrap-access', 'bootstrap-refresh')
+	assert api.read_refs == ['main']
+	state.save('rotated-access', 'rotated-refresh')
+	assert api.puts[-1]['branch'] == 'main'
+	assert factory().load() == ('rotated-access', 'rotated-refresh')
+	assert api.read_refs == ['main', 'main']
 
 
 def test_rotations_survive_next_run_with_old_secret(context):

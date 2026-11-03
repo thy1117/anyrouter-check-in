@@ -261,13 +261,13 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 MTN API（`https://mtnapi.com/checkin`）使用 Sub2API Bearer 认证。`MTNAPI-1125` 单独保存在仓库级 Secret `EXTRA_ACCOUNTS_130`，配置 `provider: "mtnapi"`、`access_token` 和 `refresh_token`，随普通签到任务运行。`GET /api/v1/redeem/checkin` 返回 `claimed: true` 时跳过提交；未签到时向同一路径 POST。
 
-令牌刷新复用现有 `XIAOBAI_TOKEN_STATE_KEY` 和 `checkin-token-state` 加密存储，凭据不写入代码。
+令牌刷新复用现有 `XIAOBAI_TOKEN_STATE_KEY` 和 `main` 加密存储，凭据不写入代码。
 
 ### LiveLove 签到
 
 LiveLove 已内置，`LiveLove-112581647` 使用仓库级 Secret `EXTRA_ACCOUNTS_129`，随普通签到任务运行。账号配置为 `provider: "livelove"`、`access_token` 和 `refresh_token`，不保存登录密码。读取 `/api/v1/user/checkin` 的 `checked_in` 状态后再决定是否提交，已签到时不重复 POST。
 
-令牌刷新复用现有 `XIAOBAI_TOKEN_STATE_KEY` 和 `checkin-token-state` 加密存储；未配置持久化存储时拒绝轮换 refresh token。
+令牌刷新复用现有 `XIAOBAI_TOKEN_STATE_KEY` 和 `main` 加密存储；未配置持久化存储时拒绝轮换 refresh token。
 
 ### GuysCode 签到
 
@@ -458,7 +458,7 @@ ChuanAPI（`https://chuanapi.com/profile`）使用 NewAPI 的个人访问令牌�
 
 新增账号 `NexaVlinks-wechat`、`NexaVlinks-wechat1` 分别保存在仓库级 Secret `EXTRA_ACCOUNTS_118`、`EXTRA_ACCOUNTS_119`（`production` Environment Secret 已达到 GitHub 的 100 个上限）。
 
-令牌刷新复用现有的 `XIAOBAI_TOKEN_STATE_KEY` 和 `checkin-token-state` 加密存储；未配置持久化存储时拒绝刷新，以免丢失轮换后的令牌。只合并代码不会自动添加账号 Secret，请勿把令牌提交到仓库。
+令牌刷新复用现有的 `XIAOBAI_TOKEN_STATE_KEY` 和 `main` 加密存储；未配置持久化存储时拒绝刷新，以免丢失轮换后的令牌。只合并代码不会自动添加账号 Secret，请勿把令牌提交到仓库。
 
 ### GoRouter
 

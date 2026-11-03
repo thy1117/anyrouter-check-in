@@ -14,7 +14,7 @@
 
 ## 状态存储要求
 
-继续使用已有的 production 环境 Secret XIAOBAI_TOKEN_STATE_KEY 和 checkin-token-state 分支，不要重新生成密钥或覆盖已有状态。工作流将短期 github.token 作为 XIAOBAI_STATE_GITHUB_TOKEN，并恢复 contents: write 权限。明文令牌不会提交到代码、摘要或恢复附件。
+继续使用已有的 production 环境 Secret XIAOBAI_TOKEN_STATE_KEY，并把加密状态保存在 main 的 xiaobai/*.fernet；不要重新生成密钥或覆盖已有状态。回滚代码时必须保留最新的 xiaobai/*.fernet，不能恢复旧整棵目录树而复用已轮换的 refresh token。工作流将短期 github.token 作为 XIAOBAI_STATE_GITHUB_TOKEN，并使用 contents: write 权限。明文令牌不会提交到代码、摘要或恢复附件。
 
 如持久化失败，恢复附件只包含 .xiaobai-token-recovery/*.fernet 密文。pending 状态表示上次刷新结果不确定：先恢复加密检查点，或由账号所有者重新登录并更新该账号凭据，不应清除 pending 后直接重放旧刷新令牌。
 
