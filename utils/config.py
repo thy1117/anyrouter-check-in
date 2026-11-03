@@ -309,7 +309,7 @@ class AppConfig:
 			),
 			'42w': ProviderConfig(
 				name='42w',
-				domain='https://api.42w.shop',
+				domain='https://api.42x.shop',
 				login_path='/profile',
 				sign_in_path='/api/user/checkin',
 				user_info_path='/api/user/self',

@@ -108,7 +108,7 @@ def test_42w_provider_uses_browser_page_for_cloudflare(monkeypatch):
 	config = AppConfig.load_from_env()
 	provider = config.providers['42w']
 
-	assert provider.domain == 'https://api.42w.shop'
+	assert provider.domain == 'https://api.42x.shop'
 	assert provider.sign_in_path == '/api/user/checkin'
 	assert provider.user_info_path == '/api/user/self'
 	assert provider.waf_cookie_names == ['cf_clearance']
