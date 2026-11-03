@@ -17,7 +17,9 @@ from pathlib import Path
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 
-STATE_BRANCH = 'checkin-token-state'
+# Keep encrypted runtime state on main so deployments do not depend on a
+# separate branch. Migration must preserve the existing ciphertext unchanged.
+STATE_BRANCH = 'main'
 RECOVERY_DIR = Path('.xiaobai-token-recovery')
 
 
@@ -157,7 +159,7 @@ class XiaobaiTokenState:
 			if response is not None and response.status_code < 500:
 				raise TokenStateError(
 					f'Cannot save encrypted token state: HTTP {response.status_code}; '
-					'check contents:write and the checkin-token-state branch'
+					'check contents:write and the main branch'
 				)
 			if attempt < 2:
 				time.sleep(attempt + 1)
