@@ -138,7 +138,15 @@ class NotificationKit:
 		message = f'<b>{title}</b>\n\n{content}'
 		data = {'chat_id': self.telegram_chat_id, 'text': message, 'parse_mode': 'HTML'}
 		url = f'https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage'
-		self._post_json('Telegram', url, data)
+		response = self._post_json('Telegram', url, data)
+		try:
+			result = response.json().get('result') or {}
+			message_id = result.get('message_id')
+			chat_tail = str(self.telegram_chat_id)[-4:] if self.telegram_chat_id else ''
+			if message_id is not None:
+				print(f'[Telegram] message_id: {message_id}, chat_id tail: {chat_tail}')
+		except Exception:
+			pass
 
 	def send_bark(self, title: str, content: str):
 		if not self.bark_key:
