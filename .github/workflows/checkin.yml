@@ -64,7 +64,7 @@ jobs:
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: 1
       CHECKIN_TIMEZONE: Asia/Shanghai
-      CHECKIN_DISABLED_PROVIDERS: qingjiu,vsllm,nexavlinks
+      CHECKIN_DISABLED_PROVIDERS: qingjiu,vsllm,nexavlinks,thousandyuan
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
       CHECKIN_TARGET_ACCOUNTS: ${{ inputs.target_accounts }}
