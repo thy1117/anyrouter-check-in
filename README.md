@@ -259,7 +259,7 @@ FuturePPO 已内置，账号只需指定 `provider: "futureppo"`。该站只支�
 
 ### MTN API 签到
 
-MTN API（`https://mtnapi.com/checkin`）使用 Sub2API Bearer 认证。`MTNAPI-1125` 单独保存在仓库级 Secret `EXTRA_ACCOUNTS_130`，配置 `provider: "mtnapi"`、`access_token` 和 `refresh_token`，随普通签到任务运行。`GET /api/v1/redeem/checkin` 返回 `claimed: true` 时跳过提交；未签到时向同一路径 POST。
+MTN API（`https://mtnapi.com/checkin`）使用 Sub2API Bearer 认证。`MTNAPI-1125` 和 `MTNAPI-5237` 分别保存在仓库级 Secret `EXTRA_ACCOUNTS_130` 和 `EXTRA_ACCOUNTS_131`，配置 `provider: "mtnapi"` 和 `refresh_token`，随普通签到任务运行。首次运行先刷新并加密保存登录状态，后续运行读取保存的令牌。`GET /api/v1/redeem/checkin` 返回 `claimed: true` 时跳过提交；未签到时向同一路径 POST。
 
 令牌刷新复用现有 `XIAOBAI_TOKEN_STATE_KEY` 和 `main` 加密存储，凭据不写入代码。
 
