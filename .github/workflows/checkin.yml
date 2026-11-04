@@ -135,7 +135,6 @@ jobs:
         path: .browser_profiles
         key: browser-profiles-v2-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          browser-profiles-v2-${{ runner.os }}-${{ github.ref_name }}-
           browser-profiles-v2-${{ runner.os }}-main-
 
     - name: 配置 Mihomo 代理池
@@ -280,6 +279,7 @@ jobs:
         import json
         import os
         from utils.config import AppConfig
+        from utils.proxy import ProxyNodeAllocator, get_mihomo_nodes
 
         assert os.environ['CHECKIN_TARGET_ACCOUNTS'] == '词元站-thy1119'
         config = AppConfig.load_from_env()
@@ -288,6 +288,9 @@ jobs:
         ciyuan['domain'] = config.providers['ciyuan'].domain
         ciyuan['use_proxy'] = True
         os.environ['EXTRA_PROVIDERS'] = json.dumps(overrides)
+
+        node = ProxyNodeAllocator(get_mihomo_nodes()).replace('ciyuan', '词元站-thy1119', 'Fast-B1-1')
+        print(f'[TEST] Second GLaDOS node: {node}', flush=True)
 
         from checkin import run_main
         run_main()
