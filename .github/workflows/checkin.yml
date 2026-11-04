@@ -136,6 +136,7 @@ jobs:
         key: browser-profiles-v2-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           browser-profiles-v2-${{ runner.os }}-${{ github.ref_name }}-
+          browser-profiles-v2-${{ runner.os }}-main-
 
     - name: 配置 Mihomo 代理池
       env:
@@ -274,25 +275,23 @@ jobs:
         EXTRA_ACCOUNTS_131: ${{ secrets.EXTRA_ACCOUNTS_131 }}
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
-        DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
-        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-        CUSTOM_SMTP_SERVER: ${{ secrets.CUSTOM_SMTP_SERVER }}
-        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-        SERVERPUSHKEY: ${{ secrets.SERVERPUSHKEY }}
-        FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-        WEIXIN_WEBHOOK: ${{ secrets.WEIXIN_WEBHOOK }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        GOTIFY_URL: ${{ secrets.GOTIFY_URL }}
-        GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
-        GOTIFY_PRIORITY: ${{ secrets.GOTIFY_PRIORITY }}
-        BARK_KEY: ${{ secrets.BARK_KEY }}
-        BARK_SERVER: ${{ secrets.BARK_SERVER }}
       run: |
-        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
+        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run python - <<'PY'
+        import json
+        import os
+        from utils.config import AppConfig
+
+        assert os.environ['CHECKIN_TARGET_ACCOUNTS'] == '词元站-thy1119'
+        config = AppConfig.load_from_env()
+        overrides = json.loads(os.environ.get('EXTRA_PROVIDERS') or '{}')
+        ciyuan = overrides.setdefault('ciyuan', {})
+        ciyuan['domain'] = config.providers['ciyuan'].domain
+        ciyuan['use_proxy'] = True
+        os.environ['EXTRA_PROVIDERS'] = json.dumps(overrides)
+
+        from checkin import run_main
+        run_main()
+        PY
 
     - name: 上传 Nexa 余额快照
       if: always()
