@@ -77,7 +77,7 @@ def test_refresh_access_token_returns_rotated_token():
 	from checkin import refresh_access_token
 	from utils.config import ProviderConfig
 
-	provider = ProviderConfig(name='xiaojimao', domain='https://api.ark717.com')
+	provider = ProviderConfig(name='example', domain='https://example.com')
 	client = FakeRefreshClient(
 		[],
 		FakeResponse(200, {'success': True, 'data': {'access_token': 'rotated', 'token_type': 'Bearer'}}),
@@ -86,7 +86,7 @@ def test_refresh_access_token_returns_rotated_token():
 	token = refresh_access_token(client, {'Authorization': 'Bearer stale'}, provider, 'acct')
 
 	assert token == 'rotated'
-	assert client.posts[0]['url'] == 'https://api.ark717.com/api/user/auth/refresh'
+	assert client.posts[0]['url'] == 'https://example.com/api/user/auth/refresh'
 	# 轮换请求不能带过期的 Authorization，否则服务端会直接拒绝。
 	assert 'Authorization' not in client.posts[0]['headers']
 
@@ -95,7 +95,7 @@ def test_refresh_access_token_returns_none_on_401():
 	from checkin import refresh_access_token
 	from utils.config import ProviderConfig
 
-	provider = ProviderConfig(name='xiaojimao', domain='https://api.ark717.com')
+	provider = ProviderConfig(name='example', domain='https://example.com')
 	client = FakeRefreshClient([], FakeResponse(401, {'success': False}))
 
 	assert refresh_access_token(client, {}, provider, 'acct') is None

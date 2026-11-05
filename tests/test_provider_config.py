@@ -534,17 +534,6 @@ def test_ruachat_provider_uses_newapi_checkin_without_turnstile(monkeypatch):
 	assert provider.persist_profile is True
 
 
-def test_xiaojimao_provider_config_is_registered_by_default():
-	config = AppConfig.load_from_env()
-	provider = config.get_provider('xiaojimao')
-
-	assert provider is not None
-	assert provider.domain == 'https://api.ark717.com'
-	assert provider.login_api_path == '/api/user/login'
-	assert provider.sign_in_path == '/api/user/checkin'
-	assert provider.user_info_path == '/api/user/self'
-
-
 def test_restored_providers_keep_llmpm_and_superapi_login(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)

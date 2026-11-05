@@ -60,11 +60,11 @@ def test_access_token_account_is_valid_without_cookies(monkeypatch):
 def test_extra_account_with_same_name_overrides_main_account(monkeypatch):
 	monkeypatch.setenv(
 		'ANYROUTER_ACCOUNTS',
-		json.dumps([{'name': '小鸡毛-thy1117', 'cookies': {'session': 'expired'}, 'api_user': 'old'}]),
+		json.dumps([{'name': 'Bearer-account', 'cookies': {'session': 'expired'}, 'api_user': 'old'}]),
 	)
 	monkeypatch.setenv(
 		'EXTRA_ACCOUNTS',
-		json.dumps([{'name': '小鸡毛-thy1117', 'access_token': 'fresh-token'}]),
+		json.dumps([{'name': 'Bearer-account', 'access_token': 'fresh-token'}]),
 	)
 
 	accounts = load_accounts_config()
@@ -79,7 +79,7 @@ def test_cookie_account_can_omit_api_user(monkeypatch):
 	monkeypatch.delenv('ANYROUTER_ACCOUNTS', raising=False)
 	monkeypatch.setenv(
 		'EXTRA_ACCOUNTS',
-		json.dumps([{'name': 'Cookie only', 'provider': 'xiaojimao', 'cookies': {'session': 'fresh'}}]),
+		json.dumps([{'name': 'Cookie only', 'cookies': {'session': 'fresh'}}]),
 	)
 
 	accounts = load_accounts_config()

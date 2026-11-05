@@ -121,8 +121,8 @@
 
 ```json
 {
-  "name": "小鸡毛-thy1117",
-  "provider": "xiaojimao",
+  "name": "站点-账号",
+  "provider": "your_provider",
   "email": "your@email.com",
   "password": "your_password"
 }
@@ -134,8 +134,8 @@
 
 ```json
 {
-  "name": "小鸡毛-thy1117",
-  "provider": "xiaojimao",
+  "name": "站点-账号",
+  "provider": "your_provider",
   "access_token": "替换成最新 access_token"
 }
 ```
@@ -647,7 +647,7 @@ MotoMoto（<https://motomoto.lol/console/personal>）使用 NewAPI，签到接�
 
 ## 自定义 Provider 配置（可选）
 
-默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`livelove`、`xiaobai`、`xiaojimao`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`nhh123`、`superapi`、`gemai`、`motomoto`、`ruachat` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
+默认情况下，`anyrouter`、`agentrouter`、`futureppo`、`twinkle`、`42w`、`kapibala`、`nianhua`、`sheapi`、`aiaiai`、`guyscode`、`livelove`、`xiaobai`、`gorouter`、`qingjiu`、`justwoker`、`tabitoken`、`windhub`、`laomo`、`nhh123`、`superapi`、`gemai`、`motomoto`、`ruachat` 已内置配置，无需额外设置。如果你需要使用其他服务商，可以通过环境变量 `PROVIDERS` 配置：
 
 ### 基础配置（仅域名）
 
