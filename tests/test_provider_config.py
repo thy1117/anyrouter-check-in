@@ -145,7 +145,7 @@ def test_nianhua_provider_uses_turnstile_checkin(monkeypatch):
 	assert provider.checkin_turnstile is True
 	assert provider.turnstile_site_key == '0x4AAAAAAEwhg3PtOuQNLdRd'
 	assert provider.persist_profile is True
-	assert provider.use_proxy is False
+	assert provider.use_proxy is True
 
 
 def test_sheapi_provider_uses_local_captcha_ocr(monkeypatch):

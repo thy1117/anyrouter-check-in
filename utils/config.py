@@ -366,7 +366,7 @@ class AppConfig:
 				user_info_path='/api/user/self',
 				auth_refresh_path='/api/user/auth/refresh',
 				api_user_key='New-Api-User',
-				use_proxy=False,
+				use_proxy=True,
 				persist_profile=True,
 				checkin_turnstile=True,
 				turnstile_site_key='0x4AAAAAAEwhg3PtOuQNLdRd',
