@@ -575,71 +575,6 @@ def _rotation_response_data(response, action: str) -> dict:
 	return data
 
 
-def execute_rotate_check_in_result(
-	client, account_name: str, provider_config, headers: dict, status_response
-) -> tuple[bool, str | None]:
-	"""Submit one confidently matched challenge, then confirm via server status."""
-	from captcha_ocr.rotate import solve_data_urls
-
-	try:
-		status = _rotation_response_data(status_response, 'Check-in status')
-		if status.get('checked_in_today') is True:
-			print(f'[SUCCESS] {account_name}: Already checked in today')
-			return True, None
-		if status.get('checked_in_today') is not False or not isinstance(status.get('eligible'), bool):
-			raise ValueError(
-				'Check-in status is invalid: expected boolean checked_in_today and eligible; no submission attempted'
-			)
-		if status['eligible'] is False:
-			raise ValueError(
-				'Check-in not eligible: usage must exceed 0.4 quota today or yesterday '
-				'(first check-in on registration day exempt); no submission attempted'
-			)
-
-		started = time.monotonic()
-		response = client.get(f'{provider_config.domain}{provider_config.captcha_path}', headers=headers, timeout=30)
-		challenge = _rotation_response_data(response, 'Rotation challenge')
-		if challenge.get('mode') != 'rotate' or not isinstance(challenge.get('id'), str) or not challenge['id']:
-			raise ValueError('Unsupported or invalid rotation challenge; no submission attempted')
-		expires = challenge.get('expires_in')
-		if type(expires) is not int or expires <= 0:
-			raise ValueError('Invalid rotation challenge expiry; no submission attempted')
-		image, thumb = challenge.get('image'), challenge.get('thumb')
-		if not isinstance(image, str) or not isinstance(thumb, str):
-			raise ValueError('Invalid rotation challenge images; no submission attempted')
-		angle = solve_data_urls(image, thumb)
-		if time.monotonic() - started >= expires:
-			raise ValueError('Rotation challenge expired before submission')
-
-		print(f'[NETWORK] {account_name}: Submitting matched rotation check-in')
-		# A timeout may happen after crediting the reward. Never replay this POST.
-		try:
-			client.post(
-				f'{provider_config.domain}{provider_config.sign_in_path}',
-				json={'captcha_id': challenge['id'], 'captcha_angle': angle},
-				headers=headers,
-				timeout=30,
-			)
-		except httpx.HTTPError:
-			print(f'[WARN] {account_name}: Submission result uncertain; checking status only')
-		response = client.get(
-			f'{provider_config.domain}{provider_config.check_in_status_path or provider_config.sign_in_path}',
-			headers=headers,
-			timeout=30,
-		)
-		confirmed = _rotation_response_data(response, 'Check-in confirmation')
-		if confirmed.get('checked_in_today') is not True:
-			raise ValueError('Rotation check-in not confirmed by server; no retry')
-		print(f'[SUCCESS] {account_name}: Rotation check-in confirmed by server')
-		return True, None
-	except ValueError as exc:
-		error = str(exc)
-	except Exception as exc:
-		error = f'Rotation check-in error - {type(exc).__name__}; no retry'
-	print(f'[FAILED] {account_name}: {error}')
-	return False, error
-
-
 def execute_captcha_check_in_result(
 	client, account_name: str, provider_config, headers: dict
 ) -> tuple[bool, str | None]:
@@ -1066,7 +1001,7 @@ def run_xiaobai_check_in(
 	access_token, refresh_token = account.access_token or '', account.refresh_token or ''
 	mask_tokens(access_token, refresh_token)
 	try:
-		state = create_xiaobai_token_state(account, provider_config.token_state_domain or provider_config.domain)
+		state = create_xiaobai_token_state(account, provider_config.domain)
 		if state:
 			access_token, refresh_token = state.load()
 		if not access_token and not refresh_token:
@@ -1368,7 +1303,7 @@ def run_bearer_check_in(
 		# Password-login accounts can recover by logging in again. Token-only
 		# accounts must use the latest durable state, never stale Secret tokens.
 		if not account.has_login_credentials():
-			state = create_xiaobai_token_state(account, provider_config.token_state_domain or provider_config.domain)
+			state = create_xiaobai_token_state(account, provider_config.domain)
 			if state:
 				access_token, refresh_token = state.load()
 		with httpx.Client(headers=headers, **client_kwargs) as client:
@@ -1445,14 +1380,6 @@ def run_bearer_check_in(
 			print(user_info_before['display'])
 
 			status_response = client.get(status_url, headers=headers, timeout=30)
-			if provider_config.checkin_rotate:
-				success, rotation_error = execute_rotate_check_in_result(
-					client, account_name, provider_config, headers, status_response
-				)
-				_, user_info_after = get_profile()
-				if not success:
-					user_info_after = attach_check_in_error(user_info_after, rotation_error)
-				return success, user_info_before, user_info_after
 			status_document = None
 			try:
 				status_document = status_response.json()

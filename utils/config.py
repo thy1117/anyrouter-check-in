@@ -33,12 +33,10 @@ class ProviderConfig:
 	http2: bool = True
 	request_in_page: bool = False
 	checkin_captcha: bool = False
-	checkin_rotate: bool = False
 	checkin_turnstile: bool = False
 	turnstile_site_key: str = ''
 	captcha_path: str = '/api/captcha?scene=checkin'
 	captcha_code_key: str = 'captcha_code'
-	token_state_domain: str | None = None
 
 	def __post_init__(self):
 		if isinstance(self.proxy_nodes, str):
@@ -113,12 +111,10 @@ class ProviderConfig:
 			http2=data.get('http2', default_http2),
 			request_in_page=data.get('request_in_page', default_request_in_page),
 			checkin_captcha=data.get('checkin_captcha', default_checkin_captcha),
-			checkin_rotate=data.get('checkin_rotate', defaults.checkin_rotate if defaults else False),
 			checkin_turnstile=data.get('checkin_turnstile', default_checkin_turnstile),
 			turnstile_site_key=data.get('turnstile_site_key', default_turnstile_site_key),
 			captcha_path=data.get('captcha_path', default_captcha_path),
 			captcha_code_key=data.get('captcha_code_key', default_captcha_code_key),
-			token_state_domain=data.get('token_state_domain', defaults.token_state_domain if defaults else None),
 		)
 
 	def needs_waf_cookies(self) -> bool:
@@ -195,21 +191,6 @@ class AppConfig:
 				auth_refresh_path='/api/v1/auth/refresh',
 				api_user_key='',
 				use_proxy=True,
-			),
-			'nexavlinks': ProviderConfig(
-				name='nexavlinks',
-				domain='https://asia.nexavlinks.com',
-				token_state_domain='https://asia.nexavlinks.com',
-				api_style='sub2api',
-				login_path='/check-in',
-				sign_in_path='/api/v1/check-in',
-				check_in_status_path='/api/v1/check-in',
-				user_info_path='/api/v1/auth/me',
-				auth_refresh_path='/api/v1/auth/refresh',
-				api_user_key='',
-				use_proxy=False,
-				checkin_rotate=True,
-				captcha_path='/api/v1/check-in/challenge',
 			),
 			'mtnapi': ProviderConfig(
 				name='mtnapi',
@@ -637,11 +618,6 @@ class AppConfig:
 				print(f'[WARNING] Failed to parse {env_name} environment variable: {e}, ignoring it')
 			except Exception as e:
 				print(f'[WARNING] Error loading {env_name}: {e}, ignoring it')
-
-		# Old write-only Secrets must not override the Nexa API migration.
-		nexa = providers['nexavlinks']
-		if nexa.domain.rstrip('/') in ('https://www.nexavlinks.com', 'https://api.nexavlinks.com'):
-			nexa.domain = 'https://asia.nexavlinks.com'
 
 		return cls(providers=providers)
 
