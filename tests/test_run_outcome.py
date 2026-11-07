@@ -30,6 +30,21 @@ async def test_run_exit_and_summary_reflect_all_accounts(monkeypatch, tmp_path, 
 	checkin.notify.push_message.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_missing_target_account_exits_without_notification(monkeypatch):
+	accounts = [AccountConfig(cookies=None, name='present', provider='test')]
+	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
+	monkeypatch.setattr(checkin.notify, 'push_message', Mock())
+	monkeypatch.setenv('CHECKIN_TARGET_ACCOUNTS', 'missing')
+
+	with pytest.raises(SystemExit) as exc:
+		await checkin.main()
+
+	assert exc.value.code == 1
+	checkin.notify.push_message.assert_not_called()
+
+
 def test_summary_io_error_does_not_replace_the_run_outcome(monkeypatch, tmp_path):
 	monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(tmp_path))
 	checkin.write_run_summary(1, 2)

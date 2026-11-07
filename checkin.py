@@ -2611,7 +2611,6 @@ async def main():
 		if not accounts:
 			error_msg = f'[FAILED] No accounts matched CHECKIN_TARGET_ACCOUNTS="{target_accounts_env}", program exits'
 			print(error_msg)
-			notify.push_message('AnyRouter Check-in Alert', error_msg, msg_type='text')
 			sys.exit(1)
 
 	last_balance_hash = load_balance_hash()
