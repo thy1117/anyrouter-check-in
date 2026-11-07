@@ -420,6 +420,10 @@ ChuanAPI（`https://chuanapi.com/profile`）使用 NewAPI 的个人访问令牌�
 ]
 ```
 
+### NewCodex
+
+NewCodex（`https://newcodex.cn/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和用户 ID（`api_user`），配置 `provider: "newcodex"`。`NewCodex-1117` 和 `NewCodex-1118` 分别保存在仓库级 Secret `EXTRA_ACCOUNTS_132` 和 `EXTRA_ACCOUNTS_133`，随普通签到任务调用 `/api/user/checkin`；今日已签到也视为成功，无需浏览器或 Turnstile。
+
 ### Lunora 每日签到
 
 内置 `lunora` Provider 使用 `https://www.uselunora.com/checkin` 的网页登录令牌。`Lunora-1125`、`Lunora-5237`、`Lunora-8746`、`Lunora-9308`、`Lunora-3069` 分别保存在 `production` Environment Secret `EXTRA_ACCOUNTS_78`、`EXTRA_ACCOUNTS_79`、`EXTRA_ACCOUNTS_80`、`EXTRA_ACCOUNTS_81`、`EXTRA_ACCOUNTS_82`（后续账号可用 `EXTRA_ACCOUNTS_83` ~ `EXTRA_ACCOUNTS_87`）：
