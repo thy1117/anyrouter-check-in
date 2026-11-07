@@ -13,7 +13,11 @@ def test_newcodex_slots_append_accounts_and_map_only_regular_job(monkeypatch):
 		monkeypatch.delenv(name, raising=False)
 	monkeypatch.delenv('CHECKIN_DISABLED_PROVIDERS', raising=False)
 	monkeypatch.setenv('ANYROUTER_ACCOUNTS', json.dumps([{'name': 'Existing', 'access_token': 'old-fake-token'}]))
-	for slot, name, api_user in ((132, 'NewCodex-1117', '19'), (133, 'NewCodex-1118', '430')):
+	for slot, name, api_user in (
+		(132, 'NewCodex-1117', '19'),
+		(133, 'NewCodex-1118', '430'),
+		(134, 'NewCodex-1119', '479'),
+	):
 		monkeypatch.setenv(
 			f'EXTRA_ACCOUNTS_{slot}',
 			json.dumps(
@@ -21,20 +25,21 @@ def test_newcodex_slots_append_accounts_and_map_only_regular_job(monkeypatch):
 			),
 		)
 	accounts = load_accounts_config()
-	assert [account.name for account in accounts] == ['Existing', 'NewCodex-1117', 'NewCodex-1118']
+	assert [account.name for account in accounts] == ['Existing', 'NewCodex-1117', 'NewCodex-1118', 'NewCodex-1119']
 	assert [(account.provider, account.api_user, account.access_token) for account in accounts[1:]] == [
 		('newcodex', '19', 'fake-pat-132'),
 		('newcodex', '430', 'fake-pat-133'),
+		('newcodex', '479', 'fake-pat-134'),
 	]
 	workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/checkin.yml').read_text()
-	regular_job = workflow.split('\n  checkin:\n', 1)[1].split('\n  nexa-balances:', 1)[0]
-	for slot in (132, 133):
+	regular_job = workflow.split('\n  checkin:\n', 1)[1].split('\n  gorouter-status:', 1)[0]
+	for slot in (132, 133, 134):
 		mapping = f'EXTRA_ACCOUNTS_{slot}: ${{{{ secrets.EXTRA_ACCOUNTS_{slot} }}}}'
 		assert mapping in regular_job
 		assert workflow.count(mapping) == 1
 
 
-@pytest.mark.parametrize('api_user', ['19', '430'])
+@pytest.mark.parametrize('api_user', ['19', '430', '479'])
 @pytest.mark.parametrize('already_checked_in', [False, True])
 async def test_newcodex_uses_authenticated_http_checkin(monkeypatch, api_user, already_checked_in):
 	monkeypatch.delenv('PROVIDERS', raising=False)
