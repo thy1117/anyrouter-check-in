@@ -20,7 +20,7 @@ def test_checkin_entrypoint_only_runs_all_eighteen_sidrune_accounts(monkeypatch,
 
 	for slot, value in account_slots().items():
 		monkeypatch.setenv(slot, value)
-	monkeypatch.setenv('EXTRA_ACCOUNTS_13', '[{"provider":"nexa","name":"not-selected"}]')
+	monkeypatch.setenv('EXTRA_ACCOUNTS_13', '[{"provider":"unknown","name":"not-selected"}]')
 	requests = []
 
 	def checkin(account, name, provider, *, checkin_only):
@@ -35,7 +35,7 @@ def test_checkin_entrypoint_only_runs_all_eighteen_sidrune_accounts(monkeypatch,
 	assert 'private-' not in output and output.count('"status": "checked_in"') == 18
 
 
-@pytest.mark.parametrize('value', ['', 'private-invalid-json', '{}', '[]', '[{}]', '[{"provider":"nexa"}]'])
+@pytest.mark.parametrize('value', ['', 'private-invalid-json', '{}', '[]', '[{}]', '[{"provider":"unknown"}]'])
 def test_invalid_checkin_slot_fails_before_running_any_account(value):
 	slots = account_slots()
 	slots[CHECKIN_SLOTS[-1]] = value
