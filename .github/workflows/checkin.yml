@@ -1,18 +1,9 @@
 name: AnyRouter 自动签到
-run-name: ${{ inputs.nexa_balance_request_id && format('Nexa balance {0}', inputs.nexa_balance_request_id) || github.workflow }}
 on:
   workflow_dispatch:
     inputs:
       target_accounts:
         description: 'Only check in accounts matching these names/providers (comma-separated, e.g. "Lunora,Sidrune-tthx1,Nianhua-1117"); leave empty for all'
-        type: string
-        default: ''
-      nexa_balance_only:
-        description: 'Read all NexaVlinks balances; safe token refresh only, no status, challenge or check-in requests'
-        type: boolean
-        default: false
-      nexa_balance_request_id:
-        description: 'Unique request id used to match a balance-only run with its artifact'
         type: string
         default: ''
       gorouter_status_only:
@@ -24,7 +15,6 @@ on:
         type: choice
         options:
         - legacy
-        - nexa
         default: legacy
       sidrune_checkin_only:
         description: 'Check in all configured Sidrune accounts; no exchange, lottery, unlock or other sites'
@@ -63,7 +53,7 @@ concurrency:
 
 jobs:
   checkin:
-    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.nexa_balance_only || inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only) }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -210,8 +200,6 @@ jobs:
         EXTRA_ACCOUNTS_61: ${{ secrets.EXTRA_ACCOUNTS_61 }}
         EXTRA_ACCOUNTS_62: ${{ secrets.EXTRA_ACCOUNTS_62 }}
         EXTRA_ACCOUNTS_63: ${{ secrets.EXTRA_ACCOUNTS_63 }}
-        EXTRA_ACCOUNTS_64: ${{ secrets.EXTRA_ACCOUNTS_64 }}
-        EXTRA_ACCOUNTS_65: ${{ secrets.EXTRA_ACCOUNTS_65 }}
         EXTRA_ACCOUNTS_66: ${{ secrets.EXTRA_ACCOUNTS_66 }}
         EXTRA_ACCOUNTS_67: ${{ secrets.EXTRA_ACCOUNTS_67 }}
         EXTRA_ACCOUNTS_68: ${{ secrets.EXTRA_ACCOUNTS_68 }}
@@ -224,21 +212,8 @@ jobs:
         EXTRA_ACCOUNTS_80: ${{ secrets.EXTRA_ACCOUNTS_80 }}
         EXTRA_ACCOUNTS_81: ${{ secrets.EXTRA_ACCOUNTS_81 }}
         EXTRA_ACCOUNTS_82: ${{ secrets.EXTRA_ACCOUNTS_82 }}
-        EXTRA_ACCOUNTS_83: ${{ secrets.EXTRA_ACCOUNTS_83 }}
-        EXTRA_ACCOUNTS_84: ${{ secrets.EXTRA_ACCOUNTS_84 }}
-        EXTRA_ACCOUNTS_85: ${{ secrets.EXTRA_ACCOUNTS_85 }}
         EXTRA_ACCOUNTS_86: ${{ secrets.EXTRA_ACCOUNTS_86 }}
         EXTRA_ACCOUNTS_87: ${{ secrets.EXTRA_ACCOUNTS_87 }}
-        EXTRA_ACCOUNTS_88: ${{ secrets.EXTRA_ACCOUNTS_88 }}
-        EXTRA_ACCOUNTS_89: ${{ secrets.EXTRA_ACCOUNTS_89 }}
-        EXTRA_ACCOUNTS_90: ${{ secrets.EXTRA_ACCOUNTS_90 }}
-        EXTRA_ACCOUNTS_91: ${{ secrets.EXTRA_ACCOUNTS_91 }}
-        EXTRA_ACCOUNTS_92: ${{ secrets.EXTRA_ACCOUNTS_92 }}
-        EXTRA_ACCOUNTS_93: ${{ secrets.EXTRA_ACCOUNTS_93 }}
-        EXTRA_ACCOUNTS_94: ${{ secrets.EXTRA_ACCOUNTS_94 }}
-        EXTRA_ACCOUNTS_95: ${{ secrets.EXTRA_ACCOUNTS_95 }}
-        EXTRA_ACCOUNTS_96: ${{ secrets.EXTRA_ACCOUNTS_96 }}
-        EXTRA_ACCOUNTS_97: ${{ secrets.EXTRA_ACCOUNTS_97 }}
         EXTRA_ACCOUNTS_98: ${{ secrets.EXTRA_ACCOUNTS_98 }}
         EXTRA_ACCOUNTS_99: ${{ secrets.EXTRA_ACCOUNTS_99 }}
         EXTRA_ACCOUNTS_100: ${{ secrets.EXTRA_ACCOUNTS_100 }}
@@ -259,8 +234,6 @@ jobs:
         EXTRA_ACCOUNTS_115: ${{ secrets.EXTRA_ACCOUNTS_115 }}
         EXTRA_ACCOUNTS_116: ${{ secrets.EXTRA_ACCOUNTS_116 }}
         EXTRA_ACCOUNTS_117: ${{ secrets.EXTRA_ACCOUNTS_117 }}
-        EXTRA_ACCOUNTS_118: ${{ secrets.EXTRA_ACCOUNTS_118 }}
-        EXTRA_ACCOUNTS_119: ${{ secrets.EXTRA_ACCOUNTS_119 }}
         EXTRA_ACCOUNTS_120: ${{ secrets.EXTRA_ACCOUNTS_120 }}
         EXTRA_ACCOUNTS_121: ${{ secrets.EXTRA_ACCOUNTS_121 }}
         EXTRA_ACCOUNTS_122: ${{ secrets.EXTRA_ACCOUNTS_122 }}
@@ -295,15 +268,6 @@ jobs:
         BARK_SERVER: ${{ secrets.BARK_SERVER }}
       run: |
         xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
-
-    - name: 上传 Nexa 余额快照
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: nexa-balances-${{ github.run_id }}-${{ github.run_attempt }}
-        path: nexa-balances.json
-        if-no-files-found: ignore
-        retention-days: 3
 
     - name: 保存加密 Token 恢复检查点
       if: always()
@@ -365,71 +329,8 @@ jobs:
         fi
 
 
-  nexa-balances:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.nexa_balance_only }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment: production
-    permissions:
-      contents: write
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        persist-credentials: false
-    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
-      with:
-        version: "latest"
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-    - name: 安装依赖（不启动浏览器或代理）
-      run: uv sync --frozen --no-dev
-    - name: 只读取 NexaVlinks 实时余额
-      env:
-        PYTHONUNBUFFERED: '1'
-        NEXA_BALANCE_REQUEST_ID: ${{ inputs.nexa_balance_request_id }}
-        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
-        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
-        EXTRA_ACCOUNTS_64: ${{ secrets.EXTRA_ACCOUNTS_64 }}
-        EXTRA_ACCOUNTS_65: ${{ secrets.EXTRA_ACCOUNTS_65 }}
-        EXTRA_ACCOUNTS_83: ${{ secrets.EXTRA_ACCOUNTS_83 }}
-        EXTRA_ACCOUNTS_84: ${{ secrets.EXTRA_ACCOUNTS_84 }}
-        EXTRA_ACCOUNTS_85: ${{ secrets.EXTRA_ACCOUNTS_85 }}
-        EXTRA_ACCOUNTS_88: ${{ secrets.EXTRA_ACCOUNTS_88 }}
-        EXTRA_ACCOUNTS_89: ${{ secrets.EXTRA_ACCOUNTS_89 }}
-        EXTRA_ACCOUNTS_90: ${{ secrets.EXTRA_ACCOUNTS_90 }}
-        EXTRA_ACCOUNTS_91: ${{ secrets.EXTRA_ACCOUNTS_91 }}
-        EXTRA_ACCOUNTS_92: ${{ secrets.EXTRA_ACCOUNTS_92 }}
-        EXTRA_ACCOUNTS_93: ${{ secrets.EXTRA_ACCOUNTS_93 }}
-        EXTRA_ACCOUNTS_94: ${{ secrets.EXTRA_ACCOUNTS_94 }}
-        EXTRA_ACCOUNTS_95: ${{ secrets.EXTRA_ACCOUNTS_95 }}
-        EXTRA_ACCOUNTS_96: ${{ secrets.EXTRA_ACCOUNTS_96 }}
-        EXTRA_ACCOUNTS_97: ${{ secrets.EXTRA_ACCOUNTS_97 }}
-        EXTRA_ACCOUNTS_118: ${{ secrets.EXTRA_ACCOUNTS_118 }}
-        EXTRA_ACCOUNTS_119: ${{ secrets.EXTRA_ACCOUNTS_119 }}
-        PROVIDERS: ${{ secrets.PROVIDERS }}
-        EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
-      run: uv run --no-dev python -m scripts.read_nexa_balances
-    - name: 上传 Nexa 实时余额快照
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: nexa-live-balances-${{ github.run_id }}-${{ github.run_attempt }}
-        path: nexa-balances.json
-        if-no-files-found: ignore
-        retention-days: 3
-    - name: Save encrypted authentication recovery checkpoint
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: nexa-balance-encrypted-recovery-${{ github.run_id }}-${{ github.run_attempt }}
-        path: .xiaobai-token-recovery/*.fernet
-        include-hidden-files: true
-        if-no-files-found: ignore
-        retention-days: 14
-
   gorouter-status:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && inputs.gorouter_status_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -451,10 +352,8 @@ jobs:
         path: ~/.cloakbrowser
         key: ${{ runner.os }}-cloakbrowser-v1
     - name: Install browser
-      if: ${{ inputs.gorouter_status_group != 'nexa' }}
       run: uv run python -m cloakbrowser install
     - name: Read exactly three Nianhua account statuses
-      if: ${{ inputs.gorouter_status_group != 'nexa' }}
       env:
         GOROUTER_STATUS_GROUP: ${{ inputs.gorouter_status_group }}
         PYTHONUNBUFFERED: '1'
@@ -469,21 +368,8 @@ jobs:
         PROVIDERS: ${{ secrets.PROVIDERS }}
         EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
       run: xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run python -m scripts.check_gorouter
-    - name: Read exactly NexaVlinks-27 and NexaVlinks-38 statuses
-      if: ${{ inputs.gorouter_status_group == 'nexa' }}
-      env:
-        PYTHONUNBUFFERED: '1'
-        CHECKIN_TIMEZONE: Asia/Shanghai
-        XIAOBAI_TOKEN_STATE_KEY: ${{ secrets.XIAOBAI_TOKEN_STATE_KEY }}
-        XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
-        EXTRA_ACCOUNTS_94: ${{ secrets.EXTRA_ACCOUNTS_94 }}
-        EXTRA_ACCOUNTS_97: ${{ secrets.EXTRA_ACCOUNTS_97 }}
-        PROVIDERS: ${{ secrets.PROVIDERS }}
-        EXTRA_PROVIDERS: ${{ secrets.EXTRA_PROVIDERS }}
-      run: uv run python -m scripts.check_nexa_status
-
   sidrune-checkin-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && inputs.sidrune_checkin_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.sidrune_checkin_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -537,7 +423,7 @@ jobs:
         retention-days: 14
 
   sidrune-exchange-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
@@ -578,7 +464,7 @@ jobs:
         retention-days: 14
 
   xiaobai-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
     runs-on: ubuntu-latest
     timeout-minutes: 7
     environment: production
@@ -645,7 +531,7 @@ jobs:
 
 
   sheapi-proxy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
