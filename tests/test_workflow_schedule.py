@@ -24,7 +24,7 @@ def test_removed_account_secrets_are_not_wired_into_workflow():
 
 	assert 'EXTRA_ACCOUNTS_3: ${{ secrets.EXTRA_ACCOUNTS_3 }}' in text
 	assert 'EXTRA_ACCOUNTS_33: ${{ secrets.EXTRA_ACCOUNTS_33 }}' in text
-	for removed_slot in (2, 15, 17, 18, 22, 25, 27, 28, 29, 30, 31, 32, 35, 124):
+	for removed_slot in (2, 15, 17, 18, 22, 25, 27, 28, 29, 30, 31, 32, 35, 64, 65, 83, 84, 85, *range(88, 98), 118, 119, 124):
 		# 用完整赋值行比对，否则 EXTRA_ACCOUNTS_2 会被 EXTRA_ACCOUNTS_20 之类的前缀误判。
 		assert f'EXTRA_ACCOUNTS_{removed_slot}: ' not in text
 
@@ -81,15 +81,15 @@ def test_sheapi_secrets_are_wired_without_removing_existing_secrets():
 def test_single_account_test_cannot_run_production_job():
 	text = WORKFLOW.read_text(encoding='utf-8')
 	assert (
-		"github.event_name != 'workflow_dispatch' || !(inputs.nexa_balance_only || inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only)"
+		"github.event_name != 'workflow_dispatch' || !(inputs.gorouter_status_only || inputs.xiaobai_test || inputs.xiaobai_config_only || inputs.sheapi_proxy_only || inputs.sidrune_exchange_only || inputs.sidrune_checkin_only)"
 		in text
 	)
 	assert (
-		"github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only)"
+		"github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only)"
 		in text
 	)
 	assert (
-		"github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only"
+		"github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only"
 		in text
 	)
 	test_job = text.split('\n  xiaobai-test:')[1]
@@ -133,7 +133,7 @@ def test_sheapi_proxy_test_only_loads_subscription_and_requires_five_ips():
 	text = WORKFLOW.read_text(encoding='utf-8')
 	job = text.split('\n  sheapi-proxy-test:')[1]
 	assert (
-		"github.event_name == 'workflow_dispatch' && !inputs.nexa_balance_only && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only"
+		"github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && inputs.sheapi_proxy_only"
 		in job
 	)
 	assert 'contents: read' in job

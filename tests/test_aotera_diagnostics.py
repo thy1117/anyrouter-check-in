@@ -51,7 +51,7 @@ def test_retired_aotera_status_workflow_keeps_only_explicit_groups():
 	trigger = workflow.get('on') or workflow[True]
 	group = trigger['workflow_dispatch']['inputs']['gorouter_status_group']
 	assert group['default'] == 'legacy'
-	assert group['options'] == ['legacy', 'nexa']
+	assert group['options'] == ['legacy']
 	description = trigger['workflow_dispatch']['inputs']['gorouter_status_only']['description']
 	assert 'exact account group' in description
 	assert 'Aotera' not in description

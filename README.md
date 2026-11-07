@@ -437,29 +437,6 @@ ChuanAPI（`https://chuanapi.com/profile`）使用 NewAPI 的个人访问令牌�
 
 脚本读取 `/api/v1/checkin/status`，今日已签到则跳过，未达资格不提交；符合条件时调用 `/api/v1/checkin/claim`。令牌过期后复用已有的加密 Token 状态存储进行刷新，不把令牌提交到仓库。
 
-### NexaVlinks 旋转验证签到
-
-内置 `nexavlinks` Provider 使用 `https://asia.nexavlinks.com` 的网页登录令牌（不是模型 API Key）。登录后在开发者工具的 `Application → Local Storage` 获取 `auth_token` 和 `refresh_token`，将账号数组保存到 `production` Environment Secret `EXTRA_ACCOUNTS_64`：
-
-```json
-[
-  {
-    "name": "NexaVlinks-账号后缀",
-    "provider": "nexavlinks",
-    "access_token": "网页登录后的 auth_token",
-    "refresh_token": "网页登录后的 refresh_token"
-  }
-]
-```
-
-每个账号使用不同的 `name`。脚本先查询今日状态，已签到则跳过；未签到时在本地匹配旋转图片角度，只提交一次，再通过服务器 `checked_in_today` 确认。图片格式改变、匹配不明确或请求异常时不盲目猜测、不重放签到请求，也不把凭据或响应正文写进日志。
-
-新增账号 `NexaVlinks-g12`、`NexaVlinks-tthxyc`、`NexaVlinks-13`、`NexaVlinks-15`、`NexaVlinks-24`、`NexaVlinks-26`、`NexaVlinks-27`、`NexaVlinks-28`、`NexaVlinks-37`、`NexaVlinks-38` 分别单独保存在 `production` Environment Secret `EXTRA_ACCOUNTS_88`、`EXTRA_ACCOUNTS_89`、`EXTRA_ACCOUNTS_90`、`EXTRA_ACCOUNTS_91`、`EXTRA_ACCOUNTS_92`、`EXTRA_ACCOUNTS_93`、`EXTRA_ACCOUNTS_94`、`EXTRA_ACCOUNTS_95`、`EXTRA_ACCOUNTS_96`、`EXTRA_ACCOUNTS_97`，避免覆盖 `EXTRA_ACCOUNTS_64` 中的已有账号。
-
-新增账号 `NexaVlinks-wechat`、`NexaVlinks-wechat1` 分别保存在仓库级 Secret `EXTRA_ACCOUNTS_118`、`EXTRA_ACCOUNTS_119`（`production` Environment Secret 已达到 GitHub 的 100 个上限）。
-
-令牌刷新复用现有的 `XIAOBAI_TOKEN_STATE_KEY` 和 `main` 加密存储；未配置持久化存储时拒绝刷新，以免丢失轮换后的令牌。只合并代码不会自动添加账号 Secret，请勿把令牌提交到仓库。
-
 ### GoRouter
 
 GoRouter（`https://gorouter.app`）是新版 NewAPI，只支持 GitHub OAuth 登录，签到接口 `POST /api/user/checkin` 带 Cloudflare Turnstile 校验。因为无法在 CI 里跑 OAuth，凭据用**个人访问令牌（access_token）**：
@@ -898,9 +875,3 @@ uv run pytest tests/ --cov=.
 ## 免责声明
 
 本脚本仅用于学习和研究目的，使用前请确保遵守相关网站的使用条款.
-
-### Nexa 每日额度余额快照
-
-普通签到完成后上传 `nexa-balances-运行编号-尝试编号` artifact，仅包含成功读取的 Nexa 账号余额、读取时间及运行编号，不含认证数据。签到失败但余额读取成功时仍导出余额；余额读取失败的账号不导出。
-
-AxonHub 服务器仅采用北京时间当天 06:50–06:59 发起、main 分支、已完成签到任务的快照。07:00 后按原规则恢复守护器停用的渠道；任务延迟时等待后续轮询，缺失或过期余额不会用于恢复。当日已确认余额不会被后续运行覆盖，00:10 与 18:00 的任务不影响当天额度。
