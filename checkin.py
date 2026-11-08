@@ -2232,7 +2232,7 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 	if account.proxy_node or provider_config.proxy_node or provider_config.proxy_nodes:
 		raise ValueError(f'Provider "{account.provider}" contains a fixed proxy node configuration')
 	# 未启用代理或本地无 Mihomo 端点（如本地/测试）时不切换节点。
-	requires_distinct_ip = account.provider == 'sheapi'
+	requires_distinct_ip = account.provider in {'sheapi', 'ciyuan'}
 	if not provider_config.use_proxy or not get_proxy_server(use_proxy=provider_config.use_proxy):
 		if requires_distinct_ip:
 			raise ProxyNodeSwitchError(f'{account.provider} requires a proxy with a verified distinct exit IP')
@@ -2242,9 +2242,23 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 		if requires_distinct_ip:
 			raise ProxyNodeSwitchError(f'{account.provider} proxy node pool is unavailable')
 		return None
+	if account.provider == 'ciyuan':
+		nodes = sorted(
+			nodes,
+			key=lambda node: (
+				'IPv6' in node,
+				not ('TW' in node or '台湾' in node or 'Taiwan' in node),
+				node,
+			),
+		)
 	if _PROXY_ALLOCATOR is None or _PROXY_ALLOCATOR.nodes != nodes:
 		_PROXY_ALLOCATOR = ProxyNodeAllocator(nodes)
-	ip_probe = (lambda node: probe_proxy_ip(node, provider_config.domain)) if requires_distinct_ip else None
+	if account.provider == 'ciyuan':
+		ip_probe = lambda node: probe_proxy_ip(node, provider_config.domain, ipv4_only=True, country='TW')
+	elif requires_distinct_ip:
+		ip_probe = lambda node: probe_proxy_ip(node, provider_config.domain)
+	else:
+		ip_probe = None
 	allocation_provider = account.provider
 	return _PROXY_ALLOCATOR.assign(
 		allocation_provider, account.name or f'account-{provider_account_index + 1}', ip_probe=ip_probe

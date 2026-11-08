@@ -331,7 +331,6 @@ def test_simple_newapi_pat_providers_are_builtin(monkeypatch):
 
 	providers = AppConfig.load_from_env().providers
 	expected_domains = {
-		'ciyuan': 'https://ai.962831.xyz',
 		'yuecheng': 'https://52ccl.net',
 		'elysiver': 'https://elysiver.h-e.top',
 		'windhub': 'https://windhub.cc',
@@ -356,10 +355,12 @@ def test_ciyuan_provider_uses_turnstile(monkeypatch):
 	# The public /api/status response has turnstile_check enabled. A plain
 	# POST returns HTTP 200 with "Turnstile token 为空", so use the same
 	# browser-minted token flow as the other current NewAPI deployments.
+	assert provider.domain == 'https://ai.962831.xyz'
 	assert provider.check_in_status_path == '/api/user/checkin'
 	assert provider.checkin_turnstile is True
 	assert provider.turnstile_site_key == '0x4AAAAAADub4IXwHwHzJPGa'
 	assert provider.persist_profile is True
+	assert provider.use_proxy is True
 
 
 def test_windhub_provider_is_builtin(monkeypatch):

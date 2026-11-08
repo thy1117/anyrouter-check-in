@@ -210,7 +210,13 @@ def active_proxy_node(node_name: str | None, *, account_name: str = '') -> Gener
 				debug_print(f'[WARN] {prefix}Failed to restore proxy node to "{previous_node}"')
 
 
-def probe_proxy_ip(node_name: str, domain: str) -> str:
+def probe_proxy_ip(
+	node_name: str,
+	domain: str,
+	*,
+	ipv4_only: bool = False,
+	country: str | None = None,
+) -> str:
 	"""确认目标站可达且两次同域 trace 的公网出口一致；不登录、不签到。"""
 	server = get_proxy_server()
 	if not server:
@@ -232,6 +238,11 @@ def probe_proxy_ip(node_name: str, domain: str) -> str:
 					ip = ipaddress.ip_address(fields.get('ip', ''))
 					if not ip.is_global:
 						raise ValueError('Non-public exit IP')
+					loc = fields.get('loc', '').upper()
+					if country and loc != country.upper():
+						raise ProxyNodeSwitchError(f'Exit country {loc or "unknown"} != {country.upper()} ({ip})')
+					if ipv4_only and ip.version != 4:
+						raise ProxyNodeSwitchError(f'Exit IP {ip} ({loc or "unknown"}) is not IPv4')
 					return str(ip)
 
 				ip = read_ip()
@@ -240,5 +251,7 @@ def probe_proxy_ip(node_name: str, domain: str) -> str:
 				if status.json().get('success') is not True or read_ip() != ip:
 					raise ValueError('Target unavailable or exit IP changed during probe')
 				return ip
+		except ProxyNodeSwitchError:
+			raise
 		except (httpx.HTTPError, ValueError, AttributeError) as exc:
 			raise ProxyNodeSwitchError(f'Exit IP/target verification failed ({type(exc).__name__})') from None

@@ -90,21 +90,25 @@ def test_sheapi_cannot_fall_back_to_unverified_default_or_direct_proxy(monkeypat
 		resolve_account_proxy_node(account, provider, 0)
 
 
-def test_only_sheapi_enables_ip_verification(monkeypatch, tmp_path):
+def test_sheapi_and_ciyuan_enable_ip_verification(monkeypatch, tmp_path):
 	import checkin
 	from utils.config import AccountConfig, AppConfig
 
 	monkeypatch.setenv('CHECKIN_PROXY_URL', 'http://127.0.0.1:7890')
-	monkeypatch.setattr(checkin, 'get_mihomo_nodes', lambda: ['a', 'b'])
-	allocator = ProxyNodeAllocator(['a', 'b'], state_file=tmp_path / 'state.json')
-	monkeypatch.setattr(checkin, '_PROXY_ALLOCATOR', allocator)
-	probe = Mock(return_value='8.8.8.8')
+	monkeypatch.setattr(checkin, 'get_mihomo_nodes', lambda: ['US-X1-1', 'TW-X1-1', 'TW-IPv6-P1-1'])
+	monkeypatch.setattr(checkin, '_PROXY_ALLOCATOR', None)
+	probe = Mock(return_value='60.248.221.26')
 	monkeypatch.setattr(checkin, 'probe_proxy_ip', probe)
 	providers = AppConfig.load_from_env()
 	for provider in ('guyscode', 'sheapi'):
 		account = AccountConfig(cookies=None, provider=provider, name='one')
-		assert checkin.resolve_account_proxy_node(account, providers.get_provider(provider), 0) == 'a'
-	probe.assert_called_once_with('a', 'https://www.sheapi.top')
+		assert checkin.resolve_account_proxy_node(account, providers.get_provider(provider), 0) == 'US-X1-1'
+	probe.assert_called_once_with('US-X1-1', 'https://www.sheapi.top')
+
+	probe.reset_mock()
+	ciyuan_account = AccountConfig(cookies=None, provider='ciyuan', name='词元站-thy1118')
+	assert checkin.resolve_account_proxy_node(ciyuan_account, providers.get_provider('ciyuan'), 0) == 'TW-X1-1'
+	probe.assert_called_once_with('TW-X1-1', 'https://ai.962831.xyz', ipv4_only=True, country='TW')
 
 
 @pytest.mark.asyncio
