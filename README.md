@@ -377,31 +377,7 @@ SuperQiyu（`https://www.superqiyu.org/profile`）使用 NewAPI 的个人访问�
 
 Zero.cat（`https://zero.cat/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和用户 ID（`api_user`）。内置 `zerocat` Provider 复用浏览器 Turnstile 签到流程，先读取今日状态，未签到时提交一次，再由服务端状态确认结果。
 
-`ZeroCat-1117` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_111`：
-
-```json
-[
-  {
-    "name": "ZeroCat-1117",
-    "provider": "zerocat",
-    "access_token": "个人访问令牌",
-    "api_user": "19163"
-  }
-]
-```
-
-`ZeroCat-1118` 保存在仓库级 Secret `EXTRA_ACCOUNTS_112`（`production` Environment Secret 已达到 GitHub 的 100 个上限）：
-
-```json
-[
-  {
-    "name": "ZeroCat-1118",
-    "provider": "zerocat",
-    "access_token": "个人访问令牌",
-    "api_user": "19170"
-  }
-]
-```
+`ZeroCat-1117`、`ZeroCat-1118` 已从自动签到中移除；对应的 `production` Environment Secret `EXTRA_ACCOUNTS_111`、仓库级 Secret `EXTRA_ACCOUNTS_112` 和工作流加载引用一并删除。内置 `zerocat` Provider 保留供以后复用，不影响其他站点。
 
 ### ChuanAPI
 

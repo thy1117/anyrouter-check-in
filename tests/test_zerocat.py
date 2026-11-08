@@ -9,7 +9,7 @@ import checkin
 from utils.config import AccountConfig, AppConfig, load_accounts_config
 
 
-def test_zerocat_configuration_and_account_slot(monkeypatch):
+def test_zerocat_configuration_remains_reusable(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
 	provider = AppConfig.load_from_env().providers['zerocat']
@@ -37,9 +37,12 @@ def test_zerocat_configuration_and_account_slot(monkeypatch):
 	assert [account.name for account in accounts] == ['Existing', 'ZeroCat-1117', 'ZeroCat-1118']
 	assert accounts[1].provider == 'zerocat' and accounts[1].api_user == '19163'
 	assert accounts[2].provider == 'zerocat' and accounts[2].api_user == '19170'
-	workflow = Path('.github/workflows/checkin.yml').read_text().split('\n  gorouter-status:', 1)[0]
-	assert 'EXTRA_ACCOUNTS_111: ${{ secrets.EXTRA_ACCOUNTS_111 }}' in workflow
-	assert 'EXTRA_ACCOUNTS_112: ${{ secrets.EXTRA_ACCOUNTS_112 }}' in workflow
+
+
+@pytest.mark.parametrize('slot', [111, 112])
+def test_workflows_do_not_wire_retired_zerocat_slots(slot):
+	for workflow in Path('.github/workflows').glob('*.y*ml'):
+		assert f'EXTRA_ACCOUNTS_{slot}' not in workflow.read_text(), workflow.name
 
 
 @pytest.mark.parametrize('checked', [False, True])
