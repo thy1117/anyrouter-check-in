@@ -381,7 +381,18 @@ Zero.cat（`https://zero.cat/profile`）使用 NewAPI 的个人访问令牌（`a
 
 ### 91Token
 
-91Token（`https://91token.com/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和签到用户 ID（`api_user`），配置 `provider: "91token"`。`91Token-1117`（ID `1791`）、`91Token-1118`（ID `2098`）、`91Token-1119`（ID `2108`）和 `91Token-1120`（ID `2110`）分别保存在仓库级 Secret `EXTRA_ACCOUNTS_139`、`EXTRA_ACCOUNTS_140`、`EXTRA_ACCOUNTS_141` 和 `EXTRA_ACCOUNTS_142`，随普通签到任务运行。
+91Token（`https://91token.com/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和签到用户 ID（`api_user`），配置 `provider: "91token"`。以下账号分别保存在独立的仓库级 Secret 中，随普通签到任务运行：
+
+| 账号 | 签到用户 ID | Secret |
+| --- | --- | --- |
+| 91Token-1117 | 1791 | `EXTRA_ACCOUNTS_139` |
+| 91Token-1118 | 2098 | `EXTRA_ACCOUNTS_140` |
+| 91Token-1119 | 2108 | `EXTRA_ACCOUNTS_141` |
+| 91Token-1120 | 2110 | `EXTRA_ACCOUNTS_142` |
+| 91Token-1121 | 2113 | `EXTRA_ACCOUNTS_143` |
+| 91Token-1122 | 2115 | `EXTRA_ACCOUNTS_144` |
+| 91Token-1123 | 2117 | `EXTRA_ACCOUNTS_145` |
+| 91Token-1125 | 2120 | `EXTRA_ACCOUNTS_146` |
 
 站点启用 Turnstile，复用现有浏览器签到流程：先读取今日状态，已经签到则跳过；未签到时提交一次，并由服务端的 `checked_in_today` 确认结果。令牌仅保存在 GitHub Secret 中。
 
