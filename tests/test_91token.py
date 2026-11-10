@@ -15,7 +15,7 @@ def test_91token_accounts_keep_their_ids_and_are_wired_into_workflow(monkeypatch
 			'EXTRA_ACCOUNTS_'
 		):
 			monkeypatch.delenv(name)
-	for slot, name, uid in ((139, '1117', '1791'), (140, '1118', '2098')):
+	for slot, name, uid in ((139, '1117', '1791'), (140, '1118', '2098'), (141, '1119', '2108')):
 		monkeypatch.setenv(
 			f'EXTRA_ACCOUNTS_{slot}',
 			json.dumps(
@@ -28,6 +28,7 @@ def test_91token_accounts_keep_their_ids_and_are_wired_into_workflow(monkeypatch
 	assert [(account.name, account.api_user) for account in accounts] == [
 		('91Token-1117', '1791'),
 		('91Token-1118', '2098'),
+		('91Token-1119', '2108'),
 	]
 	assert checkin.filter_accounts_by_target(accounts, '91token') == accounts
 
