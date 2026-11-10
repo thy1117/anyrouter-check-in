@@ -379,6 +379,12 @@ Zero.cat（`https://zero.cat/profile`）使用 NewAPI 的个人访问令牌（`a
 
 `ZeroCat-1117`、`ZeroCat-1118` 已从自动签到中移除；对应的 `production` Environment Secret `EXTRA_ACCOUNTS_111`、仓库级 Secret `EXTRA_ACCOUNTS_112` 和工作流加载引用一并删除。内置 `zerocat` Provider 保留供以后复用，不影响其他站点。
 
+### 91Token
+
+91Token（`https://91token.com/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和签到用户 ID（`api_user`），配置 `provider: "91token"`。`91Token-1117`（ID `1791`）和 `91Token-1118`（ID `2098`）分别保存在仓库级 Secret `EXTRA_ACCOUNTS_139` 和 `EXTRA_ACCOUNTS_140`，随普通签到任务运行。
+
+站点启用 Turnstile，复用现有浏览器签到流程：先读取今日状态，已经签到则跳过；未签到时提交一次，并由服务端的 `checked_in_today` 确认结果。令牌仅保存在 GitHub Secret 中。
+
 ### ChuanAPI
 
 ChuanAPI（`https://chuanapi.com/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和用户 ID（`api_user`）。内置 `chuanapi` Provider 复用 HTTP 签到流程，调用 `/api/user/checkin`，服务端返回今日已签到时也视为成功；无需浏览器或 Turnstile。
