@@ -2642,14 +2642,17 @@ async def main():
 	need_notify = False
 	balance_changed = False
 	provider_account_counts: dict[str, int] = {}
+	previously_completed = {
+		i for i, account in enumerate(accounts) if daily_state and not target_accounts_env and daily_state.contains(account, i)
+	}
+	skipped_count = len(previously_completed)
+	success_count = skipped_count
 
 	for i, account in enumerate(accounts):
 		account_key = f'account_{i + 1}'
 		provider_account_index = provider_account_counts.get(account.provider, 0)
 		provider_account_counts[account.provider] = provider_account_index + 1
-		if daily_state and not target_accounts_env and daily_state.contains(account, i):
-			skipped_count += 1
-			success_count += 1
+		if i in previously_completed:
 			print(f'[SKIP] {account.get_display_name(i)}: Confirmed successful today; no account request')
 			continue
 		attempted_count += 1
@@ -2766,12 +2769,14 @@ async def main():
 		save_balance_hash(current_balance_hash)
 
 	notify_every_run = should_notify_every_run()
-	if notify_every_run and not need_notify:
+	if notify_every_run and not need_notify and attempted_count:
 		print('[NOTIFY] No failures or balance changes, but every-run notification is enabled')
-	need_notify = need_notify or notify_every_run
+	need_notify = (need_notify or notify_every_run) and (attempted_count > 0 or state_failed)
 
 	if need_notify:
 		failed_count = total_count - success_count - not_attempted_count
+		round_total_count = total_count - skipped_count
+		round_success_count = success_count - skipped_count
 		if failed_count == 0 and not state_failed and not not_attempted_count:
 			result_icon = '✅'
 		elif success_count > 0:
@@ -2779,7 +2784,7 @@ async def main():
 		else:
 			result_icon = '❌'
 		summary = [
-			f'{result_icon} 签到结果：{success_count}/{total_count} 成功',
+			f'{result_icon} 签到结果：{round_success_count}/{round_total_count} 成功',
 			f'🕘 {format_check_in_time()}',
 		]
 		if skipped_count:

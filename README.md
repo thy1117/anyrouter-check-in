@@ -403,19 +403,6 @@ Zero.cat（`https://zero.cat/profile`）使用 NewAPI 的个人访问令牌（`a
 
 ChuanAPI（`https://chuanapi.com/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和用户 ID（`api_user`）。内置 `chuanapi` Provider 复用 HTTP 签到流程，调用 `/api/user/checkin`，服务端返回今日已签到时也视为成功；无需浏览器或 Turnstile。
 
-`ChuanAPI-146` 保存在仓库级 Secret `EXTRA_ACCOUNTS_113`，由普通签到任务加载：
-
-```json
-[
-  {
-    "name": "ChuanAPI-146",
-    "provider": "chuanapi",
-    "access_token": "个人访问令牌",
-    "api_user": "146"
-  }
-]
-```
-
 ### NewCodex
 
 NewCodex（`https://newcodex.cn/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和用户 ID（`api_user`），配置 `provider: "newcodex"`。`NewCodex-1117`、`NewCodex-1118`、`NewCodex-1119`、`NewCodex-1120`、`NewCodex-1121`、`NewCodex-1122` 和 `NewCodex-1123` 分别保存在仓库级 Secret `EXTRA_ACCOUNTS_132`、`EXTRA_ACCOUNTS_133`、`EXTRA_ACCOUNTS_134`、`EXTRA_ACCOUNTS_135`、`EXTRA_ACCOUNTS_136`、`EXTRA_ACCOUNTS_137` 和 `EXTRA_ACCOUNTS_138`，随普通签到任务调用 `/api/user/checkin`；今日已签到也视为成功，无需浏览器或 Turnstile。

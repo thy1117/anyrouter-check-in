@@ -24,10 +24,9 @@ def test_chuanapi_account_slot_keeps_existing_accounts(monkeypatch):
 		'146',
 		'test-pat',
 	)
-	workflow = Path('.github/workflows/checkin.yml').read_text()
-	mapping = 'EXTRA_ACCOUNTS_113: ${{ secrets.EXTRA_ACCOUNTS_113 }}'
-	assert mapping in workflow.split('\n  gorouter-status:', 1)[0]
-	assert workflow.count(mapping) == 1
+	for workflow in Path('.github/workflows').glob('*.y*ml'):
+		assert 'EXTRA_ACCOUNTS_113:' not in workflow.read_text()
+		assert 'secrets.EXTRA_ACCOUNTS_113 ' not in workflow.read_text()
 
 
 @pytest.mark.parametrize(
