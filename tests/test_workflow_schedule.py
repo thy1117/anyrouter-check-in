@@ -9,6 +9,8 @@ def test_checkin_workflow_is_dispatch_only_for_external_scheduler():
 	assert 'schedule:' not in text
 	assert 'workflow_dispatch:' in text
 	assert 'CHECKIN_TARGET_ACCOUNTS: ${{ inputs.target_accounts }}' in text
+	assert 'CHECKIN_DAILY_STATE_FILE: checkin-state/daily-success.json' in text
+	assert 'CHECKIN_STATE_GITHUB_TOKEN: ${{ github.token }}' in text
 	assert "CHECKIN_TARGET_ACCOUNTS: ${{ github.event_name == 'schedule'" not in text
 	assert 'NOTIFY_EVERY_RUN: true' in text
 

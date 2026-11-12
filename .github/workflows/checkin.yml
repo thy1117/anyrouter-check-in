@@ -67,6 +67,8 @@ jobs:
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
       CHECKIN_TARGET_ACCOUNTS: ${{ inputs.target_accounts }}
+      CHECKIN_DAILY_STATE_FILE: checkin-state/daily-success.json
+      CHECKIN_STATE_GITHUB_TOKEN: ${{ github.token }}
     steps:
     - uses: actions/checkout@v6
 
@@ -278,6 +280,15 @@ jobs:
         BARK_SERVER: ${{ secrets.BARK_SERVER }}
       run: |
         xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
+
+    - name: 保存当日成功记录检查点
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: checkin-daily-success-${{ github.run_id }}-${{ github.run_attempt }}
+        path: checkin-state/daily-success.json
+        if-no-files-found: ignore
+        retention-days: 2
 
     - name: 保存加密 Token 恢复检查点
       if: always()
