@@ -49,6 +49,7 @@ from utils.browser import (
 	wait_for_waf_ready,
 )
 from utils.config import AccountConfig, AppConfig, load_accounts_config
+from utils.daily_success import DailyStateError, create_daily_success_state
 from utils.debug import debug_print, is_debug_enabled
 from utils.notify import notify
 from utils.proxy import (
@@ -2614,6 +2615,9 @@ async def main():
 			sys.exit(1)
 
 	last_balance_hash = load_balance_hash()
+	daily_state = create_daily_success_state(format_check_in_time()[:10])
+	skipped_count = 0
+	state_failed = False
 
 	success_count = 0
 	total_count = len(accounts)
@@ -2629,6 +2633,11 @@ async def main():
 		account_key = f'account_{i + 1}'
 		provider_account_index = provider_account_counts.get(account.provider, 0)
 		provider_account_counts[account.provider] = provider_account_index + 1
+		if daily_state and not target_accounts_env and daily_state.contains(account, i):
+			skipped_count += 1
+			success_count += 1
+			print(f'[SKIP] {account.get_display_name(i)}: Confirmed successful today; no account request')
+			continue
 		try:
 			success, user_info_before, user_info_after = await check_in_account(
 				account,
@@ -2638,6 +2647,13 @@ async def main():
 			)
 			if success:
 				success_count += 1
+				if daily_state:
+					try:
+						daily_state.mark_success(account, i)
+						daily_state.save()
+					except DailyStateError as state_error:
+						state_failed = True
+						print(f'[FAILED] {state_error}')
 
 			should_notify_this_account = False
 
@@ -2700,6 +2716,14 @@ async def main():
 			need_notify = True
 			notification_content.append(f'[FAIL] {account_name} exception: {str(e)[:50]}...')
 
+	if daily_state:
+		try:
+			daily_state.save()
+		except DailyStateError as state_error:
+			state_failed = True
+			print(f'[FAILED] {state_error}')
+		finally:
+			daily_state.close()
 	current_balance_hash = generate_balance_hash(current_balances) if current_balances else None
 	if current_balance_hash:
 		if last_balance_hash is None:
@@ -2713,7 +2737,7 @@ async def main():
 		else:
 			print('[INFO] No balance changes detected')
 
-	if current_balance_hash and not target_accounts_env:
+	if current_balance_hash and not target_accounts_env and not skipped_count:
 		save_balance_hash(current_balance_hash)
 
 	notify_every_run = should_notify_every_run()
@@ -2733,6 +2757,10 @@ async def main():
 			f'{result_icon} 签到结果：{success_count}/{total_count} 成功',
 			f'🕘 {format_check_in_time()}',
 		]
+		if skipped_count:
+			summary.append(f'⏭️ 今日此前已成功：{skipped_count} 个；本次执行：{total_count - skipped_count} 个')
+		if state_failed:
+			summary.append('⚠️ 当日成功记录保存失败，请检查运行日志')
 		if failed_count:
 			summary.append(f'❌ 失败：{failed_count} 个')
 		if notification_content:
@@ -2818,7 +2846,7 @@ async def main():
 		print('[INFO] All accounts successful and no balance changes detected, notification skipped')
 
 	write_run_summary(success_count, total_count)
-	sys.exit(0 if total_count > 0 and success_count == total_count else 1)
+	sys.exit(0 if total_count > 0 and success_count == total_count and not state_failed else 1)
 
 
 def run_main():
