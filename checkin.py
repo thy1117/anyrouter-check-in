@@ -2519,14 +2519,22 @@ def run_check_in_requests(
 		return False, None, attach_check_in_error(None, error)
 
 
-def write_run_summary(success_count: int, total_count: int) -> None:
-	"""Expose partial failure in Actions without putting credentials in artifacts."""
+def write_run_summary(
+	success_count: int,
+	total_count: int,
+	*,
+	state_failed: bool = False,
+	not_attempted_count: int = 0,
+) -> None:
+	"""Expose partial failure and checkpoint errors in Actions."""
 	path = os.getenv('GITHUB_STEP_SUMMARY')
 	if not path:
 		return
-	failed_count = total_count - success_count
+	failed_count = total_count - success_count - not_attempted_count
 	status = (
-		'All accounts succeeded' if total_count > 0 and failed_count == 0 else 'Check-in failures require attention'
+		'All accounts succeeded'
+		if total_count > 0 and failed_count == 0 and not state_failed and not not_attempted_count
+		else 'Check-in failures require attention'
 	)
 	try:
 		with open(path, 'a', encoding='utf-8') as summary:
@@ -2536,6 +2544,10 @@ def write_run_summary(success_count: int, total_count: int) -> None:
 				f'| {total_count} | {success_count} | {failed_count} |\n\n'
 				'An already-completed check-in counts as success. See the account-specific log for details.\n'
 			)
+			if not_attempted_count:
+				summary.write(f'Not attempted: {not_attempted_count}\n')
+			if state_failed:
+				summary.write('Daily success state could not be saved; verify the account-level log before another run.\n')
 	except OSError:
 		print('[WARN] Could not write GitHub Actions job summary')
 
@@ -2615,9 +2627,11 @@ async def main():
 			sys.exit(1)
 
 	last_balance_hash = load_balance_hash()
-	daily_state = create_daily_success_state(format_check_in_time()[:10])
+	daily_state = None if target_accounts_env else create_daily_success_state(format_check_in_time()[:10])
 	skipped_count = 0
 	state_failed = False
+	stop_after_state_failure = False
+	attempted_count = 0
 
 	success_count = 0
 	total_count = len(accounts)
@@ -2638,6 +2652,7 @@ async def main():
 			success_count += 1
 			print(f'[SKIP] {account.get_display_name(i)}: Confirmed successful today; no account request')
 			continue
+		attempted_count += 1
 		try:
 			success, user_info_before, user_info_after = await check_in_account(
 				account,
@@ -2653,7 +2668,15 @@ async def main():
 						daily_state.save()
 					except DailyStateError as state_error:
 						state_failed = True
+						stop_after_state_failure = True
+						need_notify = True
+						notification_content.append(
+							f'❌ {account.get_display_name(i)} · daily success state was not saved; '
+							'no further accounts processed'
+						)
 						print(f'[FAILED] {state_error}')
+					if stop_after_state_failure:
+						break
 
 			should_notify_this_account = False
 
@@ -2716,9 +2739,11 @@ async def main():
 			need_notify = True
 			notification_content.append(f'[FAIL] {account_name} exception: {str(e)[:50]}...')
 
+	not_attempted_count = max(0, total_count - skipped_count - attempted_count)
 	if daily_state:
 		try:
-			daily_state.save()
+			if not state_failed:
+				daily_state.save()
 		except DailyStateError as state_error:
 			state_failed = True
 			print(f'[FAILED] {state_error}')
@@ -2737,7 +2762,7 @@ async def main():
 		else:
 			print('[INFO] No balance changes detected')
 
-	if current_balance_hash and not target_accounts_env and not skipped_count:
+	if current_balance_hash and not target_accounts_env and not skipped_count and not not_attempted_count:
 		save_balance_hash(current_balance_hash)
 
 	notify_every_run = should_notify_every_run()
@@ -2746,8 +2771,8 @@ async def main():
 	need_notify = need_notify or notify_every_run
 
 	if need_notify:
-		failed_count = total_count - success_count
-		if failed_count == 0:
+		failed_count = total_count - success_count - not_attempted_count
+		if failed_count == 0 and not state_failed and not not_attempted_count:
 			result_icon = '✅'
 		elif success_count > 0:
 			result_icon = '⚠️'
@@ -2758,7 +2783,9 @@ async def main():
 			f'🕘 {format_check_in_time()}',
 		]
 		if skipped_count:
-			summary.append(f'⏭️ 今日此前已成功：{skipped_count} 个；本次执行：{total_count - skipped_count} 个')
+			summary.append(f'⏭️ 今日此前已成功：{skipped_count} 个；本次执行：{attempted_count} 个')
+		if not_attempted_count:
+			summary.append(f'⏸️ 本次未执行：{not_attempted_count} 个')
 		if state_failed:
 			summary.append('⚠️ 当日成功记录保存失败，请检查运行日志')
 		if failed_count:
@@ -2845,7 +2872,12 @@ async def main():
 	else:
 		print('[INFO] All accounts successful and no balance changes detected, notification skipped')
 
-	write_run_summary(success_count, total_count)
+	write_run_summary(
+		success_count,
+		total_count,
+		state_failed=state_failed,
+		not_attempted_count=not_attempted_count,
+	)
 	sys.exit(0 if total_count > 0 and success_count == total_count and not state_failed else 1)
 
 

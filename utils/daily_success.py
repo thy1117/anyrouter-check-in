@@ -6,11 +6,13 @@ import hashlib
 import json
 import os
 import re
+from datetime import date
 from pathlib import Path
 
 import httpx
 
 STATE_PATH = 'checkin-state/daily-success.json'
+MISSING_STATE = object()
 
 
 class DailyStateError(RuntimeError):
@@ -44,34 +46,47 @@ class DailySuccessState:
 			except (OSError, ValueError):
 				raise DailyStateError('Cannot read daily success state; refusing a full replay') from None
 		else:
-			state = None
-		if isinstance(state, dict) and state.get('day', '') > self.day:
-			raise DailyStateError('Daily state is from a newer day; refusing to overwrite it')
+			state = MISSING_STATE
 		self.confirmed = self._keys_for_day(state)
 
 	def _keys_for_day(self, state):
-		if state is None:
+		if state is MISSING_STATE:
 			return set()
+		if state is None:
+			raise DailyStateError('Invalid daily success state; refusing a full replay')
 		if (
 			not isinstance(state, dict)
 			or state.get('version') != 1
 			or not isinstance(state.get('day'), str)
 			or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', state['day'])
+			or not self._is_calendar_day(state['day'])
 			or not isinstance(state.get('confirmed'), list)
 			or not all(isinstance(k, str) and re.fullmatch(r'[0-9a-f]{64}', k) for k in state['confirmed'])
 		):
 			raise DailyStateError('Invalid daily success state; refusing a full replay')
+		if state['day'] > self.day:
+			raise DailyStateError('Daily state is from a newer day; refusing to overwrite it')
 		return set(state['confirmed']) if state['day'] == self.day else set()
+
+	@staticmethod
+	def _is_calendar_day(value: str) -> bool:
+		try:
+			date.fromisoformat(value)
+		except ValueError:
+			return False
+		return True
 
 	def _read_remote(self):
 		try:
 			response = self.client.get(self.remote_path, params={'ref': 'main'})
 			if response.status_code == 404:
-				return None, None
+				return None, MISSING_STATE
 			if response.status_code != 200:
 				raise DailyStateError(f'Cannot read daily success state: HTTP {response.status_code}')
 			data = response.json()
-			return data['sha'], json.loads(base64.b64decode(data['content'], validate=False))
+			state = json.loads(base64.b64decode(data['content'], validate=False))
+			self._keys_for_day(state)
+			return data['sha'], state
 		except (httpx.HTTPError, ValueError, KeyError, TypeError, binascii.Error):
 			raise DailyStateError('Cannot read daily success state; refusing a full replay') from None
 
@@ -109,14 +124,14 @@ class DailySuccessState:
 	def save(self):
 		if not self.dirty or not self.client:
 			return
-		for _ in range(3):
-			# Another state commit (for example Xiaobai token rotation) may have
-			# advanced main after the initial read. Merge the latest same-day set
-			# before constructing the next optimistic-concurrency write.
+		last_error = 'unknown persistence error'
+		for attempt in range(3):
+			# Merge the latest same-day state before each optimistic-concurrency write.
 			self.sha, remote = self._read_remote()
+			remote_keys = self._keys_for_day(remote)
 			if isinstance(remote, dict) and remote.get('day', '') > self.day:
 				raise DailyStateError('Daily state advanced to a newer day; refusing to overwrite it')
-			self.confirmed.update(self._keys_for_day(remote))
+			self.confirmed.update(remote_keys)
 			payload = self._payload()
 			body = {
 				'message': 'Persist confirmed daily check-ins [skip ci]',
@@ -127,23 +142,32 @@ class DailySuccessState:
 				body['sha'] = self.sha
 			try:
 				response = self.client.put(self.remote_path, json=body)
-			except httpx.HTTPError:
+			except httpx.HTTPError as exc:
 				response = None
-			# A timed-out write might already have committed. Read back before retrying.
+				last_error = f'{type(exc).__name__}'
+			else:
+				last_error = f'HTTP {response.status_code}'
+
+			# A timeout or conflict may have committed/changed the file. Read back
+			# before retrying, and never overwrite a newer day.
 			sha, remote = self._read_remote()
 			remote_keys = self._keys_for_day(remote)
-			if remote and remote.get('day', '') > self.day:
+			if isinstance(remote, dict) and remote.get('day', '') > self.day:
 				raise DailyStateError('Daily state advanced to a newer day; refusing to overwrite it')
-			if remote and remote.get('day') == self.day and self.confirmed <= remote_keys:
+			if isinstance(remote, dict) and remote.get('day') == self.day:
+				if self.confirmed <= remote_keys:
+					self.sha = sha
+					self.confirmed.update(remote_keys)
+					self.dirty = False
+					return
+				self.confirmed.update(remote_keys)
 				self.sha = sha
-				self.dirty = False
-				return
 			if response is not None and response.status_code not in (200, 201, 409, 422) and response.status_code < 500:
 				raise DailyStateError(f'Cannot save daily success state: HTTP {response.status_code}')
-			self.sha = sha
-			self.confirmed.update(remote_keys)
 			self._save_local()
-		raise DailyStateError('Cannot confirm saved daily success state; local checkpoint retained')
+			if attempt < 2:
+				continue
+			raise DailyStateError(f'Cannot confirm saved daily success state: {last_error}')
 
 	def close(self):
 		if self.client:

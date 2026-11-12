@@ -44,6 +44,57 @@ async def test_success_is_persisted_before_starting_the_next_account(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_success_state_save_failure_stops_before_next_account(monkeypatch, tmp_path):
+	accounts = [AccountConfig(cookies=None, name=f'test-{i}', provider='test') for i in range(2)]
+	monkeypatch.setenv('CHECKIN_DAILY_STATE_FILE', str(tmp_path / 'daily.json'))
+	monkeypatch.setenv('CHECKIN_STATE_GITHUB_TOKEN', 'token')
+	monkeypatch.setenv('GITHUB_REPOSITORY', 'owner/repo')
+	summary = tmp_path / 'summary.md'
+	monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
+	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
+	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
+	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
+	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
+	monkeypatch.setattr(checkin, 'notify', SimpleNamespace(push_message=Mock()))
+	state = SimpleNamespace(
+		contains=Mock(return_value=False),
+		mark_success=Mock(),
+		save=Mock(side_effect=checkin.DailyStateError('simulated save failure')),
+		close=Mock(),
+	)
+	monkeypatch.setattr(checkin, 'create_daily_success_state', lambda day: state)
+	runner = AsyncMock(return_value=(True, None, None))
+	monkeypatch.setattr(checkin, 'check_in_account', runner)
+	with pytest.raises(SystemExit) as outcome:
+		await checkin.main()
+	assert outcome.value.code == 1
+	assert runner.await_count == 1
+	assert state.contains.call_count == 1
+	assert state.close.called
+	assert 'Not attempted: 1' in summary.read_text()
+	assert '| 2 | 1 | 0 |' in summary.read_text()
+
+
+def test_run_summary_reports_daily_state_failure(monkeypatch, tmp_path):
+	path = tmp_path / 'summary.md'
+	monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(path))
+	checkin.write_run_summary(2, 2, state_failed=True)
+	content = path.read_text()
+	assert 'Check-in failures require attention' in content
+	assert 'Daily success state could not be saved' in content
+	assert '| 2 | 2 | 0 |' in content
+
+
+def test_run_summary_counts_skipped_accounts_as_completed(monkeypatch, tmp_path):
+	path = tmp_path / 'summary.md'
+	monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(path))
+	checkin.write_run_summary(4, 4, not_attempted_count=0)
+	assert '| 4 | 4 | 0 |' in path.read_text()
+
+
+@pytest.mark.asyncio
 async def test_later_daily_runs_only_call_accounts_without_success(monkeypatch, tmp_path):
 	accounts = [AccountConfig(cookies=None, name=f'test-{i}', provider='test') for i in range(2)]
 	monkeypatch.setenv('CHECKIN_DAILY_STATE_FILE', str(tmp_path / 'daily.json'))
@@ -100,7 +151,16 @@ def test_daily_state_does_not_store_credentials_or_confuse_accounts(tmp_path):
 	assert 'secret' not in text and 'same-label' not in text
 
 
-@pytest.mark.parametrize('content', ['invalid json', '{}', '{"version":1,"day":"2026-11-12","confirmed":[true]}'])
+@pytest.mark.parametrize(
+	'content',
+	[
+		'invalid json',
+		'{}',
+		'null',
+		'{"version":1,"day":"2026-11-12","confirmed":[true]}',
+		'{"version":1,"day":"2026-02-30","confirmed":[]}',
+	],
+)
 def test_corrupt_daily_state_prevents_account_replay(tmp_path, content):
 	from utils.daily_success import DailyStateError, DailySuccessState
 
@@ -194,6 +254,44 @@ def test_remote_state_failure_does_not_fall_back_to_full_replay(tmp_path):
 	client.close()
 
 
+def test_remote_json_null_is_not_a_missing_daily_state(tmp_path):
+	import base64
+
+	import httpx
+
+	from utils.daily_success import DailyStateError, DailySuccessState
+
+	content = base64.b64encode(b'null').decode()
+	client = httpx.Client(
+		base_url='https://api.github.com',
+		transport=httpx.MockTransport(
+			lambda request: httpx.Response(200, json={'sha': 'existing-sha', 'content': content})
+		),
+	)
+	with pytest.raises(DailyStateError, match='refusing a full replay'):
+		DailySuccessState('2026-11-12', str(tmp_path / 'state.json'), client=client, repository='owner/repo')
+	client.close()
+
+
+def test_failed_remote_write_with_missing_path_fails_without_crashing(tmp_path):
+	import httpx
+
+	from utils.daily_success import DailyStateError, DailySuccessState
+
+	def handle(request):
+		if request.method == 'GET':
+			return httpx.Response(404)
+		return httpx.Response(500)
+
+	client = httpx.Client(base_url='https://api.github.com', transport=httpx.MockTransport(handle))
+	state = DailySuccessState('2026-11-12', str(tmp_path / 'state.json'), client=client, repository='owner/repo')
+	state.mark_success(AccountConfig(cookies=None, name='done', provider='site'), 0)
+	with pytest.raises(DailyStateError, match='Cannot confirm saved'):
+		state.save()
+	assert state.dirty
+	state.close()
+
+
 @pytest.mark.asyncio
 async def test_targeted_account_can_be_rechecked_after_daily_success(monkeypatch, tmp_path):
 	from utils.daily_success import DailySuccessState
@@ -206,6 +304,30 @@ async def test_targeted_account_can_be_rechecked_after_daily_success(monkeypatch
 	monkeypatch.delenv('CHECKIN_STATE_GITHUB_TOKEN', raising=False)
 	monkeypatch.setenv('CHECKIN_TARGET_ACCOUNTS', 'target')
 	monkeypatch.setattr(checkin, 'format_check_in_time', lambda: '2026-11-12 20:00:00')
+	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: [account])
+	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
+	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
+	sender = Mock()
+	monkeypatch.setattr(checkin.notify, 'push_message', sender)
+	runner = AsyncMock(return_value=(True, None, None))
+	monkeypatch.setattr(checkin, 'check_in_account', runner)
+	with pytest.raises(SystemExit) as outcome:
+		await checkin.main()
+	assert outcome.value.code == 0
+	runner.assert_awaited_once()
+	sender.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_targeted_run_does_not_require_daily_state(monkeypatch):
+	account = AccountConfig(cookies=None, name='target', provider='test')
+	monkeypatch.setenv('CHECKIN_TARGET_ACCOUNTS', 'target')
+	monkeypatch.setattr(
+		checkin,
+		'create_daily_success_state',
+		lambda day: (_ for _ in ()).throw(AssertionError('state should not load')),
+	)
 	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
 	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: [account])
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
