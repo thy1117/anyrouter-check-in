@@ -71,10 +71,43 @@ async def test_success_state_save_failure_stops_before_next_account(monkeypatch,
 		await checkin.main()
 	assert outcome.value.code == 1
 	assert runner.await_count == 1
-	assert state.contains.call_count == 1
+	assert state.contains.call_count == 2
 	assert state.close.called
 	assert 'Not attempted: 1' in summary.read_text()
 	assert '| 2 | 1 | 0 |' in summary.read_text()
+
+
+@pytest.mark.asyncio
+async def test_state_failure_counts_later_previously_completed_accounts(monkeypatch, tmp_path):
+	accounts = [AccountConfig(cookies=None, name=f'test-{i}', provider='test') for i in range(2)]
+	monkeypatch.setenv('CHECKIN_DAILY_STATE_FILE', str(tmp_path / 'daily.json'))
+	monkeypatch.setenv('CHECKIN_STATE_GITHUB_TOKEN', 'token')
+	monkeypatch.setenv('GITHUB_REPOSITORY', 'owner/repo')
+	summary = tmp_path / 'summary.md'
+	monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
+	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
+	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
+	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
+	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
+	monkeypatch.setattr(checkin, 'notify', SimpleNamespace(push_message=Mock()))
+	state = SimpleNamespace(
+		contains=Mock(side_effect=[False, True]),
+		mark_success=Mock(),
+		save=Mock(side_effect=checkin.DailyStateError('simulated save failure')),
+		close=Mock(),
+	)
+	monkeypatch.setattr(checkin, 'create_daily_success_state', lambda day: state)
+	runner = AsyncMock(return_value=(True, None, None))
+	monkeypatch.setattr(checkin, 'check_in_account', runner)
+	with pytest.raises(SystemExit) as outcome:
+		await checkin.main()
+	assert outcome.value.code == 1
+	assert runner.await_count == 1
+	assert state.contains.call_count == 2
+	assert '| 2 | 2 | 0 |' in summary.read_text()
+	assert 'Not attempted:' not in summary.read_text()
 
 
 def test_run_summary_reports_daily_state_failure(monkeypatch, tmp_path):
@@ -101,21 +134,28 @@ async def test_later_daily_runs_only_call_accounts_without_success(monkeypatch, 
 	monkeypatch.delenv('CHECKIN_STATE_GITHUB_TOKEN', raising=False)
 	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
 	monkeypatch.setattr(checkin, 'format_check_in_time', lambda: '2026-11-12 18:00:00')
+	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
 	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
 	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
 	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
-	monkeypatch.setattr(checkin.notify, 'push_message', Mock())
-	runner = AsyncMock(side_effect=[(True, None, None), (False, None, None)])
+	push = Mock()
+	monkeypatch.setattr(checkin.notify, 'push_message', push)
+	balance = {'success': True, 'quota': 1.0, 'used_quota': 0.0}
+	runner = AsyncMock(side_effect=[(True, balance, balance), (False, balance, balance)])
 	monkeypatch.setattr(checkin, 'check_in_account', runner)
 	with pytest.raises(SystemExit) as first:
 		await checkin.main()
 	assert first.value.code == 1
 	assert runner.await_count == 2
+	push.assert_called_once()
+	assert push.call_args is not None
+	assert 'test-0' in push.call_args.args[1] and 'test-1' in push.call_args.args[1]
+	push.reset_mock()
 
 	runner.reset_mock(side_effect=True)
-	runner.side_effect = [(True, None, None)]
+	runner.side_effect = [(True, balance, balance)]
 	with pytest.raises(SystemExit) as second:
 		await checkin.main()
 	assert second.value.code == 0
@@ -123,19 +163,28 @@ async def test_later_daily_runs_only_call_accounts_without_success(monkeypatch, 
 	assert runner.await_args is not None
 	assert runner.await_args.args[:2] == (accounts[1], 1)
 	assert runner.await_args.kwargs['provider_account_index'] == 1
+	push.assert_called_once()
+	assert push.call_args is not None
+	assert 'test-1' in push.call_args.args[1] and 'test-0' not in push.call_args.args[1]
+	assert '签到结果：1/1 成功' in push.call_args.args[1]
+	push.reset_mock()
 
 	runner.reset_mock(side_effect=True)
 	with pytest.raises(SystemExit) as third:
 		await checkin.main()
 	assert third.value.code == 0
 	runner.assert_not_awaited()
+	push.assert_not_called()
 
 	monkeypatch.setattr(checkin, 'format_check_in_time', lambda: '2026-11-13 00:11:00')
-	runner.side_effect = [(True, None, None), (True, None, None)]
+	runner.side_effect = [(True, balance, balance), (True, balance, balance)]
 	with pytest.raises(SystemExit) as tomorrow:
 		await checkin.main()
 	assert tomorrow.value.code == 0
 	assert runner.await_count == 2
+	push.assert_called_once()
+	assert push.call_args is not None
+	assert 'test-0' in push.call_args.args[1] and 'test-1' in push.call_args.args[1]
 
 
 def test_daily_state_does_not_store_credentials_or_confuse_accounts(tmp_path):
