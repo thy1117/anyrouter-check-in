@@ -2651,9 +2651,9 @@ async def main():
 					try:
 						daily_state.mark_success(account, i)
 						daily_state.save()
-					except DailyStateError as error:
+					except DailyStateError as state_error:
 						state_failed = True
-						print(f'[FAILED] {error}')
+						print(f'[FAILED] {state_error}')
 
 			should_notify_this_account = False
 
@@ -2719,9 +2719,9 @@ async def main():
 	if daily_state:
 		try:
 			daily_state.save()
-		except DailyStateError as error:
+		except DailyStateError as state_error:
 			state_failed = True
-			print(f'[FAILED] {error}')
+			print(f'[FAILED] {state_error}')
 		finally:
 			daily_state.close()
 	current_balance_hash = generate_balance_hash(current_balances) if current_balances else None

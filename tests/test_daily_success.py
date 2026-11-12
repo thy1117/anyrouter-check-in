@@ -210,11 +210,12 @@ async def test_targeted_account_can_be_rechecked_after_daily_success(monkeypatch
 	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: [account])
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
-	monkeypatch.setattr(checkin.notify, 'push_message', Mock())
+	sender = Mock()
+	monkeypatch.setattr(checkin.notify, 'push_message', sender)
 	runner = AsyncMock(return_value=(True, None, None))
 	monkeypatch.setattr(checkin, 'check_in_account', runner)
 	with pytest.raises(SystemExit) as outcome:
 		await checkin.main()
 	assert outcome.value.code == 0
 	runner.assert_awaited_once()
-	checkin.notify.push_message.assert_not_called()
+	sender.assert_not_called()
