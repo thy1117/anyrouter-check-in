@@ -23,7 +23,7 @@
 - ✅ 同一北京时间日期内，常规调度只处理尚未成功的账号；跨天自动恢复全量
 - ✅ 绕过 WAF 限制
 
-常规 Actions 运行把确认成功的账号标识写入 `checkin-state/daily-success.json`，只保存日期和身份摘要，不保存登录凭据。后续调度会在登录和签到前跳过这些账号，并在通知中列出跳过和实际执行数量。读取记录失败时停止，避免误触发全量重跑。手动填写 `target_accounts` 仍可独立核对指定账号。
+常规 Actions 运行把确认成功的账号标识写入 `checkin-state/daily-success.json`，只保存日期和身份摘要，不保存登录凭据。所有站点仅在接口流程成功、签到前后余额均有效且本轮可用余额增加时计为成功；不以余额加已用额度的合计增加代替实际余额增加。读不到余额、余额不变或下降（包括接口报告今日已签到但本轮没有增额）均报告「未确认到账」，不写入当天成功记录，后续调度仍会处理。已确认成功的账号在登录和签到前跳过；当天全部成功后不再发送通知。每日成功记录读取失败时停止，避免误触发全量重跑。已有当天成功记录不清空，跨天自动重新确认。手动填写 `target_accounts` 仍可独立核对指定账号。
 
 ## 使用方法
 
@@ -278,7 +278,7 @@ LiveLove 已内置，`LiveLove-112581647` 使用仓库级 Secret `EXTRA_ACCOUNTS
 
 ### 小白 Code 外站签到
 
-小白 Code 使用独立签到页 `https://token.dialoguedui.com/checkin/`，不是 NewAPI 的通用签到接口。内置 `xiaobai` Provider 会先读取签到状态，未签到时再提交签到；access token 失效后会使用 refresh token 自动刷新。
+小白 Code 使用独立签到页 `https://token.dialoguedui.com/checkin/`，不是 NewAPI 的通用签到接口。内置 `xiaobai` Provider 会先读取签到状态，未签到时再提交签到；access token 失效后会使用 refresh token 自动刷新。余额取自 `/api/v1/auth/me` 的 `balance`：复用身份验证时的签到前余额，提交后只读查询一次最新余额，并在通知中显示。该余额查询不会触发额外签到或令牌轮换；缺少有效的前后余额时不确认到账。
 
 ```json
 {

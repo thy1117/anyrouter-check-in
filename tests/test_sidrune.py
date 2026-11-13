@@ -293,7 +293,7 @@ def welfare_session(monkeypatch):
 def test_sidrune_exchanges_fresh_full_welfare_balance_after_checkin(welfare_session, checked):
 	(success, before, after), requests = welfare_session(checked=checked)
 	assert success is True
-	assert before['quota'] == 2.5 and after['quota'] == 3.5927
+	assert before['quota'] == 2.5 and after['quota'] == 3.59272526
 	posts = [request for request in requests if request.method == 'POST']
 	assert len(posts) == (1 if checked else 2)
 	assert json.loads(posts[-1].content) == {'amount': 1.09272526}

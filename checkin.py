@@ -132,6 +132,29 @@ def resolve_check_in_error(user_info_before: dict | None, user_info_after: dict 
 	return 'Unknown error'
 
 
+def _balance_amount(value: object) -> float:
+	"""解析实际金额；缺失、布尔值和非有限数不能成为到账证据。"""
+	if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+		raise ValueError('Missing or invalid balance')
+	try:
+		amount = float(value)
+	except (ValueError, OverflowError):
+		raise ValueError('Missing or invalid balance') from None
+	if not math.isfinite(amount):
+		raise ValueError('Missing or invalid balance')
+	return amount
+
+
+def get_available_balance(user_info: dict | None) -> float | None:
+	"""只接受实际读取到的有限余额，不把缺失或无效值当成零。"""
+	if not user_info or user_info.get('success') is not True:
+		return None
+	try:
+		return _balance_amount(user_info.get('quota'))
+	except ValueError:
+		return None
+
+
 def load_balance_hash():
 	"""加载余额hash"""
 	try:
@@ -426,12 +449,14 @@ def newapi_quota_pair(info: dict) -> tuple[float, float]:
 	的站点该字段缺省为 0，行为与原来一致。
 	新版分支将额度放在 ``account`` 嵌套对象中（recharge_available, grant_available, total_usage）。
 	"""
+	if not isinstance(info, dict):
+		raise ValueError('Missing or invalid balance')
 	acct = info.get('account') if isinstance(info.get('account'), dict) else {}
-	quota = _number(info.get('quota') or acct.get('recharge_available'))
-	gift_quota = _number(info.get('gift_quota') or acct.get('grant_available'))
+	quota = _balance_amount(info['quota'] if 'quota' in info else acct.get('recharge_available'))
+	gift_quota = _balance_amount(info['gift_quota'] if 'gift_quota' in info else acct.get('grant_available', 0))
 	used_quota = _number(info.get('used_quota') or acct.get('total_usage'))
 	return (
-		round((quota + gift_quota) / NEWAPI_QUOTA_PER_UNIT, 2),
+		_balance_amount(quota + gift_quota) / NEWAPI_QUOTA_PER_UNIT,
 		round(used_quota / NEWAPI_QUOTA_PER_UNIT, 2),
 	)
 
@@ -460,7 +485,7 @@ def get_user_info(client, headers, user_info_url: str, *, api_user_key: str | No
 				if data.get('success') or data.get('code') == 0:
 					user_data = data.get('data', {})
 					if 'balance' in user_data and 'quota' not in user_data:
-						quota = round(float(user_data.get('balance', 0.0)), 2)
+						quota = _balance_amount(user_data['balance'])
 						used_quota = round(float(user_data.get('frozen_balance', 0.0)), 2)
 					else:
 						quota, used_quota = newapi_quota_pair(user_data)
@@ -468,7 +493,7 @@ def get_user_info(client, headers, user_info_url: str, *, api_user_key: str | No
 						'success': True,
 						'quota': quota,
 						'used_quota': used_quota,
-						'display': f':money: Current balance: ${quota}, Used: ${used_quota}',
+						'display': f':money: Current balance: ${round(quota, 2)}, Used: ${used_quota}',
 					}
 
 			# 401/403 时继续尝试 session-only 头；其它错误没有必要重复请求。
@@ -683,11 +708,16 @@ def parse_user_info_response(status_code: int, body: str) -> dict:
 	except json.JSONDecodeError:
 		return {'success': False, 'error': 'Failed to get user info: invalid JSON'}
 
+	if not isinstance(data, dict):
+		return {'success': False, 'error': 'Failed to get user info: invalid response data'}
 	if not data.get('success'):
 		return {'success': False, 'error': f'Failed to get user info: {data.get("message", "unknown")}'}
 
-	info = data.get('data') or {}
-	quota, used_quota = newapi_quota_pair(info)
+	info = data.get('data')
+	try:
+		quota, used_quota = newapi_quota_pair(info)
+	except ValueError:
+		return {'success': False, 'error': 'Failed to get user info: missing or invalid balance'}
 	return {
 		'success': True,
 		'quota': quota,
@@ -695,7 +725,7 @@ def parse_user_info_response(status_code: int, body: str) -> dict:
 		'user_id': info.get('id'),
 		'username': info.get('username'),
 		'display_name': info.get('display_name'),
-		'display': f':money: Current balance: ${quota}, Used: ${used_quota}',
+		'display': f':money: Current balance: ${round(quota, 2)}, Used: ${used_quota}',
 	}
 
 
@@ -813,7 +843,10 @@ def parse_sub2api_profile_response(status_code: int, body: str) -> dict:
 	if not isinstance(info, dict):
 		return {'success': False, 'error': 'Failed to get user info: invalid response data'}
 
-	quota = round(_number(info.get('balance')), 4)
+	try:
+		quota = _balance_amount(info.get('balance'))
+	except ValueError:
+		return {'success': False, 'error': 'Failed to get user info: missing or invalid balance'}
 	used_quota = round(
 		_number(
 			info.get(
@@ -1068,13 +1101,13 @@ def run_xiaobai_check_in(
 				access_token, refresh_token = new_access, new_refresh
 				print(f'[AUTH] {account_name}: Updated tokens saved encrypted')
 
-			def authenticate():
+			def authenticate(*, allow_refresh: bool = True):
 				if not access_token:
 					refresh()
 				profile_url = f'{provider_config.domain}{provider_config.user_info_path}'
 				headers['Authorization'] = f'Bearer {access_token}'
 				response = get_with_retry(profile_url)
-				if response.status_code == 401 and refresh_token and not refresh_attempted:
+				if response.status_code == 401 and allow_refresh and refresh_token and not refresh_attempted:
 					refresh()
 					headers['Authorization'] = f'Bearer {access_token}'
 					response = get_with_retry(profile_url)
@@ -1089,8 +1122,10 @@ def run_xiaobai_check_in(
 				if not isinstance(data, dict) or not data.get('id'):
 					raise TokenStateError('Authentication validation returned no user identity')
 				print(f'[AUTH] {account_name}: Main API confirmed a valid session')
+				profile = parse_sub2api_profile_response(response.status_code, response.text)
+				return profile if get_available_balance(profile) is not None else None
 
-			authenticate()
+			user_info_before = authenticate()
 
 			def request(method: str, url: str):
 				for attempt in range(1, XIAOBAI_MAX_REQUEST_ATTEMPTS + 1):
@@ -1128,12 +1163,17 @@ def run_xiaobai_check_in(
 				print(f'[STATUS] {account_name}: Authentication and status verified; no check-in submitted')
 				return (
 					True,
-					None,
-					{'success': True, 'status_only': True, 'signedToday': status.get('signedToday') is True},
+					user_info_before,
+					{
+						**(user_info_before or {}),
+						'success': True,
+						'status_only': True,
+						'signedToday': status.get('signedToday') is True,
+					},
 				)
 			if status.get('signedToday') is True:
 				print(f'[SUCCESS] {account_name}: Already checked in today')
-				return True, None, None
+				return True, user_info_before, user_info_before
 			config = status.get('config')
 			if isinstance(config, dict) and config.get('enabled') is False:
 				raise TokenStateError('Daily check-in is currently disabled')
@@ -1154,7 +1194,15 @@ def run_xiaobai_check_in(
 			if not success:
 				raise TokenStateError('Daily check-in returned an unexpected response')
 			print(f'[SUCCESS] {account_name}: Check-in successful or already checked in')
-			return True, None, None
+			try:
+				# Balance reads must not trigger token rotation or replay a check-in.
+				user_info_after = authenticate(allow_refresh=False)
+			except Exception as exc:
+				print(f'[WARN] {account_name}: Post-check-in balance unavailable - {type(exc).__name__}')
+				user_info_after = None
+			if user_info_after is None:
+				print(f'[WARN] {account_name}: Post-check-in balance unavailable; credit is not confirmed')
+			return True, user_info_before, user_info_after
 	except TokenStateError as exc:
 		error = str(exc)
 	except Exception as exc:
@@ -2663,6 +2711,18 @@ async def main():
 				app_config,
 				provider_account_index=provider_account_index,
 			)
+			before_balance = get_available_balance(user_info_before)
+			after_balance = get_available_balance(user_info_after)
+			if success:
+				if before_balance is None or after_balance is None:
+					error = '未确认到账：未能读取有效的签到前后余额'
+				elif after_balance <= before_balance:
+					error = '未确认到账：本轮余额没有增加（含今日已签到）'
+				else:
+					error = None
+				if error:
+					success = False
+					user_info_after = attach_check_in_error(user_info_after, error)
 			if success:
 				success_count += 1
 				if daily_state:
@@ -2697,14 +2757,14 @@ async def main():
 					}
 				)
 
-			if user_info_after and user_info_after.get('success'):
-				current_quota = user_info_after['quota']
+			if after_balance is not None:
+				current_quota = after_balance
 				current_used = user_info_after['used_quota']
 				current_balances[account_key] = {'quota': current_quota, 'used': current_used}
-				if user_info_before and user_info_before.get('success'):
-					before_quota = user_info_before['quota']
+				if before_balance is not None:
+					before_quota = before_balance
 					before_used = user_info_before['used_quota']
-					after_quota = user_info_after['quota']
+					after_quota = after_balance
 					after_used = user_info_after['used_quota']
 
 					total_before = before_quota + before_used
@@ -2734,7 +2794,8 @@ async def main():
 					notification_content.append(f'✅ {account_name} · 今日已签到')
 				else:
 					error = resolve_check_in_error(user_info_before, user_info_after)
-					notification_content.append(f'❌ {account_name} · {error}')
+					balance_text = f'余额 ${after_balance:.2f}' if after_balance is not None else '余额暂不可用'
+					notification_content.append(f'❌ {account_name} · {error}｜{balance_text}')
 
 		except Exception as e:
 			account_name = account.get_display_name(i)
