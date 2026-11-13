@@ -714,6 +714,8 @@ def parse_user_info_response(status_code: int, body: str) -> dict:
 		return {'success': False, 'error': f'Failed to get user info: {data.get("message", "unknown")}'}
 
 	info = data.get('data')
+	if not isinstance(info, dict):
+		return {'success': False, 'error': 'Failed to get user info: missing or invalid balance'}
 	try:
 		quota, used_quota = newapi_quota_pair(info)
 	except ValueError:
