@@ -1,4 +1,8 @@
-from checkin import get_user_info
+import json
+
+import pytest
+
+from checkin import get_user_info, parse_user_info_response
 
 
 class FakeResponse:
@@ -196,8 +200,61 @@ def test_get_user_info_includes_gift_quota_in_balance():
 
 	result = get_user_info(client, {'Cookie': 'session=valid'}, 'https://api.gemai.cc/api/user/self')
 
-	assert result['quota'] == 243.0
+	assert result['quota'] == 243.001698
 	assert result['display'] == ':money: Current balance: $243.0, Used: $0.0'
+
+
+@pytest.mark.parametrize(
+	'info',
+	[
+		None,
+		[],
+		{},
+		{'quota': None},
+		{'quota': True},
+		{'quota': 'invalid'},
+		{'quota': 'NaN'},
+		{'quota': 'Infinity'},
+		{'quota': 500000, 'gift_quota': 'invalid'},
+		{'account': {'recharge_available': None}},
+	],
+)
+def test_invalid_newapi_balance_is_not_a_zero_baseline(info):
+	payload = {'success': True, 'data': info}
+	client = FakeClient([FakeResponse(200, payload)])
+	for result in (
+		get_user_info(client, {}, 'https://example.com/api/user/self'),
+		parse_user_info_response(200, json.dumps(payload)),
+	):
+		assert result['success'] is False
+		assert 'quota' not in result
+
+
+@pytest.mark.parametrize(
+	'info, expected',
+	[
+		({'quota': 0, 'gift_quota': 0, 'account': {'recharge_available': 500000, 'grant_available': 500000}}, 0),
+		({'quota': '500001'}, 1.000002),
+		({'account': {'recharge_available': 500000, 'grant_available': 1}}, 1.000002),
+	],
+)
+def test_newapi_balance_preserves_zero_and_small_changes(info, expected):
+	payload = {'success': True, 'data': info}
+	client = FakeClient([FakeResponse(200, payload)])
+	for result in (
+		get_user_info(client, {}, 'https://example.com/api/user/self'),
+		parse_user_info_response(200, json.dumps(payload)),
+	):
+		assert result['success'] is True
+		assert result['quota'] == expected
+
+
+@pytest.mark.parametrize('balance', [True, False, None, 'invalid', 'NaN', 'Infinity'])
+def test_direct_balance_does_not_accept_invalid_amounts(balance):
+	client = FakeClient([FakeResponse(200, {'code': 0, 'data': {'balance': balance}})])
+	result = get_user_info(client, {}, 'https://example.com/api/v1/user/profile')
+	assert result['success'] is False
+	assert 'quota' not in result
 
 
 def _captcha_provider():

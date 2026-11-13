@@ -1,8 +1,10 @@
 import json
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
 
+import checkin
 from checkin import run_xiaobai_check_in
 from utils.config import AccountConfig, AppConfig
 from utils.xiaobai_token_state import TokenStateError
@@ -84,8 +86,8 @@ def account(access='access-secret', refresh=''):
 	return AccountConfig(cookies=None, name='小白Code', provider='xiaobai', access_token=access, refresh_token=refresh)
 
 
-def profile_ok():
-	return FakeResponse(200, {'code': 0, 'data': {'id': 1}})
+def profile_ok(**fields):
+	return FakeResponse(200, {'code': 0, 'data': {'id': 1, **fields}})
 
 
 def expired():
@@ -129,8 +131,129 @@ def test_unsigned_account_posts_empty_json(monkeypatch):
 	)
 	install(monkeypatch, client)
 	assert run() == (True, None, None)
-	assert client.calls[-1]['url'].endswith('/checkin/api/checkin')
-	assert client.calls[-1]['json'] == {}
+	assert client.calls[2]['url'].endswith('/checkin/api/checkin')
+	assert client.calls[2]['json'] == {}
+
+
+@pytest.mark.parametrize('balance', [12.34, '12.34', 0, -0.5])
+def test_signed_today_reports_balance_without_an_extra_request(monkeypatch, balance):
+	client = FakeClient(profiles=[profile_ok(balance=balance)], statuses=[signed()])
+	install(monkeypatch, client)
+	success, before, after = run()
+	assert success and before == after
+	assert after['quota'] == float(balance)
+	assert [call['method'] for call in client.calls] == ['GET', 'GET']
+
+
+def test_unsigned_account_reads_updated_balance(monkeypatch):
+	client = FakeClient(
+		profiles=[profile_ok(balance=10, used_balance=2), profile_ok(balance=10.25, used_balance=2)],
+		statuses=[signed(False)],
+		checkins=[FakeResponse(200, {'ok': True, 'data': {'record': {'reward_amount': 0.25}}})],
+	)
+	install(monkeypatch, client)
+	success, before, after = run()
+	assert success
+	assert before['quota'] == 10 and after['quota'] == 10.25
+	assert before['used_quota'] == after['used_quota'] == 2
+	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'POST', 'GET']
+	assert client.calls[-1]['url'].endswith('/api/v1/auth/me')
+
+
+@pytest.mark.parametrize(
+	'failure',
+	[
+		FakeResponse(503, {}),
+		expired(),
+		FakeResponse(200, None, content_type='text/html'),
+		profile_ok(),
+		profile_ok(balance=None),
+		profile_ok(balance=True),
+		profile_ok(balance='private-token'),
+		profile_ok(balance='NaN'),
+		profile_ok(balance='Infinity'),
+		FakeResponse(200, {'code': 0, 'data': {'balance': 10}}),
+		httpx.ReadTimeout('private-token'),
+	],
+)
+def test_optional_balance_failure_does_not_undo_checkin_or_rotate_tokens(monkeypatch, capsys, failure):
+	state = FakeState('access-secret', 'refresh-secret')
+	client = FakeClient(
+		profiles=[profile_ok(balance=10), failure, failure, failure],
+		statuses=[signed(False)],
+		checkins=[FakeResponse(200, {'ok': True, 'data': {'record': {'reward_amount': 0.25}}})],
+	)
+	install(monkeypatch, client, state)
+	success, before, after = run()
+	assert success and before['quota'] == 10 and after is None
+	assert sum(call['method'] == 'POST' for call in client.calls) == 1
+	assert state.saved == []
+	output = capsys.readouterr().out
+	assert 'balance unavailable' in output
+	assert 'private-token' not in output
+
+
+def test_status_only_includes_balance_without_checkin(monkeypatch):
+	client = FakeClient(profiles=[profile_ok(balance=0)], statuses=[signed(False)])
+	install(monkeypatch, client)
+	success, before, after = run(status_only=True)
+	assert success and before['quota'] == after['quota'] == 0
+	assert after['status_only'] and after['signedToday'] is False
+	assert [call['method'] for call in client.calls] == ['GET', 'GET']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+	'before_balance, after_balance, confirmed',
+	[(10, 10.25, True), (None, 10.25, False), (10, None, False), (10, 10, False)],
+)
+async def test_xiaobai_balance_notification_keeps_daily_success_skip(
+	monkeypatch, tmp_path, before_balance, after_balance, confirmed
+):
+	client = FakeClient(
+		profiles=[profile_ok(balance=before_balance), profile_ok(balance=after_balance)],
+		statuses=[signed(False)],
+		checkins=[FakeResponse(200, {'ok': True, 'data': {'record': {'reward_amount': 0.25}}})],
+	)
+	install(monkeypatch, client)
+	monkeypatch.setenv('CHECKIN_DAILY_STATE_FILE', str(tmp_path / 'daily.json'))
+	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
+	monkeypatch.delenv('CHECKIN_STATE_GITHUB_TOKEN', raising=False)
+	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
+	monkeypatch.setattr(checkin, 'format_check_in_time', lambda: '2026-11-13 02:00:00')
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: [account()])
+	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
+	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
+	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
+	runner = AsyncMock(side_effect=lambda acct, *args, **kwargs: run(acct))
+	monkeypatch.setattr(checkin, 'check_in_account', runner)
+	sender = Mock()
+	monkeypatch.setattr(checkin.notify, 'push_message', sender)
+	with pytest.raises(SystemExit) as first:
+		await checkin.main()
+	assert first.value.code == (0 if confirmed else 1)
+	sender.assert_called_once()
+	message = sender.call_args.args[1]
+	assert message.count('小白Code') == 1 and f'{int(confirmed)}/1 成功' in message
+	assert (f'余额 ${after_balance:.2f}' if after_balance is not None else '余额暂不可用') in message
+	assert '余额 $0.00' not in message
+	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'POST', 'GET']
+	if not confirmed:
+		from utils.daily_success import DailySuccessState
+
+		state = DailySuccessState('2026-11-13', str(tmp_path / 'daily.json'))
+		assert not state.contains(account(), 0)
+		state.close()
+		return
+
+	runner.reset_mock()
+	sender.reset_mock()
+	with pytest.raises(SystemExit) as second:
+		await checkin.main()
+	assert second.value.code == 0
+	runner.assert_not_awaited()
+	sender.assert_not_called()
+	assert len(client.calls) == 4
 
 
 def test_expired_session_refreshes_correct_path_and_persists_before_status(monkeypatch):

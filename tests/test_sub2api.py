@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from checkin import _sub2api_token_from_response, is_checked_in_status, parse_sub2api_profile_response, unwrap_api_data
 
 
@@ -42,6 +44,28 @@ def test_parse_sub2api_profile_error():
 def test_bearer_profile_parser_accepts_tokenrouter_user_shape():
 	body = json.dumps({'code': 0, 'data': {'balance': 7.44, 'used_balance': 0.0147}})
 	assert parse_sub2api_profile_response(200, body)['display'] == ':money: Current balance: $7.4400, Used: $0.0147'
+
+
+@pytest.mark.parametrize('balance', [None, True, False, '', 'invalid', [], {}, 'NaN', 'Infinity', '-Infinity'])
+def test_invalid_balance_is_not_a_zero_baseline(balance):
+	result = parse_sub2api_profile_response(200, json.dumps({'code': 0, 'data': {'balance': balance}}))
+	assert result['success'] is False
+	assert 'quota' not in result
+
+
+@pytest.mark.parametrize('payload', [{}, {'code': 0, 'data': {}}, {'code': 0, 'data': None}])
+def test_missing_balance_is_not_a_zero_baseline(payload):
+	result = parse_sub2api_profile_response(200, json.dumps(payload))
+	assert result['success'] is False
+	assert 'quota' not in result
+
+
+@pytest.mark.parametrize('balance', [0, -0.5, '1.000001'])
+def test_balance_keeps_precision_and_optional_usage(balance):
+	result = parse_sub2api_profile_response(200, json.dumps({'balance': balance}))
+	assert result['success'] is True
+	assert result['quota'] == float(balance)
+	assert result['used_quota'] == 0
 
 
 def test_tokenrouter_checked_in_status_shape():

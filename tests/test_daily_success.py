@@ -28,7 +28,11 @@ async def test_success_is_persisted_before_starting_the_next_account(monkeypatch
 
 	async def run(account, index, config, **kwargs):
 		events.append(('started', index))
-		return True, None, None
+		return (
+			True,
+			{'success': True, 'quota': 1.0, 'used_quota': 0.0},
+			{'success': True, 'quota': 1.25, 'used_quota': 0.0},
+		)
 
 	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
 	monkeypatch.setattr(checkin, 'create_daily_success_state', lambda day: State())
@@ -65,7 +69,13 @@ async def test_success_state_save_failure_stops_before_next_account(monkeypatch,
 		close=Mock(),
 	)
 	monkeypatch.setattr(checkin, 'create_daily_success_state', lambda day: state)
-	runner = AsyncMock(return_value=(True, None, None))
+	runner = AsyncMock(
+		return_value=(
+			True,
+			{'success': True, 'quota': 1.0, 'used_quota': 0.0},
+			{'success': True, 'quota': 1.25, 'used_quota': 0.0},
+		)
+	)
 	monkeypatch.setattr(checkin, 'check_in_account', runner)
 	with pytest.raises(SystemExit) as outcome:
 		await checkin.main()
@@ -99,7 +109,13 @@ async def test_state_failure_counts_later_previously_completed_accounts(monkeypa
 		close=Mock(),
 	)
 	monkeypatch.setattr(checkin, 'create_daily_success_state', lambda day: state)
-	runner = AsyncMock(return_value=(True, None, None))
+	runner = AsyncMock(
+		return_value=(
+			True,
+			{'success': True, 'quota': 1.0, 'used_quota': 0.0},
+			{'success': True, 'quota': 1.25, 'used_quota': 0.0},
+		)
+	)
 	monkeypatch.setattr(checkin, 'check_in_account', runner)
 	with pytest.raises(SystemExit) as outcome:
 		await checkin.main()
@@ -143,7 +159,8 @@ async def test_later_daily_runs_only_call_accounts_without_success(monkeypatch, 
 	push = Mock()
 	monkeypatch.setattr(checkin.notify, 'push_message', push)
 	balance = {'success': True, 'quota': 1.0, 'used_quota': 0.0}
-	runner = AsyncMock(side_effect=[(True, balance, balance), (False, balance, balance)])
+	credited_balance = {'success': True, 'quota': 1.25, 'used_quota': 0.0}
+	runner = AsyncMock(side_effect=[(True, balance, credited_balance), (False, balance, balance)])
 	monkeypatch.setattr(checkin, 'check_in_account', runner)
 	with pytest.raises(SystemExit) as first:
 		await checkin.main()
@@ -155,7 +172,7 @@ async def test_later_daily_runs_only_call_accounts_without_success(monkeypatch, 
 	push.reset_mock()
 
 	runner.reset_mock(side_effect=True)
-	runner.side_effect = [(True, balance, balance)]
+	runner.side_effect = [(True, balance, credited_balance)]
 	with pytest.raises(SystemExit) as second:
 		await checkin.main()
 	assert second.value.code == 0
@@ -177,7 +194,7 @@ async def test_later_daily_runs_only_call_accounts_without_success(monkeypatch, 
 	push.assert_not_called()
 
 	monkeypatch.setattr(checkin, 'format_check_in_time', lambda: '2026-11-13 00:11:00')
-	runner.side_effect = [(True, balance, balance), (True, balance, balance)]
+	runner.side_effect = [(True, balance, credited_balance), (True, balance, credited_balance)]
 	with pytest.raises(SystemExit) as tomorrow:
 		await checkin.main()
 	assert tomorrow.value.code == 0
@@ -359,7 +376,13 @@ async def test_targeted_account_can_be_rechecked_after_daily_success(monkeypatch
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
 	sender = Mock()
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
-	runner = AsyncMock(return_value=(True, None, None))
+	runner = AsyncMock(
+		return_value=(
+			True,
+			{'success': True, 'quota': 1.0, 'used_quota': 0.0},
+			{'success': True, 'quota': 1.25, 'used_quota': 0.0},
+		)
+	)
 	monkeypatch.setattr(checkin, 'check_in_account', runner)
 	with pytest.raises(SystemExit) as outcome:
 		await checkin.main()
@@ -383,7 +406,13 @@ async def test_targeted_run_does_not_require_daily_state(monkeypatch):
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
 	sender = Mock()
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
-	runner = AsyncMock(return_value=(True, None, None))
+	runner = AsyncMock(
+		return_value=(
+			True,
+			{'success': True, 'quota': 1.0, 'used_quota': 0.0},
+			{'success': True, 'quota': 1.25, 'used_quota': 0.0},
+		)
+	)
 	monkeypatch.setattr(checkin, 'check_in_account', runner)
 	with pytest.raises(SystemExit) as outcome:
 		await checkin.main()

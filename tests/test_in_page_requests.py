@@ -125,7 +125,7 @@ def test_parse_user_info_includes_gift_quota_in_balance():
 	info = parse_user_info_response(200, body)
 
 	assert info['success'] is True
-	assert info['quota'] == 243.0
+	assert info['quota'] == 243.001698
 	assert info['used_quota'] == 395.0
 
 
