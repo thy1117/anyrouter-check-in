@@ -26,6 +26,7 @@ from cloakbrowser import launch_async
 from dotenv import load_dotenv
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from utils.balance_history import BalanceHistory, BalanceHistoryError
 from utils.browser import (
 	BrowserLoginResult,
 	has_session_cookie,
@@ -2491,6 +2492,9 @@ async def check_in_account(
 
 
 async def _run_account_checkin(account: AccountConfig, account_name: str, provider_config):
+	if provider_config.name == 'anyrouter':
+		return read_anyrouter_balance(account, account_name, provider_config)
+
 	if provider_config.name == 'twinkle':
 		return await run_twinkle_check_in(account, account_name, provider_config)
 
@@ -2605,6 +2609,59 @@ async def _run_account_checkin(account: AccountConfig, account_name: str, provid
 		# keep_open 借出的浏览器上下文在这里统一释放。
 		if login_context is not None:
 			await login_context.close()
+
+
+def read_anyrouter_balance(account: AccountConfig, account_name: str, provider_config):
+	"""Only read AnyRouter balance; an increase from the previous observation is success."""
+	history = BalanceHistory(account, provider_config)
+	before = None
+	after = None
+	try:
+		previous = history.load()
+		if previous is not None:
+			before = {'success': True, **previous}
+		headers = {
+			'Accept': 'application/json',
+			'X-Requested-With': 'XMLHttpRequest',
+			'Referer': provider_config.domain,
+		}
+		if account.api_user:
+			headers[provider_config.api_user_key] = str(account.api_user)
+		if account.access_token:
+			headers['Authorization'] = f'Bearer {account.access_token}'
+		client_options = {'http2': provider_config.http2, 'timeout': 30}
+		proxy = get_proxy_server(use_proxy=provider_config.use_proxy)
+		if proxy:
+			client_options['proxy'] = proxy
+		with httpx.Client(**client_options) as client:
+			client.cookies.update(parse_cookies(account.cookies))
+			url = f'{provider_config.domain}{provider_config.user_info_path}'
+			response = client.get(url, headers=headers)
+			if response.status_code in (401, 403) and provider_config.api_user_key in headers:
+				headers.pop(provider_config.api_user_key)
+				response = client.get(url, headers=headers)
+			after = parse_user_info_response(response.status_code, response.text)
+		if not after.get('success'):
+			error = '余额读取失败；保留上次余额，未发送签到请求'
+			return False, before, attach_check_in_error(after, error)
+		if account.api_user and str(after.get('user_id')) != str(account.api_user):
+			return False, before, attach_check_in_error(after, '余额账号身份不匹配；未更新余额记录')
+		history.save(after, format_check_in_time())
+		after['balance_only'] = True
+		if before is None:
+			print(f'[INFO] {account_name}: 首次记录余额 ${after["quota"]:.2f}，等待后续余额增加')
+			return False, None, attach_check_in_error(after, '首次建立余额基线，尚无可比较的历史余额')
+		delta = after['quota'] - before['quota']
+		if delta > 0:
+			print(f'[SUCCESS] {account_name}: 余额较上次增加 ${delta:.2f}，按余额记为签到成功')
+			return True, before, after
+		return False, before, attach_check_in_error(after, '余额较上次未增加；本次仅查询余额')
+	except BalanceHistoryError as exc:
+		return False, before, attach_check_in_error(after, str(exc))
+	except Exception as exc:
+		return False, before, attach_check_in_error(after, f'Balance read failed: {type(exc).__name__}')
+	finally:
+		history.close()
 
 
 def run_check_in_requests(
@@ -2933,6 +2990,8 @@ async def main():
 					total_after = after_quota + after_used
 
 					check_in_reward = total_after - total_before
+					if user_info_after.get('balance_only'):
+						check_in_reward = after_quota - before_quota
 					usage_increase = after_used - before_used
 					balance_change = after_quota - before_quota
 
