@@ -656,6 +656,7 @@ async def request_in_page(
 	*,
 	method: str = 'GET',
 	headers: dict[str, str] | None = None,
+	json_body: dict | None = None,
 ) -> tuple[int, str]:
 	"""在页面里用 fetch 发同源请求，返回 (status, body)。
 
@@ -665,15 +666,16 @@ async def request_in_page(
 	"""
 	for attempt in range(1, 4):
 		result = await page.evaluate(
-			"""async ({path, method, headers}) => {
+			"""async ({path, method, headers, body}) => {
 				const res = await fetch(path, {
 					method,
 					headers,
+					body: body == null ? undefined : JSON.stringify(body),
 					credentials: 'include',
 				});
 				return {status: res.status, body: await res.text()};
 			}""",
-			{'path': path, 'method': method, 'headers': headers or {}},
+			{'path': path, 'method': method, 'headers': headers or {}, 'body': json_body},
 		)
 		status = int(result['status'])
 		# A failed POST may already have changed server state. Only replay GETs.

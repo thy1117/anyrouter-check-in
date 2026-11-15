@@ -19,6 +19,7 @@ class ProviderConfig:
 	api_style: Literal['newapi', 'sub2api', 'tokenrouter', 'xiaobai'] = 'newapi'
 	login_path: str = '/login'
 	login_api_path: str | None = None
+	login_in_page: bool = False
 	sign_in_path: str | None = '/api/user/sign_in'
 	check_in_status_path: str | None = None
 	user_info_path: str = '/api/user/self'
@@ -35,6 +36,7 @@ class ProviderConfig:
 	checkin_captcha: bool = False
 	checkin_turnstile: bool = False
 	turnstile_site_key: str = ''
+	turnstile_header: str = ''
 	captcha_path: str = '/api/captcha?scene=checkin'
 	captcha_code_key: str = 'captcha_code'
 
@@ -83,6 +85,7 @@ class ProviderConfig:
 		default_checkin_captcha = defaults.checkin_captcha if defaults else False
 		default_checkin_turnstile = defaults.checkin_turnstile if defaults else False
 		default_turnstile_site_key = defaults.turnstile_site_key if defaults else ''
+		default_turnstile_header = defaults.turnstile_header if defaults else ''
 		default_captcha_path = defaults.captcha_path if defaults else '/api/captcha?scene=checkin'
 		default_captcha_code_key = defaults.captcha_code_key if defaults else 'captcha_code'
 		return cls(
@@ -91,6 +94,7 @@ class ProviderConfig:
 			api_style=data.get('api_style', defaults.api_style if defaults else 'newapi'),
 			login_path=data.get('login_path', defaults.login_path if defaults else '/login'),
 			login_api_path=data.get('login_api_path', defaults.login_api_path if defaults else None),
+			login_in_page=data.get('login_in_page', defaults.login_in_page if defaults else False),
 			sign_in_path=data.get('sign_in_path', defaults.sign_in_path if defaults else '/api/user/sign_in'),
 			check_in_status_path=data.get(
 				'check_in_status_path',
@@ -113,6 +117,7 @@ class ProviderConfig:
 			checkin_captcha=data.get('checkin_captcha', default_checkin_captcha),
 			checkin_turnstile=data.get('checkin_turnstile', default_checkin_turnstile),
 			turnstile_site_key=data.get('turnstile_site_key', default_turnstile_site_key),
+			turnstile_header=data.get('turnstile_header', default_turnstile_header),
 			captcha_path=data.get('captcha_path', default_captcha_path),
 			captcha_code_key=data.get('captcha_code_key', default_captcha_code_key),
 		)
@@ -280,6 +285,7 @@ class AppConfig:
 				persist_profile=True,
 				checkin_turnstile=True,
 				turnstile_site_key='0x4AAAAAAFzQFgcStO4iZt6_',
+				turnstile_header='X-Turnstile-Token',
 			),
 			'chuanapi': ProviderConfig(
 				name='chuanapi',
@@ -339,9 +345,11 @@ class AppConfig:
 			'kapibala': ProviderConfig(
 				name='kapibala',
 				domain='https://kapibala.asia',
-				login_path='/profile',
+				login_path='/sign-in',
 				login_api_path='/api/user/login',
+				login_in_page=True,
 				sign_in_path='/api/user/checkin',
+				check_in_status_path='/api/user/checkin',
 				user_info_path='/api/user/self',
 				auth_refresh_path='/api/user/auth/refresh',
 				api_user_key='New-Api-User',

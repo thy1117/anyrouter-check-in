@@ -397,7 +397,13 @@ Zero.cat（`https://zero.cat/profile`）使用 NewAPI 的个人访问令牌（`a
 | 91Token-1123 | 2117 | `EXTRA_ACCOUNTS_145` |
 | 91Token-1125 | 2120 | `EXTRA_ACCOUNTS_146` |
 
-站点启用 Turnstile，复用现有浏览器签到流程：先读取今日状态，已经签到则跳过；未签到时提交一次，并由服务端的 `checked_in_today` 确认结果。令牌仅保存在 GitHub Secret 中。
+站点启用 Turnstile，复用现有浏览器签到流程：先读取今日状态，已经签到则跳过；未签到时提交一次，并由服务端的 `checked_in_today` 确认结果。验证码通过当前官网要求的 `X-Turnstile-Token` 请求头提交；个人访问令牌仍仅保存在 GitHub Secret 中。
+
+### Kapibala
+
+Kapibala（`https://kapibala.asia/sign-in`）使用现有 `provider: "kapibala"` 的用户名和密码配置。脚本在独立浏览器会话中读取站点验证设置，完成登录验证码后按官网协议提交 `/api/user/login?turnstile=...`。登录后核对用户身份与今日签到状态，未签到时使用新的验证码提交一次签到，并读取服务端状态和余额确认结果。登录和签到验证码不会复用；临时登录会话在处理结束后注销。
+
+验证未完成、身份不匹配、登录被拒绝或站点要求暂未支持的加密登录时会停止该账号。签到提交后只查询结果，不重复提交。现有账号 Secret 和定时触发配置无需修改。
 
 ### ChuanAPI
 
@@ -662,6 +668,8 @@ MotoMoto（<https://motomoto.lol/console/personal>）使用 NewAPI，签到接�
 - `domain` (必需)：服务商的域名
 - `login_path` (可选)：登录页面路径，默认为 `/login`（仅在 `bypass_method` 为 `"waf_cookies"` 时使用）
 - `sign_in_path` (可选)：签到 API 路径，默认为 `/api/user/sign_in`
+- `login_in_page` (可选)：在同一浏览器中完成 NewAPI 账号密码验证登录与签到，默认关闭；Kapibala 内置开启
+- `turnstile_header` (可选)：签到验证码使用的请求头名称；留空时保留 `turnstile` 查询参数，91Token 内置为 `X-Turnstile-Token`
 - `user_info_path` (可选)：用户信息 API 路径，默认为 `/api/user/self`
 - `api_user_key` (可选)：API 用户标识请求头名称，默认为 `new-api-user`
 - `bypass_method` (可选)：WAF 绕过方法
