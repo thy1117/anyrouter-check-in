@@ -31,7 +31,7 @@ def test_91token_accounts_keep_their_ids_and_are_wired_into_workflow(monkeypatch
 				[{'name': f'91Token-{name}', 'provider': '91token', 'api_user': uid, 'access_token': 'test-pat'}]
 			),
 		)
-		workflow = Path('.github/workflows/checkin.yml').read_text()
+		workflow = Path('.github/workflows/checkin.yml').read_text(encoding='utf-8')
 		assert f'EXTRA_ACCOUNTS_{slot}: ${{{{ secrets.EXTRA_ACCOUNTS_{slot} }}}}' in workflow
 	accounts = load_accounts_config()
 	assert [(account.name, account.api_user) for account in accounts] == [
@@ -56,6 +56,7 @@ async def test_91token_uses_turnstile_only_when_needed_and_confirms_status(monke
 	assert provider.login_path == '/profile'
 	assert provider.sign_in_path == provider.check_in_status_path == '/api/user/checkin'
 	assert provider.checkin_turnstile and provider.persist_profile and provider.turnstile_site_key
+	assert provider.turnstile_header == 'X-Turnstile-Token'
 	assert provider.use_proxy is False
 	account = AccountConfig(cookies=None, provider='91token', access_token='test-pat', api_user='1791')
 	page = SimpleNamespace(goto=AsyncMock())
@@ -80,7 +81,91 @@ async def test_91token_uses_turnstile_only_when_needed_and_confirms_status(monke
 	assert success and before['success'] and after['checked_in_today']
 	posts = [call for call in request.await_args_list if call.kwargs.get('method') == 'POST']
 	assert len(posts) == solve.await_count == int(not checked)
+	if posts:
+		post = posts[0]
+		assert post.args[1] == '/api/user/checkin'
+		assert 'test-challenge' not in post.args[1]
+		assert 'turnstile=' not in post.args[1]
+		assert post.kwargs['headers']['X-Turnstile-Token'] == 'test-challenge'
 	for call in request.await_args_list:
 		assert call.kwargs['headers']['Authorization'] == 'Bearer test-pat'
 		assert call.kwargs['headers']['New-Api-User'] == '1791'
+		if call.kwargs.get('method') != 'POST':
+			assert 'X-Turnstile-Token' not in call.kwargs['headers']
+	context.close.assert_awaited_once()
+
+
+async def test_91token_empty_turnstile_never_submits(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+	provider = AppConfig.load_from_env().providers['91token']
+	account = AccountConfig(cookies=None, provider='91token', access_token='test-pat', api_user='1791')
+	page = SimpleNamespace(goto=AsyncMock())
+	context = SimpleNamespace(
+		new_page=AsyncMock(return_value=page), cookies=AsyncMock(return_value=[]), close=AsyncMock()
+	)
+	monkeypatch.setattr(checkin, 'load_browser_login_settings', lambda *a, **kw: SimpleNamespace(wait_timeout_ms=1000))
+	monkeypatch.setattr(checkin, 'launch_login_context', AsyncMock(return_value=context))
+	monkeypatch.setattr(checkin, 'prepare_browser_page', AsyncMock())
+	monkeypatch.setattr(checkin, 'wait_for_waf_ready', AsyncMock())
+	monkeypatch.setattr(
+		checkin, 'solve_turnstile_in_page', AsyncMock(return_value=(None, 'Turnstile token was not obtained'))
+	)
+	monkeypatch.setattr(checkin, 'reset_turnstile_in_page', AsyncMock())
+	monkeypatch.setattr(checkin, 'GOROUTER_TURNSTILE_ATTEMPTS', 1)
+	profile = (200, json.dumps({'success': True, 'data': {'id': 1791, 'quota': 500000}}))
+	status = (200, json.dumps({'success': True, 'data': {'stats': {'checked_in_today': False}}}))
+	request = AsyncMock(side_effect=[profile, status])
+	monkeypatch.setattr(checkin, 'request_in_page', request)
+
+	success, _before, after = await checkin._run_account_checkin(account, '91Token-1117', provider)
+
+	assert success is False
+	assert after['check_in_phase'] == 'not_submitted'
+	assert after['check_in_submitted'] is False
+	assert not [call for call in request.await_args_list if call.kwargs.get('method') == 'POST']
+	context.close.assert_awaited_once()
+
+
+@pytest.mark.parametrize('submission', ['gateway_error', 'transport_error', 'rejected'])
+async def test_91token_does_not_replay_a_submitted_challenge(monkeypatch, submission, capsys):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+	provider = AppConfig.load_from_env().providers['91token']
+	account = AccountConfig(cookies=None, provider='91token', access_token='test-pat', api_user='1791')
+	page = SimpleNamespace(goto=AsyncMock())
+	context = SimpleNamespace(
+		new_page=AsyncMock(return_value=page), cookies=AsyncMock(return_value=[]), close=AsyncMock()
+	)
+	monkeypatch.setattr(checkin, 'load_browser_login_settings', lambda *a, **kw: SimpleNamespace(wait_timeout_ms=1000))
+	monkeypatch.setattr(checkin, 'launch_login_context', AsyncMock(return_value=context))
+	monkeypatch.setattr(checkin, 'prepare_browser_page', AsyncMock())
+	monkeypatch.setattr(checkin, 'wait_for_waf_ready', AsyncMock())
+	solve = AsyncMock(return_value=('test-challenge', None))
+	monkeypatch.setattr(checkin, 'solve_turnstile_in_page', solve)
+	monkeypatch.setattr(checkin, 'reset_turnstile_in_page', AsyncMock())
+	profile = (200, json.dumps({'success': True, 'data': {'id': 1791, 'quota': 500000}}))
+	status = lambda value: (200, json.dumps({'success': True, 'data': {'stats': {'checked_in_today': value}}}))
+	if submission == 'gateway_error':
+		responses = [(502, 'Bad Gateway'), status(True), profile]
+	elif submission == 'transport_error':
+		responses = [RuntimeError('submission URL contained test-challenge'), status(True), profile]
+	else:
+		responses = [(200, '{"success":false,"message":"Turnstile token is empty"}')]
+	request = AsyncMock(side_effect=[profile, status(False), *responses])
+	monkeypatch.setattr(checkin, 'request_in_page', request)
+
+	success, _before, after = await checkin._run_account_checkin(account, '91Token-1117', provider)
+
+	assert success is (submission != 'rejected')
+	assert after['check_in_submitted'] is True
+	assert after['check_in_phase'] == ('submission_rejected' if submission == 'rejected' else 'confirmed')
+	posts = [call for call in request.await_args_list if call.kwargs.get('method') == 'POST']
+	assert len(posts) == solve.await_count == 1
+	assert posts[0].args[1] == '/api/user/checkin'
+	assert posts[0].kwargs['headers']['X-Turnstile-Token'] == 'test-challenge'
+	for call in request.await_args_list:
+		if call.kwargs.get('method') != 'POST':
+			assert 'X-Turnstile-Token' not in call.kwargs['headers']
+	assert 'test-challenge' not in capsys.readouterr().out
 	context.close.assert_awaited_once()

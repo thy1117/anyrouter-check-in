@@ -24,12 +24,10 @@ if hasattr(sys.stderr, 'reconfigure'):
 import httpx
 from cloakbrowser import launch_async
 from dotenv import load_dotenv
-from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from utils.browser import (
 	BrowserLoginResult,
-	click_turnstile_checkbox,
 	has_session_cookie,
 	is_logged_in,
 	launch_login_context,
@@ -43,7 +41,6 @@ from utils.browser import (
 	save_login_screenshot,
 	solve_turnstile_in_page,
 	take_pending_screenshots,
-	turnstile_widget_box,
 	verify_browser_login,
 	wait_for_cookies,
 	wait_for_waf_ready,
@@ -1464,7 +1461,8 @@ def run_bearer_check_in(
 				success = True
 			elif status_response.status_code == 200 and (
 				is_checked_in_status(status_payload)
-				or provider_config.name == 'mtnapi' and status_payload['claimed'] is True
+				or provider_config.name == 'mtnapi'
+				and status_payload['claimed'] is True
 			):
 				print(f'[SUCCESS] {account_name}: Already checked in today')
 				success = True
@@ -1673,6 +1671,127 @@ async def run_twinkle_check_in(account, account_name, provider_config):
 	return False, before, attach_check_in_error(None, error)
 
 
+async def run_newapi_login_check_in_in_page(
+	account: AccountConfig,
+	account_name: str,
+	provider_config,
+) -> tuple[bool, dict | None, dict | None]:
+	"""Complete NewAPI credential login and check-in in one isolated browser session."""
+	identifier = account.get_login_identifier()
+	if not identifier or not account.password or not provider_config.login_api_path:
+		return False, None, attach_check_in_error(None, 'Browser login requires account credentials')
+	settings = load_browser_login_settings(account_name, provider_config.name, persist_profile=False)
+	context = None
+	page = None
+	logout_headers = None
+	try:
+		context = await launch_login_context(settings, use_proxy=provider_config.use_proxy)
+		page = await context.new_page()
+		await prepare_browser_page(page)
+		await page.goto(
+			f'{provider_config.domain}{provider_config.login_path}',
+			wait_until='domcontentloaded',
+			timeout=settings.wait_timeout_ms,
+		)
+		await wait_for_waf_ready(page, settings.wait_timeout_ms)
+		headers = {
+			'Accept': 'application/json, text/plain, */*',
+			'Content-Type': 'application/json',
+			'X-Requested-With': 'XMLHttpRequest',
+		}
+		status, body = await request_in_page(page, '/api/status', headers=headers)
+		if status != 200:
+			raise ValueError(f'Public login settings unavailable: HTTP {status}; no login submitted')
+		payload = json.loads(body)
+		config = payload.get('data') if isinstance(payload, dict) and payload.get('success') is True else None
+		if not isinstance(config, dict) or not isinstance(config.get('turnstile_check'), bool):
+			raise ValueError('Public login verification settings are invalid; no login submitted')
+		if config.get('password_login_enabled') is False:
+			raise ValueError('Account credential login is disabled; no login submitted')
+		if config.get('password_login_encryption_enabled'):
+			raise ValueError('Encrypted credential login is required; use the website to sign in')
+		if config.get('checkin_enabled') is not True:
+			raise ValueError('Daily check-in is disabled; no login submitted')
+		turnstile_required = config['turnstile_check']
+		site_key = config.get('turnstile_site_key')
+		login_path = provider_config.login_api_path
+		if turnstile_required:
+			if not isinstance(site_key, str) or not site_key.strip():
+				raise ValueError('Login verification site key is missing; no login submitted')
+			token, _ = await solve_turnstile_in_page(page, site_key)
+			if not token:
+				raise ValueError('Login verification incomplete; no login submitted')
+			separator = '&' if '?' in login_path else '?'
+			login_path = f'{login_path}{separator}turnstile={quote(token, safe="")}'
+		print(f'[AUTH] {account_name}: Submitting browser credential login')
+		try:
+			status, body = await request_in_page(
+				page,
+				login_path,
+				method='POST',
+				headers=headers,
+				json_body={'username': identifier, 'password': account.password},
+			)
+		finally:
+			if turnstile_required:
+				await reset_turnstile_in_page(page)
+		if status != 200:
+			raise ValueError(f'Browser login rejected: HTTP {status}; login was not repeated')
+		payload = json.loads(body)
+		data = payload.get('data') if isinstance(payload, dict) and payload.get('success') is True else None
+		if not isinstance(data, dict):
+			raise ValueError('Browser login rejected by the site; login was not repeated')
+		if data.get('requires_2fa'):
+			raise ValueError('Browser login requires 2FA; complete login on the website')
+		access_token = data.get('access_token')
+		if not isinstance(access_token, str) or not access_token:
+			raise ValueError('Browser login did not return an access token')
+		session = data.get('session')
+		session_id = session.get('sid') if isinstance(session, dict) else None
+		headers = {**headers, 'Authorization': f'Bearer {access_token}'}
+		if isinstance(session_id, str) and session_id:
+			headers['X-Auth-Session'] = session_id
+		logout_headers = headers.copy()
+		user = data.get('user')
+		if not isinstance(user, dict) or not user.get('id'):
+			raise ValueError('Browser login did not return a verifiable account identity')
+		user_id = str(user['id'])
+		if account.api_user and str(account.api_user) != user_id:
+			raise ValueError('Browser login user ID does not match account configuration')
+		if account.username and user.get('username') != account.username:
+			raise ValueError('Browser login username does not match account configuration')
+		if not account.username and account.email and str(user.get('email', '')).casefold() != account.email.casefold():
+			raise ValueError('Browser login email does not match account configuration')
+		if provider_config.api_user_key:
+			headers[provider_config.api_user_key] = user_id
+		print(f'[AUTH] {account_name}: Browser login identity verified')
+		return await _check_in_in_authenticated_page(
+			page,
+			account_name,
+			provider_config,
+			headers,
+			settings,
+			turnstile_required=turnstile_required,
+			turnstile_site_key=site_key,
+			expected_user_id=user_id,
+		)
+	except ValueError as exc:
+		error = 'Browser login returned invalid JSON; no retry' if isinstance(exc, json.JSONDecodeError) else str(exc)
+	except Exception as exc:
+		# Browser exceptions can contain a URL with a challenge token or credential payload.
+		error = f'Browser login/check-in failed: {type(exc).__name__}; no request replay'
+	finally:
+		if page is not None and logout_headers is not None:
+			try:
+				await request_in_page(page, '/api/user/auth/logout', method='POST', headers=logout_headers)
+			except Exception:
+				print(f'[WARN] {account_name}: Temporary browser session could not be closed on the site')
+		if context is not None:
+			await context.close()
+	print(f'[FAILED] {account_name}: {error}')
+	return False, None, attach_check_in_error(None, error)
+
+
 def run_newapi_password_check_in(
 	account: AccountConfig,
 	account_name: str,
@@ -1836,6 +1955,189 @@ def _gorouter_status_path(provider_config, month: str) -> str:
 	return f'{status_path}{separator}month={month}'
 
 
+async def _check_in_in_authenticated_page(
+	page,
+	account_name: str,
+	provider_config,
+	headers: dict,
+	settings,
+	*,
+	status_only: bool = False,
+	turnstile_required: bool = True,
+	turnstile_site_key: str | None = None,
+	expected_user_id: str | None = None,
+) -> tuple[bool, dict | None, dict | None]:
+	"""Read identity and daily status, submit at most once, then confirm with GETs."""
+	status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+	user_info_before = parse_user_info_response(status, body)
+	if not user_info_before.get('success'):
+		error = user_info_before.get('error', 'Unable to verify GoRouter identity')
+		print(f'[FAILED] {account_name}: {error}')
+		return False, user_info_before, attach_check_in_error(None, error)
+
+	if expected_user_id is not None and str(user_info_before.get('user_id')) != expected_user_id:
+		error = 'Authenticated profile does not match the logged-in account; no check-in submitted'
+		return False, user_info_before, attach_check_in_error(user_info_before, error)
+
+	identity = user_info_before.get('display_name') or user_info_before.get('username')
+	identity_suffix = f' ({identity})' if identity else ''
+	print(f'[SUCCESS] {account_name}: GoRouter identity verified{identity_suffix}')
+	print(user_info_before['display'])
+
+	month = datetime.now(ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)).strftime('%Y-%m')
+	status_path = _gorouter_status_path(provider_config, month)
+	status, body = await request_in_page(page, status_path, headers=headers)
+	checked_today, status_error = parse_gorouter_checkin_status(status, body)
+	if status_error:
+		print(f'[FAILED] {account_name}: {status_error}')
+		return False, user_info_before, attach_check_in_error(user_info_before, status_error)
+
+	if status_only:
+		print(f'[STATUS] {account_name}: Identity and daily status verified; checked_in_today={checked_today}')
+		return True, user_info_before, {**user_info_before, 'status_only': True, 'checked_in_today': checked_today}
+
+	if checked_today:
+		print(f'[SUCCESS] {account_name}: Already checked in today')
+		try:
+			status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+			after = parse_user_info_response(status, body)
+		except Exception as exc:
+			after = {'success': False, 'balance_read_error': type(exc).__name__}
+		return True, user_info_before, {**after, 'checked_in_today': True}
+
+	sign_in_path = provider_config.sign_in_path or provider_config.check_in_status_path
+	last_error = None
+	for attempt in range(1, GOROUTER_TURNSTILE_ATTEMPTS + 1):
+		if attempt > 1:
+			# 连续在同一页面铸 token 会被 Cloudflare 冷处理（停在 before-interactive
+			# 既不回调也不报错），重新加载页面换一个干净的挑战上下文再试。
+			await asyncio.sleep(GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS)
+			try:
+				await page.reload(wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
+				await wait_for_waf_ready(page, settings.wait_timeout_ms)
+			except Exception as exc:
+				debug_print(f'[WARN] {account_name}: Page reload before retry failed: {str(exc)[:80]}')
+
+		token: str | None = ''
+		turnstile_error: str | None = None
+		if turnstile_required:
+			token, turnstile_error = await solve_turnstile_in_page(
+				page, turnstile_site_key or provider_config.turnstile_site_key
+			)
+		if turnstile_required and not token:
+			last_error = turnstile_error or 'Turnstile token was not obtained'
+			print(f'[WARN] {account_name}: {last_error} (attempt {attempt}/{GOROUTER_TURNSTILE_ATTEMPTS})')
+			await reset_turnstile_in_page(page)
+			continue
+
+		if token:
+			print(f'[NETWORK] {account_name}: Turnstile token minted, submitting check-in')
+		else:
+			print(f'[NETWORK] {account_name}: Submitting check-in')
+		checkin_path = sign_in_path
+		checkin_headers = headers.copy()
+		if token and provider_config.turnstile_header:
+			checkin_headers[provider_config.turnstile_header] = token
+		elif token:
+			separator = '&' if '?' in sign_in_path else '?'
+			checkin_path = f'{sign_in_path}{separator}turnstile={quote(token, safe="")}'
+		try:
+			status, body = await request_in_page(
+				page,
+				checkin_path,
+				method='POST',
+				headers=checkin_headers,
+			)
+			submission_error = None
+		except Exception as exc:
+			# The write may have committed; do not log a URL containing the challenge token.
+			status, body = 0, ''
+			submission_error = f'Check-in submission transport error - {type(exc).__name__}'
+			print(f'[WARN] {account_name}: {submission_error}; checking status without resubmitting')
+		if turnstile_required:
+			await reset_turnstile_in_page(page)
+		succeeded, retry_turnstile, checkin_error = (
+			(False, False, submission_error) if submission_error else parse_gorouter_checkin_result(status, body)
+		)
+		already_checked = any(keyword in (checkin_error or '').lower() for keyword in ALREADY_CHECKED_KEYWORDS)
+		try:
+			submission_payload = json.loads(body)
+		except json.JSONDecodeError:
+			submission_payload = None
+		business_rejected = (
+			status == 200 and isinstance(submission_payload, dict) and submission_payload.get('success') is False
+		)
+		if not succeeded and not already_checked and (business_rejected or retry_turnstile or 400 <= status < 500):
+			# An explicit business/challenge/auth/rate rejection is not an ambiguous write.
+			error = checkin_error or 'Check-in submission rejected'
+			if business_rejected:
+				error = f'签到被站点拒绝；未重复提交 ({error})'
+			print(f'[FAILED] {account_name}: {error}')
+			return (
+				False,
+				user_info_before,
+				{
+					**(attach_check_in_error(user_info_before, error) or {}),
+					'check_in_phase': 'submission_rejected',
+					'check_in_submitted': True,
+				},
+			)
+
+		# Once POST was attempted, only bounded GET confirmation is permitted.
+		last_error = checkin_error
+		for confirmation in range(3):
+			if confirmation:
+				await asyncio.sleep(2)
+			try:
+				status, body = await request_in_page(page, status_path, headers=headers)
+				checked_today, status_error = parse_gorouter_checkin_status(status, body)
+			except Exception as exc:
+				checked_today, status_error = False, f'Check-in status read error - {type(exc).__name__}'
+			if checked_today:
+				print(f'[SUCCESS] {account_name}: Check-in confirmed by checked_in_today')
+				try:
+					status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
+					after = parse_user_info_response(status, body)
+				except Exception as exc:
+					after = {'success': False, 'balance_read_error': type(exc).__name__}
+				return (
+					True,
+					user_info_before,
+					{
+						**after,
+						'checked_in_today': True,
+						'check_in_phase': 'confirmed',
+						'check_in_submitted': True,
+					},
+				)
+			last_error = status_error or last_error or 'Check-in was not reflected by checked_in_today'
+			if status in (401, 403, 429):
+				break
+		error = f'签到已提交但结果未确认；未重复提交 ({last_error})'
+		print(f'[FAILED] {account_name}: {error}')
+		return (
+			False,
+			user_info_before,
+			{
+				**(attach_check_in_error(user_info_before, error) or {}),
+				'check_in_phase': 'submitted_unconfirmed',
+				'check_in_submitted': True,
+			},
+		)
+
+	error = f'验证码未完成，签到未提交；需网页确认 ({last_error or "Turnstile token was not obtained"})'
+	print(f'[FAILED] {account_name}: {error}')
+	return (
+		False,
+		user_info_before,
+		{
+			**(attach_check_in_error(user_info_before, error) or {}),
+			'check_in_phase': 'not_submitted',
+			'check_in_submitted': False,
+		},
+	)
+
+
 async def run_gorouter_check_in_in_page(
 	account: AccountConfig,
 	account_name: str,
@@ -1850,7 +2152,7 @@ async def run_gorouter_check_in_in_page(
 	凭据优先用 access_token（NewAPI 的 PAT，不过期、无 session 绑定）；只有在
 	没有 PAT 时才退回 ``new_api_refresh`` cookie —— 后者每次刷新都会轮换，重放
 	超过 30 秒宽限期会连带吊销整个会话族，所以用持久化 Profile 保存轮换结果。
-	签到走 ``POST /api/user/checkin?turnstile=<token>``，token 由运行器自己渲染
+	签到通过站点配置的请求头或查询参数提交 token；token 由运行器自己渲染
 	同一个 sitekey 取得，不依赖站点签到卡片的弹窗。结果只认服务端
 	``checked_in_today``。
 	"""
@@ -1984,154 +2286,8 @@ async def run_gorouter_check_in_in_page(
 		if api_user and provider_config.api_user_key:
 			headers[provider_config.api_user_key] = api_user
 
-		status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
-		user_info_before = parse_user_info_response(status, body)
-		if not user_info_before.get('success'):
-			error = user_info_before.get('error', 'Unable to verify GoRouter identity')
-			print(f'[FAILED] {account_name}: {error}')
-			return False, user_info_before, attach_check_in_error(None, error)
-
-		identity = user_info_before.get('display_name') or user_info_before.get('username')
-		identity_suffix = f' ({identity})' if identity else ''
-		print(f'[SUCCESS] {account_name}: GoRouter identity verified{identity_suffix}')
-		print(user_info_before['display'])
-
-		month = datetime.now(ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)).strftime('%Y-%m')
-		status_path = _gorouter_status_path(provider_config, month)
-		status, body = await request_in_page(page, status_path, headers=headers)
-		checked_today, status_error = parse_gorouter_checkin_status(status, body)
-		if status_error:
-			print(f'[FAILED] {account_name}: {status_error}')
-			return False, user_info_before, attach_check_in_error(user_info_before, status_error)
-
-		if status_only:
-			print(f'[STATUS] {account_name}: Identity and daily status verified; checked_in_today={checked_today}')
-			return True, user_info_before, {**user_info_before, 'status_only': True, 'checked_in_today': checked_today}
-
-		if checked_today:
-			print(f'[SUCCESS] {account_name}: Already checked in today')
-			try:
-				status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
-				after = parse_user_info_response(status, body)
-			except Exception as exc:
-				after = {'success': False, 'balance_read_error': type(exc).__name__}
-			return True, user_info_before, {**after, 'checked_in_today': True}
-
-		sign_in_path = provider_config.sign_in_path or provider_config.check_in_status_path
-		last_error = None
-		for attempt in range(1, GOROUTER_TURNSTILE_ATTEMPTS + 1):
-			if attempt > 1:
-				# 连续在同一页面铸 token 会被 Cloudflare 冷处理（停在 before-interactive
-				# 既不回调也不报错），重新加载页面换一个干净的挑战上下文再试。
-				await asyncio.sleep(GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS)
-				try:
-					await page.reload(wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
-					await wait_for_waf_ready(page, settings.wait_timeout_ms)
-				except Exception as exc:
-					debug_print(f'[WARN] {account_name}: Page reload before retry failed: {str(exc)[:80]}')
-
-			token, turnstile_error = await solve_turnstile_in_page(page, provider_config.turnstile_site_key)
-			if not token:
-				last_error = turnstile_error or 'Turnstile token was not obtained'
-				print(f'[WARN] {account_name}: {last_error} (attempt {attempt}/{GOROUTER_TURNSTILE_ATTEMPTS})')
-				await reset_turnstile_in_page(page)
-				continue
-
-			print(f'[NETWORK] {account_name}: Turnstile token minted, submitting check-in')
-			separator = '&' if '?' in sign_in_path else '?'
-			try:
-				status, body = await request_in_page(
-					page,
-					f'{sign_in_path}{separator}turnstile={quote(token, safe="")}',
-					method='POST',
-					headers=headers,
-				)
-				submission_error = None
-			except Exception as exc:
-				# The write may have committed; do not log a URL containing the challenge token.
-				status, body = 0, ''
-				submission_error = f'Check-in submission transport error - {type(exc).__name__}'
-				print(f'[WARN] {account_name}: {submission_error}; checking status without resubmitting')
-			await reset_turnstile_in_page(page)
-			succeeded, retry_turnstile, checkin_error = (
-				(False, False, submission_error) if submission_error else parse_gorouter_checkin_result(status, body)
-			)
-			already_checked = any(keyword in (checkin_error or '').lower() for keyword in ALREADY_CHECKED_KEYWORDS)
-			try:
-				submission_payload = json.loads(body)
-			except json.JSONDecodeError:
-				submission_payload = None
-			business_rejected = (
-				status == 200 and isinstance(submission_payload, dict) and submission_payload.get('success') is False
-			)
-			if not succeeded and not already_checked and (business_rejected or retry_turnstile or 400 <= status < 500):
-				# An explicit business/challenge/auth/rate rejection is not an ambiguous write.
-				error = checkin_error or 'Check-in submission rejected'
-				if business_rejected:
-					error = f'签到被站点拒绝；未重复提交 ({error})'
-				print(f'[FAILED] {account_name}: {error}')
-				return (
-					False,
-					user_info_before,
-					{
-						**(attach_check_in_error(user_info_before, error) or {}),
-						'check_in_phase': 'submission_rejected',
-						'check_in_submitted': True,
-					},
-				)
-
-			# Once POST was attempted, only bounded GET confirmation is permitted.
-			last_error = checkin_error
-			for confirmation in range(3):
-				if confirmation:
-					await asyncio.sleep(2)
-				try:
-					status, body = await request_in_page(page, status_path, headers=headers)
-					checked_today, status_error = parse_gorouter_checkin_status(status, body)
-				except Exception as exc:
-					checked_today, status_error = False, f'Check-in status read error - {type(exc).__name__}'
-				if checked_today:
-					print(f'[SUCCESS] {account_name}: Check-in confirmed by checked_in_today')
-					try:
-						status, body = await request_in_page(page, provider_config.user_info_path, headers=headers)
-						after = parse_user_info_response(status, body)
-					except Exception as exc:
-						after = {'success': False, 'balance_read_error': type(exc).__name__}
-					return (
-						True,
-						user_info_before,
-						{
-							**after,
-							'checked_in_today': True,
-							'check_in_phase': 'confirmed',
-							'check_in_submitted': True,
-						},
-					)
-				last_error = status_error or last_error or 'Check-in was not reflected by checked_in_today'
-				if status in (401, 403, 429):
-					break
-			error = f'签到已提交但结果未确认；未重复提交 ({last_error})'
-			print(f'[FAILED] {account_name}: {error}')
-			return (
-				False,
-				user_info_before,
-				{
-					**(attach_check_in_error(user_info_before, error) or {}),
-					'check_in_phase': 'submitted_unconfirmed',
-					'check_in_submitted': True,
-				},
-			)
-
-		error = f'验证码未完成，签到未提交；需网页确认 ({last_error or "Turnstile token was not obtained"})'
-		print(f'[FAILED] {account_name}: {error}')
-		return (
-			False,
-			user_info_before,
-			{
-				**(attach_check_in_error(user_info_before, error) or {}),
-				'check_in_phase': 'not_submitted',
-				'check_in_submitted': False,
-			},
+		return await _check_in_in_authenticated_page(
+			page, account_name, provider_config, headers, settings, status_only=status_only
 		)
 
 	except Exception as e:
@@ -2141,8 +2297,6 @@ async def run_gorouter_check_in_in_page(
 	finally:
 		if context is not None:
 			await context.close()
-
-
 
 
 async def run_check_in_in_page(
@@ -2236,7 +2390,6 @@ async def run_check_in_in_page(
 				print(f'[FAILED] {account_name}: {error}')
 				return False, user_info_before, attach_check_in_error(user_info_before, error)
 
-		
 		success = True
 		check_in_error: str | None = None
 		if provider_config.needs_manual_check_in():
@@ -2340,6 +2493,9 @@ async def check_in_account(
 async def _run_account_checkin(account: AccountConfig, account_name: str, provider_config):
 	if provider_config.name == 'twinkle':
 		return await run_twinkle_check_in(account, account_name, provider_config)
+
+	if provider_config.login_in_page and account.has_login_credentials():
+		return await run_newapi_login_check_in_in_page(account, account_name, provider_config)
 
 	if provider_config.checkin_turnstile:
 		return await run_gorouter_check_in_in_page(account, account_name, provider_config)
@@ -2597,7 +2753,9 @@ def write_run_summary(
 			if not_attempted_count:
 				summary.write(f'Not attempted: {not_attempted_count}\n')
 			if state_failed:
-				summary.write('Daily success state could not be saved; verify the account-level log before another run.\n')
+				summary.write(
+					'Daily success state could not be saved; verify the account-level log before another run.\n'
+				)
 	except OSError:
 		print('[WARN] Could not write GitHub Actions job summary')
 
@@ -2693,7 +2851,9 @@ async def main():
 	balance_changed = False
 	provider_account_counts: dict[str, int] = {}
 	previously_completed = {
-		i for i, account in enumerate(accounts) if daily_state and not target_accounts_env and daily_state.contains(account, i)
+		i
+		for i, account in enumerate(accounts)
+		if daily_state and not target_accounts_env and daily_state.contains(account, i)
 	}
 	skipped_count = len(previously_completed)
 	success_count = skipped_count
