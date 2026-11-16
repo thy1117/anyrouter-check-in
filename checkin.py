@@ -2611,6 +2611,30 @@ async def _run_account_checkin(account: AccountConfig, account_name: str, provid
 			await login_context.close()
 
 
+def anyrouter_balance_read_error(status_code: int, body: str) -> str:
+	"""Classify a failed read without exposing response bodies or credentials."""
+	lower = body.lower()
+	if any(marker in lower for marker in ('acw_sc__v2', 'cdn_sec_tc', 'cf-chl-', 'challenge-platform', 'safeline')):
+		return f'接口返回网站验证页面（HTTP {status_code}），未取得余额数据'
+	if status_code in (401, 403):
+		return f'余额接口拒绝访问（HTTP {status_code}），需检查登录凭据或网站访问限制'
+	if 300 <= status_code < 400:
+		return f'余额接口返回重定向（HTTP {status_code}），未取得账号数据'
+	if status_code != 200:
+		return f'余额接口返回 HTTP {status_code}'
+	if '<html' in lower or '<!doctype html' in lower:
+		return '余额接口返回 HTML 网页（HTTP 200），未取得余额数据'
+	try:
+		payload = json.loads(body)
+	except json.JSONDecodeError:
+		return '余额接口返回无效 JSON（HTTP 200）'
+	if not isinstance(payload, dict):
+		return '余额接口返回的数据结构无效'
+	if not payload.get('success'):
+		return '余额接口未确认查询成功，需检查账号登录状态'
+	return '余额接口缺少有效余额字段'
+
+
 def read_anyrouter_balance(account: AccountConfig, account_name: str, provider_config):
 	"""Only read AnyRouter balance; an increase from the previous observation is success."""
 	history = BalanceHistory(account, provider_config)
@@ -2642,20 +2666,22 @@ def read_anyrouter_balance(account: AccountConfig, account_name: str, provider_c
 				response = client.get(url, headers=headers)
 			after = parse_user_info_response(response.status_code, response.text)
 		if not after.get('success'):
-			error = '余额读取失败；保留上次余额，未发送签到请求'
-			return False, before, attach_check_in_error(after, error)
+			reason = anyrouter_balance_read_error(response.status_code, response.text)
+			error = f'未确认到账：{reason}；保留上次余额记录'
+			print(f'[WARN] {account_name}: {error}')
+			return False, before, attach_check_in_error({'success': False}, error)
 		if account.api_user and str(after.get('user_id')) != str(account.api_user):
 			return False, before, attach_check_in_error(after, '余额账号身份不匹配；未更新余额记录')
 		history.save(after, format_check_in_time())
 		after['balance_only'] = True
 		if before is None:
 			print(f'[INFO] {account_name}: 首次记录余额 ${after["quota"]:.2f}，等待后续余额增加')
-			return False, None, attach_check_in_error(after, '首次建立余额基线，尚无可比较的历史余额')
+			return False, None, attach_check_in_error(after, '未确认到账：首次建立余额基线，尚无可比较的历史余额')
 		delta = after['quota'] - before['quota']
 		if delta > 0:
 			print(f'[SUCCESS] {account_name}: 余额较上次增加 ${delta:.2f}，按余额记为签到成功')
 			return True, before, after
-		return False, before, attach_check_in_error(after, '余额较上次未增加；本次仅查询余额')
+		return False, before, attach_check_in_error(after, '未确认到账：余额较上次未增加；本次仅查询余额')
 	except BalanceHistoryError as exc:
 		return False, before, attach_check_in_error(after, str(exc))
 	except Exception as exc:
@@ -2901,6 +2927,7 @@ async def main():
 	success_count = 0
 	total_count = len(accounts)
 	notification_content = []
+	balance_unconfirmed_content = []
 	check_in_success_items = []
 	current_balances = {}
 	account_check_in_details = {}
@@ -3016,7 +3043,10 @@ async def main():
 				else:
 					error = resolve_check_in_error(user_info_before, user_info_after)
 					balance_text = f'余额 ${after_balance:.2f}' if after_balance is not None else '余额暂不可用'
-					notification_content.append(f'❌ {account_name} · {error}｜{balance_text}')
+					if account.provider == 'anyrouter':
+						balance_unconfirmed_content.append(f'⚠️ {account_name} · {error}｜{balance_text}')
+					else:
+						notification_content.append(f'❌ {account_name} · {error}｜{balance_text}')
 
 		except Exception as e:
 			account_name = account.get_display_name(i)
@@ -3061,7 +3091,7 @@ async def main():
 		round_success_count = success_count - skipped_count
 		if failed_count == 0 and not state_failed and not not_attempted_count:
 			result_icon = '✅'
-		elif success_count > 0:
+		elif success_count > 0 or balance_unconfirmed_content:
 			result_icon = '⚠️'
 		else:
 			result_icon = '❌'
@@ -3075,10 +3105,14 @@ async def main():
 			summary.append(f'⏸️ 本次未执行：{not_attempted_count} 个')
 		if state_failed:
 			summary.append('⚠️ 当日成功记录保存失败，请检查运行日志')
-		if failed_count:
-			summary.append(f'❌ 失败：{failed_count} 个')
+		if failed_count - len(balance_unconfirmed_content):
+			summary.append(f'❌ 失败：{failed_count - len(balance_unconfirmed_content)} 个')
+		if balance_unconfirmed_content:
+			summary.append(f'⚠️ 余额到账未确认：{len(balance_unconfirmed_content)} 个')
 		if notification_content:
 			summary.extend(['', '❌ 失败详情', '\n'.join(notification_content)])
+		if balance_unconfirmed_content:
+			summary.extend(['', '⚠️ 余额查询详情', '\n'.join(balance_unconfirmed_content)])
 		if check_in_success_items:
 			summary.extend(['', '✅ 独立签到成功'])
 			provider_order = ['xiaobai', 'sheapi', 'superapi', 'guyscode', 'aiaiai', 'nianhua', 'twinkle']
