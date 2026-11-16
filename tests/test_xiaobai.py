@@ -227,7 +227,7 @@ async def test_xiaobai_balance_notification_keeps_daily_success_skip(
 	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
 	runner = AsyncMock(side_effect=lambda acct, *args, **kwargs: run(acct))
 	monkeypatch.setattr(checkin, 'check_in_account', runner)
-	sender = Mock()
+	sender = Mock(return_value={'Telegram': True})
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
 	with pytest.raises(SystemExit) as first:
 		await checkin.main()

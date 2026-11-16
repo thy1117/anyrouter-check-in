@@ -40,7 +40,7 @@ async def test_success_is_persisted_before_starting_the_next_account(monkeypatch
 	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
 	monkeypatch.setattr(checkin, 'check_in_account', run)
-	monkeypatch.setattr(checkin.notify, 'push_message', Mock())
+	monkeypatch.setattr(checkin.notify, 'push_message', Mock(return_value={'Telegram': True}))
 	with pytest.raises(SystemExit) as outcome:
 		await checkin.main()
 	assert outcome.value.code == 0
@@ -61,7 +61,7 @@ async def test_success_state_save_failure_stops_before_next_account(monkeypatch,
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
 	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
-	monkeypatch.setattr(checkin, 'notify', SimpleNamespace(push_message=Mock()))
+	monkeypatch.setattr(checkin, 'notify', SimpleNamespace(push_message=Mock(return_value={'Telegram': True})))
 	state = SimpleNamespace(
 		contains=Mock(return_value=False),
 		mark_success=Mock(),
@@ -101,7 +101,7 @@ async def test_state_failure_counts_later_previously_completed_accounts(monkeypa
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
 	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
-	monkeypatch.setattr(checkin, 'notify', SimpleNamespace(push_message=Mock()))
+	monkeypatch.setattr(checkin, 'notify', SimpleNamespace(push_message=Mock(return_value={'Telegram': True})))
 	state = SimpleNamespace(
 		contains=Mock(side_effect=[False, True]),
 		mark_success=Mock(),
@@ -156,7 +156,7 @@ async def test_later_daily_runs_only_call_accounts_without_success(monkeypatch, 
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
 	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
-	push = Mock()
+	push = Mock(return_value={'Telegram': True})
 	monkeypatch.setattr(checkin.notify, 'push_message', push)
 	balance = {'success': True, 'quota': 1.0, 'used_quota': 0.0}
 	credited_balance = {'success': True, 'quota': 1.25, 'used_quota': 0.0}
@@ -374,7 +374,7 @@ async def test_targeted_account_can_be_rechecked_after_daily_success(monkeypatch
 	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: [account])
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
-	sender = Mock()
+	sender = Mock(return_value={'Telegram': True})
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
 	runner = AsyncMock(
 		return_value=(
@@ -404,7 +404,7 @@ async def test_targeted_run_does_not_require_daily_state(monkeypatch):
 	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: [account])
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
-	sender = Mock()
+	sender = Mock(return_value={'Telegram': True})
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
 	runner = AsyncMock(
 		return_value=(
