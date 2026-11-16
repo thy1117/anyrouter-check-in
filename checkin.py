@@ -3154,8 +3154,12 @@ async def main():
 		if target_accounts_env:
 			print('[INFO] Manual targeted account run: external push notification skipped')
 		else:
-			notify.push_message('AnyRouter Check-in Alert', notify_content, msg_type='text')
-			print('[NOTIFY] Notification sent after check-in run')
+			delivery_results = notify.push_message('AnyRouter Check-in Alert', notify_content, msg_type='text')
+			delivered = [name for name, success in delivery_results.items() if success]
+			if delivered:
+				print(f'[NOTIFY] Notification delivered via: {", ".join(delivered)}')
+			else:
+				print('[WARN] Notification delivery failed: no channel confirmed delivery')
 	else:
 		print('[INFO] All accounts successful and no balance changes detected, notification skipped')
 

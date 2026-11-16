@@ -1,9 +1,33 @@
 import os
 import smtplib
+import time
 from email.mime.text import MIMEText
 from typing import Any, Literal
 
 import httpx
+
+
+def split_telegram_message(message: str, limit: int = 4096) -> list[str]:
+	"""Keep every character, preferring line boundaries within a UTF-16 budget."""
+	if limit < 2:
+		raise ValueError('Telegram message budget must allow at least two UTF-16 units')
+	parts = []
+	while message:
+		units = 0
+		end = 0
+		for char in message:
+			width = 2 if ord(char) > 0xFFFF else 1
+			if units + width > limit:
+				break
+			units += width
+			end += 1
+		if end < len(message):
+			newline = message.rfind('\n', 0, end)
+			if newline >= 0:
+				end = newline + 1
+		parts.append(message[:end])
+		message = message[end:]
+	return parts
 
 
 class NotificationKit:
@@ -31,13 +55,21 @@ class NotificationKit:
 		with httpx.Client(timeout=30.0) as client:
 			response = client.post(url, json=data)
 
-		if response.status_code >= 400:
-			raise RuntimeError(f'{service} request failed: HTTP {response.status_code}')
-
 		try:
 			payload = response.json()
 		except ValueError:
-			return response
+			payload = None
+
+		if response.status_code >= 400:
+			detail = ''
+			if isinstance(payload, dict):
+				detail = str(payload.get('description') or payload.get('errmsg') or payload.get('message') or '')
+				for secret in (self.telegram_bot_token, self.telegram_chat_id):
+					if secret:
+						detail = detail.replace(secret, '[REDACTED]')
+				detail = ' '.join(detail.split())[:500]
+			suffix = f' - {detail}' if detail else ''
+			raise RuntimeError(f'{service} request failed: HTTP {response.status_code}{suffix}')
 
 		if not isinstance(payload, dict):
 			return response
@@ -135,18 +167,24 @@ class NotificationKit:
 		if not self.telegram_bot_token or not self.telegram_chat_id:
 			raise ValueError('Telegram Bot Token or Chat ID not configured')
 
-		message = f'<b>{title}</b>\n\n{content}'
-		data = {'chat_id': self.telegram_chat_id, 'text': message, 'parse_mode': 'HTML'}
+		# Account names and server errors are plain text, not trusted HTML.
+		messages = split_telegram_message(f'{title}\n\n{content}')
 		url = f'https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage'
-		response = self._post_json('Telegram', url, data)
-		try:
-			result = response.json().get('result') or {}
-			message_id = result.get('message_id')
-			chat_tail = str(self.telegram_chat_id)[-4:] if self.telegram_chat_id else ''
-			if message_id is not None:
-				print(f'[Telegram] message_id: {message_id}, chat_id tail: {chat_tail}')
-		except Exception:
-			pass
+		for index, message in enumerate(messages, 1):
+			if index > 1:
+				time.sleep(1.0)
+			data = {'chat_id': self.telegram_chat_id, 'text': message}
+			response = self._post_json('Telegram', url, data)
+			try:
+				payload = response.json()
+			except ValueError as exc:
+				raise RuntimeError('Telegram response is not valid JSON; delivery not confirmed') from exc
+			result = payload.get('result') if isinstance(payload, dict) else None
+			message_id = result.get('message_id') if isinstance(result, dict) else None
+			if not isinstance(payload, dict) or payload.get('ok') is not True or message_id is None:
+				raise RuntimeError('Telegram response has no successful message receipt; delivery not confirmed')
+			chat_tail = str(self.telegram_chat_id)[-4:]
+			print(f'[Telegram] part {index}/{len(messages)}, message_id: {message_id}, chat_id tail: {chat_tail}')
 
 	def send_bark(self, title: str, content: str):
 		if not self.bark_key:
@@ -165,7 +203,7 @@ class NotificationKit:
 
 		self._post_json('Bark', url, data)
 
-	def push_message(self, title: str, content: str, msg_type: Literal['text', 'html'] = 'text'):
+	def push_message(self, title: str, content: str, msg_type: Literal['text', 'html'] = 'text') -> dict[str, bool]:
 		notifications = [
 			('Email', lambda: self.send_email(title, content, msg_type)),
 			('PushPlus', lambda: self.send_pushplus(title, content)),
@@ -178,12 +216,20 @@ class NotificationKit:
 			('Bark', lambda: self.send_bark(title, content)),
 		]
 
+		results = {}
 		for name, func in notifications:
 			try:
 				func()
+				results[name] = True
 				print(f'[{name}]: Message push successful!')
 			except Exception as e:
-				print(f'[{name}]: Message push failed! Reason: {str(e)}')
+				results[name] = False
+				error = str(e)
+				for secret in (self.telegram_bot_token, self.telegram_chat_id):
+					if secret:
+						error = error.replace(secret, '[REDACTED]')
+				print(f'[{name}]: Message push failed! Reason: {error}')
+		return results
 
 
 notify = NotificationKit()

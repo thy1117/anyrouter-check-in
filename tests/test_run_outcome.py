@@ -19,7 +19,7 @@ async def test_run_exit_and_summary_reflect_all_accounts(monkeypatch, tmp_path, 
 	after = {'success': True, 'quota': 10.25, 'used_quota': 0.0}
 	monkeypatch.setattr(checkin, 'check_in_account', AsyncMock(side_effect=[(ok, before, after) for ok in outcomes]))
 	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
-	monkeypatch.setattr(checkin.notify, 'push_message', Mock())
+	monkeypatch.setattr(checkin.notify, 'push_message', Mock(return_value={'Telegram': True}))
 	summary = tmp_path / 'summary.md'
 	monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
 	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
@@ -69,7 +69,7 @@ async def test_success_requires_readable_available_balance_increase(
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
 	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
 	monkeypatch.setattr(checkin, 'check_in_account', AsyncMock(return_value=(api_success, before, after)))
-	sender = Mock()
+	sender = Mock(return_value={'Telegram': True})
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
 
 	with pytest.raises(SystemExit) as outcome:
@@ -89,7 +89,7 @@ async def test_missing_target_account_exits_without_notification(monkeypatch):
 	accounts = [AccountConfig(cookies=None, name='present', provider='test')]
 	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
 	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
-	monkeypatch.setattr(checkin.notify, 'push_message', Mock())
+	monkeypatch.setattr(checkin.notify, 'push_message', Mock(return_value={'Telegram': True}))
 	monkeypatch.setenv('CHECKIN_TARGET_ACCOUNTS', 'missing')
 
 	with pytest.raises(SystemExit) as exc:
@@ -102,3 +102,27 @@ async def test_missing_target_account_exits_without_notification(monkeypatch):
 def test_summary_io_error_does_not_replace_the_run_outcome(monkeypatch, tmp_path):
 	monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(tmp_path))
 	checkin.write_run_summary(1, 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('delivered', [True, False])
+async def test_main_reports_confirmed_notification_delivery(monkeypatch, capsys, delivered):
+	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
+	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
+	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: [AccountConfig(cookies=None, name='test')])
+	monkeypatch.setattr(checkin, 'create_daily_success_state', lambda day: None)
+	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
+	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
+	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
+	before = {'success': True, 'quota': 10.0, 'used_quota': 0.0}
+	after = {'success': True, 'quota': 10.25, 'used_quota': 0.0}
+	monkeypatch.setattr(checkin, 'check_in_account', AsyncMock(return_value=(True, before, after)))
+	monkeypatch.setattr(checkin.notify, 'push_message', Mock(return_value={'Telegram': delivered}))
+	with pytest.raises(SystemExit) as outcome:
+		await checkin.main()
+	assert outcome.value.code == 0
+	output = capsys.readouterr().out
+	assert ('Notification delivered via: Telegram' in output) is delivered
+	assert ('Notification delivery failed: no channel confirmed delivery' in output) is not delivered
+	assert 'Notification sent after check-in run' not in output
