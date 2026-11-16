@@ -126,3 +126,29 @@ async def test_main_reports_confirmed_notification_delivery(monkeypatch, capsys,
 	assert ('Notification delivered via: Telegram' in output) is delivered
 	assert ('Notification delivery failed: no channel confirmed delivery' in output) is not delivered
 	assert 'Notification sent after check-in run' not in output
+
+
+@pytest.mark.asyncio
+async def test_anyrouter_unreadable_balance_is_unconfirmed_not_checkin_failure(monkeypatch):
+	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
+	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
+	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
+	accounts = [AccountConfig(cookies=None, name='AnyRouter', provider='anyrouter')]
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
+	state = SimpleNamespace(contains=Mock(return_value=False), mark_success=Mock(), save=Mock(), close=Mock())
+	monkeypatch.setattr(checkin, 'create_daily_success_state', lambda day: state)
+	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
+	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
+	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
+	after = {'success': False, 'check_in_error': '未确认到账：接口返回网站验证页面'}
+	monkeypatch.setattr(checkin, 'check_in_account', AsyncMock(return_value=(False, None, after)))
+	sender = Mock(return_value={'Telegram': True})
+	monkeypatch.setattr(checkin.notify, 'push_message', sender)
+	with pytest.raises(SystemExit) as outcome:
+		await checkin.main()
+	assert outcome.value.code == 1
+	state.mark_success.assert_not_called()
+	message = sender.call_args.args[1]
+	assert '余额到账未确认：1 个' in message
+	assert '⚠️ AnyRouter · 未确认到账：接口返回网站验证页面' in message
+	assert '❌ 失败' not in message

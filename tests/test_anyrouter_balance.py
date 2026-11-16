@@ -117,3 +117,32 @@ def test_balance_key_survives_account_reordering_and_does_not_mix_users(account_
 	assert BalanceHistory(account, provider).key == first
 	account.api_user = '8'
 	assert BalanceHistory(account, provider).key != first
+
+
+@pytest.mark.parametrize(
+	'status,body,expected',
+	[
+		(200, '<script>document.cookie="acw_sc__v2=secret"</script>', '网站验证页面'),
+		(403, '<html>cf-chl-private-session</html>', '网站验证页面'),
+		(200, '<html>private-session</html>', 'HTML 网页'),
+		(401, 'private-session', '拒绝访问'),
+		(403, 'private-session', '拒绝访问'),
+		(302, 'private-session', '重定向'),
+		(503, 'private-session', 'HTTP 503'),
+		(200, 'private-session', '无效 JSON'),
+		(200, '[]', '数据结构无效'),
+		(200, '{"success": false, "message": "private-session"}', '未确认查询成功'),
+		(200, '{"success": true, "data": {"id": 7}}', '缺少有效余额'),
+	],
+)
+def test_failed_read_reports_safe_reason_and_keeps_baseline(monkeypatch, account_setup, capsys, status, body, expected):
+	account, provider = account_setup
+	history = BalanceHistory(account, provider)
+	history.save({'quota': 10, 'used_quota': 0}, '2026-11-15 08:00:00')
+	install_response(monkeypatch, raw=body, statuses=(status, status))
+	success, before, after = checkin.read_anyrouter_balance(account, 'AnyRouter', provider)
+	assert not success
+	assert before['quota'] == history.load()['quota'] == 10
+	assert expected in after['check_in_error']
+	assert '未确认到账' in after['check_in_error']
+	assert 'private-session' not in json.dumps(after) + capsys.readouterr().out
