@@ -3091,7 +3091,7 @@ async def main():
 		round_success_count = success_count - skipped_count
 		if failed_count == 0 and not state_failed and not not_attempted_count:
 			result_icon = '✅'
-		elif success_count > 0:
+		elif success_count > 0 or balance_unconfirmed_content:
 			result_icon = '⚠️'
 		else:
 			result_icon = '❌'

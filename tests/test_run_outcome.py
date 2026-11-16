@@ -149,6 +149,7 @@ async def test_anyrouter_unreadable_balance_is_unconfirmed_not_checkin_failure(m
 	assert outcome.value.code == 1
 	state.mark_success.assert_not_called()
 	message = sender.call_args.args[1]
+	assert message.startswith('⚠️ 签到结果：0/1 成功')
 	assert '余额到账未确认：1 个' in message
 	assert '⚠️ AnyRouter · 未确认到账：接口返回网站验证页面' in message
 	assert '❌ 失败' not in message
