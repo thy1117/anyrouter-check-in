@@ -2748,6 +2748,14 @@ def run_check_in_requests(
 				api_user_key=provider_config.api_user_key,
 			)
 
+			# A retired SheApi PAT cannot be repaired by a session refresh or by
+			# submitting a CAPTCHA. Preserve the explicit auth failure and stop.
+			if provider_config.name == 'sheapi' and not (user_info_before and user_info_before.get('success')):
+				error = (user_info_before or {}).get('error', 'SheApi authentication not confirmed')
+				after = attach_check_in_error(user_info_before, error) or {}
+				after.update(check_in_phase='not_submitted', check_in_submitted=False)
+				return False, user_info_before, after
+
 			# access_token 是分钟级短效凭据：认证失败时先用 refresh cookie 轮换一次，
 			# 再决定是否真的判账号失效。
 			if user_info_before and not user_info_before.get('success'):
