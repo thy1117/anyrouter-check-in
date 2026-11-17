@@ -236,3 +236,67 @@ def test_http_adapter_preserves_arguments_and_is_idempotent(monkeypatch, configu
 	expected, unused = (new, old) if provider == 'sheapi' else (old, new)
 	expected.assert_called_once_with({}, account, 'account', config, **arguments)
 	unused.assert_not_called()
+
+
+@pytest.mark.parametrize('engine_name', ['october', 'current'])
+async def test_notification_ends_with_single_account_sites_even_with_missing_multi_balance(
+	monkeypatch, configured, engine_name
+):
+	engine = configured if engine_name == 'october' else checkin
+	accounts = [
+		AccountConfig(cookies=None, provider=provider, name=name)
+		for provider, name in (
+			('42w', '42-Dodo'),
+			('ciyuan', '词元站-1'),
+			('elysiver', '烁-thy1117'),
+			('laomo', '老魔公益站-thy1117'),
+			('kapibala', 'Kapibala-1'),
+			('livelove', 'LiveLove-1'),
+			('llmpm', 'llm.pm-Dodo'),
+			('ruachat', 'rua-chat-account-1'),
+			('kapibala', 'Kapibala-2'),
+			('superqiyu', 'SuperQiyu-554'),
+			('yuecheng', '月城公益站-thy1117'),
+			('ciyuan', '词元站-2'),
+			('sheapi', 'SheApi-only'),
+		)
+	]
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
+	monkeypatch.setattr(engine.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
+	monkeypatch.setattr(engine, 'load_balance_hash', lambda: None)
+	monkeypatch.setattr(engine, 'save_balance_hash', Mock())
+	monkeypatch.setattr(engine, 'is_debug_enabled', lambda: False)
+	monkeypatch.setenv('CHECKIN_DAILY_STATE_FILE', '')
+	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
+	info = {'success': True, 'quota': 2, 'used_quota': 0}
+	results = [(account.provider != 'laomo', info, info) for account in accounts]
+	results[-2] = (False, None, {'check_in_error': 'balance unavailable'})
+	runner = AsyncMock(side_effect=results)
+	monkeypatch.setattr(engine, 'check_in_account', runner)
+	sender = Mock(return_value={'Telegram': True})
+	monkeypatch.setattr(checkin.notify, 'push_message', sender)
+	with pytest.raises(SystemExit) as outcome:
+		await engine.main()
+	assert outcome.value.code == 1
+	assert runner.await_count == len(accounts)
+	sender.assert_called_once()
+	message = sender.call_args.args[1]
+	assert '❌ 老魔公益站-thy1117 ·' in message.split('💰 余额明细')[0]
+	assert '词元站-2 · balance unavailable' in message
+	rows = [
+		line.split('｜', 1)[0]
+		for line in message.split('💰 余额明细')[1].splitlines()
+		if line.startswith(('✅ ', '❌ '))
+	]
+	assert rows[:3] == ['✅ 词元站-1', '✅ Kapibala-1', '✅ Kapibala-2']
+	assert rows[3:] == [
+		'✅ 42-Dodo',
+		'✅ 烁-thy1117',
+		'❌ 老魔公益站-thy1117',
+		'✅ LiveLove-1',
+		'✅ llm.pm-Dodo',
+		'✅ rua-chat-account-1',
+		'✅ SheApi-only',
+		'✅ SuperQiyu-554',
+		'✅ 月城公益站-thy1117',
+	]

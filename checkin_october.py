@@ -9,6 +9,7 @@ import os
 import checkin as current
 from legacy import checkin_20261004 as october
 from utils.config import AccountConfig
+from utils.notification_layout import group_account_report
 
 BASELINE_COMMIT = '852253d9befa060d2d14a941da110fa45fc22706'
 BASELINE_DATE = '2026-10-04'
@@ -88,7 +89,18 @@ def load_current_accounts():
 	target = os.getenv('CHECKIN_TARGET_ACCOUNTS', '').strip()
 	if accounts and target:
 		accounts = current.filter_accounts_by_target(accounts, target)
+	if isinstance(october.notify, GroupedNotifications):
+		october.notify.accounts = accounts or []
 	return accounts
+
+
+class GroupedNotifications:
+	def __init__(self, sender):
+		self.sender = sender
+		self.accounts: list[AccountConfig] = []
+
+	def push_message(self, title, content, msg_type='text'):
+		return self.sender.push_message(title, group_account_report(content, self.accounts), msg_type=msg_type)
 
 
 class TargetedNotifications:
@@ -144,7 +156,7 @@ def configure_engine():
 		setattr(october, 'notify', TargetedNotifications())
 		october.save_balance_hash = lambda value: None
 	else:
-		october.notify = current.notify
+		setattr(october, 'notify', GroupedNotifications(current.notify))
 		october.save_balance_hash = current.save_balance_hash
 
 
