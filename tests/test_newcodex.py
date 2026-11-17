@@ -8,7 +8,7 @@ import checkin
 from utils.config import AccountConfig, AppConfig, _account_env_names, load_accounts_config
 
 
-def test_newcodex_slots_append_accounts_and_map_only_regular_job(monkeypatch):
+def test_generic_newcodex_loader_remains_reusable_without_production_bindings(monkeypatch):
 	for name in _account_env_names():
 		monkeypatch.delenv(name, raising=False)
 	monkeypatch.delenv('CHECKIN_DISABLED_PROVIDERS', raising=False)
@@ -49,11 +49,9 @@ def test_newcodex_slots_append_accounts_and_map_only_regular_job(monkeypatch):
 		('newcodex', '484', 'fake-pat-138'),
 	]
 	workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/checkin.yml').read_text()
-	regular_job = workflow.split('\n  checkin:\n', 1)[1].split('\n  gorouter-status:', 1)[0]
 	for slot in (132, 133, 134, 135, 136, 137, 138):
 		mapping = f'EXTRA_ACCOUNTS_{slot}: ${{{{ secrets.EXTRA_ACCOUNTS_{slot} }}}}'
-		assert mapping in regular_job
-		assert workflow.count(mapping) == 1
+		assert mapping not in workflow
 
 
 @pytest.mark.parametrize('api_user', ['19', '430', '479', '480', '481', '482', '484'])
