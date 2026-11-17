@@ -164,7 +164,7 @@ def test_superapi_secret_60_is_wired_into_workflow():
 	assert 'EXTRA_ACCOUNTS_63: ${{ secrets.EXTRA_ACCOUNTS_63 }}' in text
 
 
-def test_sheapi_proxy_test_only_loads_subscription_and_requires_five_ips():
+def test_sheapi_proxy_test_only_loads_subscription_and_requires_seven_ips():
 	text = WORKFLOW.read_text(encoding='utf-8')
 	job = text.split('\n  sheapi-proxy-test:')[1]
 	assert (
@@ -174,5 +174,6 @@ def test_sheapi_proxy_test_only_loads_subscription_and_requires_five_ips():
 	assert 'contents: read' in job
 	assert 'secrets.PROXY_SUBSCRIPTION_URL' in job
 	assert 'ACCOUNTS' not in job and 'TOKEN' not in job and 'checkin.py' not in job
-	assert "assert len({state[account]['ip'] for account in accounts}) == 5" in job
+	assert 'range(1117, 1124)' in job
+	assert "assert len({state[account]['ip'] for account in accounts}) == 7" in job
 	assert 'glados-proxy-assignments-' in job
