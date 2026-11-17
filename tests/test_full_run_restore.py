@@ -14,6 +14,54 @@ yaml = import_module('yaml')
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize('legacy_input', [None, False, True])
+def test_full_dispatch_uses_normal_entrypoint_with_legacy_muse_input(legacy_input):
+	import os
+	import shutil
+	import subprocess
+	import tempfile
+
+	workflow = yaml.safe_load((ROOT / '.github/workflows/checkin.yml').read_text())
+	inputs = workflow.get('on', workflow.get(True))['workflow_dispatch']['inputs']
+	assert inputs['manual_no_challenges']['type'] == 'boolean'
+	assert inputs['manual_no_challenges']['default'] is False
+	step = next(step for step in workflow['jobs']['checkin']['steps'] if step.get('name') == '执行签到')
+	bash = shutil.which('bash')
+	if bash is None and os.name == 'nt':
+		git = shutil.which('git')
+		if git:
+			candidate = Path(git).resolve().parents[1] / 'bin' / 'bash.exe'
+			if candidate.is_file():
+				bash = str(candidate)
+	if bash is None:
+		pytest.skip('Bash is needed to execute the production workflow step')
+
+	with tempfile.TemporaryDirectory(prefix='checkin-normal-') as directory:
+		root = Path(directory)
+		(root / 'xvfb-run').write_text(
+			'#!/bin/sh\nif [ "$1" = "-a" ]; then shift; fi\ncase "$1" in --server-args=*) shift ;; esac\nexec "$@"\n',
+			encoding='utf-8',
+		)
+		(root / 'uv').write_text('#!/bin/sh\nprintf "%s\\n" "$*" > observed.txt\n', encoding='utf-8')
+		(root / 'xvfb-run').chmod(0o755)
+		(root / 'uv').chmod(0o755)
+		(root / 'workflow-step.sh').write_text(step['run'], encoding='utf-8')
+		env = os.environ.copy()
+		env.pop('CHECKIN_MANUAL_NO_CHALLENGES', None)
+		if legacy_input is not None:
+			env['CHECKIN_MANUAL_NO_CHALLENGES'] = str(legacy_input).lower()
+		result = subprocess.run(
+			[bash, '-c', 'PATH="$PWD:$PATH"; export PATH; bash workflow-step.sh'],
+			cwd=root,
+			env=env,
+			capture_output=True,
+			text=True,
+			timeout=10,
+		)
+		assert result.returncode == 0, result.stderr
+		assert (root / 'observed.txt').read_text(encoding='utf-8').strip() == 'run checkin.py'
+
+
 @pytest.mark.asyncio
 async def test_production_full_runs_ignore_prior_success_and_report_every_round(monkeypatch, tmp_path):
 	workflow = yaml.safe_load((ROOT / '.github/workflows/checkin.yml').read_text())
