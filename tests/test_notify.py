@@ -188,7 +188,7 @@ def test_telegram_chunks_preserve_content_and_fit_limit(message):
 	parts = split_telegram_message(message)
 	assert ''.join(parts) == message
 	assert all(0 < len(part.encode('utf-16-le')) // 2 <= 4096 for part in parts)
-	if len(message.encode('utf-16-le')) // 2 <= 4096:
+	if len(message.encode('utf-16-le')) // 2 <= 4096 and len(message.encode('utf-8')) <= 4096:
 		assert parts == [message]
 
 
@@ -206,8 +206,10 @@ def test_send_telegram_long_message_is_plain_text_and_paced(mock_httpx_client, n
 	notification_kit.send_telegram('签到 <汇总>', content)
 	requests = [call.kwargs['json'] for call in client.post.call_args_list]
 	assert len(requests) > 1
-	assert ''.join(data['text'] for data in requests) == f'签到 <汇总>\n\n{content}'
+	assert ''.join(data['text'].split('\n', 1)[1] for data in requests) == f'签到 <汇总>\n\n{content}'
+	assert all(data['text'].startswith(f'[{index}/{len(requests)}]\n') for index, data in enumerate(requests, 1))
 	assert all('parse_mode' not in data and data['chat_id'] == 'telegram_chat' for data in requests)
+	assert all(len(data['text'].encode('utf-8')) <= 4096 for data in requests)
 	assert all(len(data['text'].encode('utf-16-le')) // 2 <= 4096 for data in requests)
 	assert sleep.call_count == len(requests) - 1
 	sleep.assert_called_with(1.0)

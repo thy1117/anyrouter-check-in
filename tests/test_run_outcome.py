@@ -40,18 +40,18 @@ async def test_run_exit_and_summary_reflect_all_accounts(monkeypatch, tmp_path, 
 		(True, 0, 0.001, True),
 		(True, -1, 0, True),
 		(False, 10, 10.25, False),
-		(True, None, 10.25, False),
-		(True, 10, None, False),
-		(True, 10, 10, False),
-		(True, 10, 9, False),
-		(True, False, 10, False),
-		(True, 0, True, False),
-		(True, float('nan'), 10, False),
-		(True, 10, float('inf'), False),
-		(True, 'unreadable', 10, False),
+		(True, None, 10.25, True),
+		(True, 10, None, True),
+		(True, 10, 10, True),
+		(True, 10, 9, True),
+		(True, False, 10, True),
+		(True, 0, True, True),
+		(True, float('nan'), 10, True),
+		(True, 10, float('inf'), True),
+		(True, 'unreadable', 10, True),
 	],
 )
-async def test_success_requires_readable_available_balance_increase(
+async def test_success_uses_provider_confirmation_with_optional_balance(
 	monkeypatch, api_success, before_quota, after_quota, expected
 ):
 	before = {'success': True, 'quota': before_quota, 'used_quota': 0}
@@ -82,7 +82,8 @@ async def test_success_requires_readable_available_balance_increase(
 	message = sender.call_args.args[1]
 	assert f'签到结果：{int(expected)}/1 成功' in message
 	if not expected:
-		assert ('未确认到账' if api_success else 'server rejected check-in') in message
+		assert 'server rejected check-in' in message
+	assert '未确认到账' not in message
 	assert state.close.called
 
 
@@ -134,15 +135,15 @@ async def test_main_reports_confirmed_notification_delivery(monkeypatch, capsys,
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-	'provider,verified,balance,expected',
+	'provider,verified,balance,api_success,expected',
 	[
-		('anyrouter', False, None, False),
-		('anyrouter', True, None, True),
-		('anyrouter', True, 10, True),
-		('other', True, None, False),
+		('anyrouter', False, None, True, False),
+		('anyrouter', True, None, True, True),
+		('anyrouter', True, 10, True, True),
+		('other', True, None, False, False),
 	],
 )
-async def test_login_success_rule_is_anyrouter_only(monkeypatch, provider, verified, balance, expected):
+async def test_login_success_rule_is_anyrouter_only(monkeypatch, provider, verified, balance, api_success, expected):
 	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
 	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
 	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
@@ -154,7 +155,9 @@ async def test_login_success_rule_is_anyrouter_only(monkeypatch, provider, verif
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
 	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
 	after = {'success': True, 'login_verified': verified, 'quota': balance, 'used_quota': 0}
-	monkeypatch.setattr(checkin, 'check_in_account', AsyncMock(return_value=(True, None, after)))
+	if not api_success:
+		after['check_in_error'] = 'Provider did not confirm a check-in'
+	monkeypatch.setattr(checkin, 'check_in_account', AsyncMock(return_value=(api_success, None, after)))
 	sender = Mock(return_value={'Telegram': True})
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
 	with pytest.raises(SystemExit) as outcome:
@@ -170,4 +173,4 @@ async def test_login_success_rule_is_anyrouter_only(monkeypatch, provider, verif
 		assert '登录未确认：1 个' in message
 		assert '缺少账号身份验证结果' in message
 	else:
-		assert '未确认到账' in message
+		assert 'Provider did not confirm a check-in' in message

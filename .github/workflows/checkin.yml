@@ -6,6 +6,10 @@ on:
         description: 'Only check in accounts matching these names/providers (comma-separated, e.g. "Lunora,Sidrune-tthx1,Nianhua-1117"); leave empty for all'
         type: string
         default: ''
+      manual_no_challenges:
+        description: 'Manual full run without CAPTCHA/OCR/Turnstile/WAF-solving; required human challenges stay not submitted'
+        type: boolean
+        default: false
       gorouter_status_only:
         description: 'Read identity and current-day status for an exact account group; no challenges or check-in writes'
         type: boolean
@@ -67,8 +71,9 @@ jobs:
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
       CHECKIN_TARGET_ACCOUNTS: ${{ inputs.target_accounts }}
-      CHECKIN_DAILY_STATE_FILE: checkin-state/daily-success.json
-      CHECKIN_STATE_GITHUB_TOKEN: ${{ github.token }}
+      # Every regular external dispatch processes the full current account set.
+      CHECKIN_DAILY_STATE_FILE: ''
+      CHECKIN_STATE_GITHUB_TOKEN: ''
     steps:
     - uses: actions/checkout@v6
 
@@ -148,6 +153,7 @@ jobs:
 
     - name: 执行签到
       env:
+        CHECKIN_MANUAL_NO_CHALLENGES: ${{ inputs.manual_no_challenges }}
         DEBUG_MODE: ${{ env.DEBUG_MODE }}
         CHECKIN_HEADLESS: false
         CHECKIN_HUMANIZE: true
@@ -271,10 +277,14 @@ jobs:
         BARK_KEY: ${{ secrets.BARK_KEY }}
         BARK_SERVER: ${{ secrets.BARK_SERVER }}
       run: |
-        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
+        if [ "$CHECKIN_MANUAL_NO_CHALLENGES" = "true" ]; then
+          uv run python scripts/run_checkin_no_challenges.py
+        else
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
+        fi
 
     - name: 保存当日成功记录检查点
-      if: always()
+      if: ${{ always() && env.CHECKIN_DAILY_STATE_FILE != '' }}
       uses: actions/upload-artifact@v4
       with:
         name: checkin-daily-success-${{ github.run_id }}-${{ github.run_attempt }}
