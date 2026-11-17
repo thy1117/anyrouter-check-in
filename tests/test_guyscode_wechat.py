@@ -29,13 +29,13 @@ def test_wechat_slots_preserve_existing_guyscode_account(monkeypatch):
 	assert [account.refresh_token for account in accounts] == ['existing-refresh', 'wechat-refresh', 'wechat1-refresh']
 
 
-def test_wechat_secrets_only_load_in_regular_checkin_job():
+def test_retired_guyscode_slots_are_not_loaded_and_lunora_is_retained():
 	root = Path(__file__).resolve().parents[1]
 	workflow = (root / '.github/workflows/checkin.yml').read_text()
 	regular_job = workflow.split('\n  checkin:\n', 1)[1].split('\n  gorouter-status:', 1)[0]
 	readme = (root / 'README.md').read_text()
-	for name, slot in (('GuysCode-wechat', 127), ('GuysCode-wechat1', 128)):
-		mapping = f'EXTRA_ACCOUNTS_{slot}: ${{{{ secrets.EXTRA_ACCOUNTS_{slot} }}}}'
-		assert mapping in regular_job
-		assert workflow.count(f'EXTRA_ACCOUNTS_{slot}:') == 1
-		assert f'`{name}` 保存在仓库级 Secret `EXTRA_ACCOUNTS_{slot}`' in readme
+	for slot in (47, 48, 49, 50, 51, 127, 128):
+		for source in (root / '.github/workflows').glob('*.yml'):
+			assert f'EXTRA_ACCOUNTS_{slot}:' not in source.read_text()
+	assert 'EXTRA_ACCOUNTS_87: ${{ secrets.EXTRA_ACCOUNTS_87 }}' in regular_job
+	assert 'Lunora 全部账号继续保留，包含 `Lunora-wechat1`' in readme

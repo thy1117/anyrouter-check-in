@@ -287,7 +287,7 @@ LiveLove 已内置，`LiveLove-112581647` 使用仓库级 Secret `EXTRA_ACCOUNTS
 
 ### GuysCode 签到
 
-`GuysCode-wechat` 保存在仓库级 Secret `EXTRA_ACCOUNTS_127`，`GuysCode-wechat1` 保存在仓库级 Secret `EXTRA_ACCOUNTS_128`。两个账号都使用 `provider: "guyscode"`、`access_token` 和 `refresh_token`，随普通签到任务运行，不覆盖已有 GuysCode 账号。
+2026-11-17 已移除被封的 7 个 GuysCode 账号及其专用 Secret、工作流映射和加密运行令牌记录。Lunora 全部账号继续保留，包含 `Lunora-wechat1`。
 
 ### 小白 Code 外站签到
 
