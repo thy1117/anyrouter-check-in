@@ -8,6 +8,7 @@ import os
 
 import checkin as current
 from legacy import checkin_20261004 as october
+from utils.config import AccountConfig
 
 BASELINE_COMMIT = '852253d9befa060d2d14a941da110fa45fc22706'
 BASELINE_DATE = '2026-10-04'
@@ -45,6 +46,7 @@ OCTOBER_PROVIDERS = frozenset(
 
 # Save the original function before installing this module's routing adapter.
 _october_dispatch = october._run_account_checkin
+_october_requests = october.run_check_in_requests
 
 
 def usable_balance(info):
@@ -95,6 +97,31 @@ class TargetedNotifications:
 		return {}
 
 
+def dispatch_http(
+	all_cookies: dict,
+	account: AccountConfig,
+	account_name: str,
+	provider_config,
+	*,
+	api_user_override: str | None = None,
+	access_token_override: str | None = None,
+	session_id_override: str | None = None,
+	use_proxy: bool = False,
+) -> tuple[bool, dict | None, dict | None]:
+	"""Keep SheApi's current PAT handling within the October HTTP dispatch."""
+	runner = current.run_check_in_requests if provider_config.name == 'sheapi' else _october_requests
+	return runner(
+		all_cookies,
+		account,
+		account_name,
+		provider_config,
+		api_user_override=api_user_override,
+		access_token_override=access_token_override,
+		session_id_override=session_id_override,
+		use_proxy=use_proxy,
+	)
+
+
 def configure_engine():
 	"""Install bounded compatibility changes into the frozen engine only."""
 	october._run_account_checkin = dispatch_account
@@ -110,18 +137,11 @@ def configure_engine():
 	october.is_checked_in_status = current.is_checked_in_status
 	# A retired SheApi PAT must stop before refresh/CAPTCHA submission. Other
 	# October HTTP providers keep the original browser/WAF and HTTP sequence.
-	original_requests = october.run_check_in_requests
-	if not getattr(original_requests, '_october_adapter', False):
-
-		def requests(cookies, account, name, provider, **kwargs):
-			if provider.name == 'sheapi':
-				return current.run_check_in_requests(cookies, account, name, provider, **kwargs)
-			return original_requests(cookies, account, name, provider, **kwargs)
-
-		requests._october_adapter = True
-		october.run_check_in_requests = requests
+	october.run_check_in_requests = dispatch_http
 	if os.getenv('CHECKIN_TARGET_ACCOUNTS', '').strip():
-		october.notify = TargetedNotifications()
+		# This intentionally installs a smaller notification interface for a
+		# targeted run; it does not instantiate or configure a notification kit.
+		setattr(october, 'notify', TargetedNotifications())
 		october.save_balance_hash = lambda value: None
 	else:
 		october.notify = current.notify

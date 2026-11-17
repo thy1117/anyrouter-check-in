@@ -142,6 +142,7 @@ async def test_targeted_historical_main_filters_accounts_without_sending_or_chan
 	with pytest.raises(SystemExit) as outcome:
 		await configured.main()
 	assert outcome.value.code == 0
+	assert runner.await_args is not None
 	assert runner.await_count == 1 and runner.await_args.args[0].name == 'keep'
 	sender.assert_not_called()
 	saver.assert_not_called()
@@ -216,3 +217,22 @@ def test_october_profile_rejects_invalid_direct_balance(configured, invalid):
 		result = configured.get_user_info(client, {}, 'https://example.test/profile')
 	assert result['success'] is False
 	assert 'quota' not in result
+
+
+@pytest.mark.parametrize('provider', ['sheapi', 'anyrouter'])
+def test_http_adapter_preserves_arguments_and_is_idempotent(monkeypatch, configured, provider):
+	old = Mock(return_value=(True, None, None))
+	new = Mock(return_value=(True, None, None))
+	monkeypatch.setattr(rollback, '_october_requests', old)
+	monkeypatch.setattr(checkin, 'run_check_in_requests', new)
+	rollback.configure_engine()
+	rollback.configure_engine()
+	account = AccountConfig(cookies=None, name='account')
+	config = ProviderConfig(name=provider, domain='https://example.test')
+	arguments = dict(
+		api_user_override='7', access_token_override='test-token', session_id_override='test-session', use_proxy=True
+	)
+	assert configured.run_check_in_requests({}, account, 'account', config, **arguments)[0] is True
+	expected, unused = (new, old) if provider == 'sheapi' else (old, new)
+	expected.assert_called_once_with({}, account, 'account', config, **arguments)
+	unused.assert_not_called()
