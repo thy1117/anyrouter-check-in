@@ -1,3 +1,4 @@
+import hashlib
 import os
 import smtplib
 import time
@@ -7,19 +8,24 @@ from typing import Any, Literal
 import httpx
 
 
-def split_telegram_message(message: str, limit: int = 4096) -> list[str]:
-	"""Keep every character, preferring line boundaries within a UTF-16 budget."""
+def split_telegram_message(message: str, limit: int = 4096, *, byte_limit: int = 4096) -> list[str]:
+	"""Preserve text within Telegram's units and a conservative UTF-8 byte cap."""
 	if limit < 2:
 		raise ValueError('Telegram message budget must allow at least two UTF-16 units')
+	if byte_limit < 4:
+		raise ValueError('Telegram byte budget must allow a complete UTF-8 character')
 	parts = []
 	while message:
 		units = 0
+		bytes_used = 0
 		end = 0
 		for char in message:
 			width = 2 if ord(char) > 0xFFFF else 1
-			if units + width > limit:
+			byte_width = len(char.encode('utf-8'))
+			if units + width > limit or bytes_used + byte_width > byte_limit:
 				break
 			units += width
+			bytes_used += byte_width
 			end += 1
 		if end < len(message):
 			newline = message.rfind('\n', 0, end)
@@ -163,12 +169,22 @@ class NotificationKit:
 		url = f'{self.gotify_url}?token={self.gotify_token}'
 		self._post_json('Gotify', url, data)
 
-	def send_telegram(self, title: str, content: str):
+	def send_telegram(self, title: str, content: str) -> list[dict[str, Any]]:
 		if not self.telegram_bot_token or not self.telegram_chat_id:
 			raise ValueError('Telegram Bot Token or Chat ID not configured')
 
 		# Account names and server errors are plain text, not trusted HTML.
-		messages = split_telegram_message(f'{title}\n\n{content}')
+		full_message = f'{title}\n\n{content}'
+		messages = split_telegram_message(full_message)
+		if len(messages) > 1:
+			# Reserve room for part numbers in both byte and character budgets.
+			messages = split_telegram_message(full_message, limit=4032, byte_limit=4032)
+			messages = [f'[{index}/{len(messages)}]\n{message}' for index, message in enumerate(messages, 1)]
+		if any(
+			len(message.encode('utf-8')) > 4096 or len(message.encode('utf-16-le')) // 2 > 4096 for message in messages
+		):
+			raise ValueError('Telegram part exceeds message budget; no message sent')
+		receipts = []
 		url = f'https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage'
 		for index, message in enumerate(messages, 1):
 			if index > 1:
@@ -181,10 +197,29 @@ class NotificationKit:
 				raise RuntimeError('Telegram response is not valid JSON; delivery not confirmed') from exc
 			result = payload.get('result') if isinstance(payload, dict) else None
 			message_id = result.get('message_id') if isinstance(result, dict) else None
-			if not isinstance(payload, dict) or payload.get('ok') is not True or message_id is None:
+			if (
+				not isinstance(payload, dict)
+				or payload.get('ok') is not True
+				or not isinstance(message_id, int)
+				or isinstance(message_id, bool)
+				or message_id <= 0
+			):
 				raise RuntimeError('Telegram response has no successful message receipt; delivery not confirmed')
+			receipt = {
+				'part': index,
+				'total_parts': len(messages),
+				'message_id': message_id,
+				'utf8_bytes': len(message.encode('utf-8')),
+				'utf16_units': len(message.encode('utf-16-le')) // 2,
+				'sha256': hashlib.sha256(message.encode('utf-8')).hexdigest(),
+			}
+			receipts.append(receipt)
 			chat_tail = str(self.telegram_chat_id)[-4:]
-			print(f'[Telegram] part {index}/{len(messages)}, message_id: {message_id}, chat_id tail: {chat_tail}')
+			print(
+				f'[Telegram] part {index}/{len(messages)}, message_id: {message_id}, chat_id tail: {chat_tail}, '
+				f'utf8_bytes: {receipt["utf8_bytes"]}, utf16_units: {receipt["utf16_units"]}, sha256: {receipt["sha256"]}'
+			)
+		return receipts
 
 	def send_bark(self, title: str, content: str):
 		if not self.bark_key:

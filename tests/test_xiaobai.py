@@ -204,11 +204,11 @@ def test_status_only_includes_balance_without_checkin(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-	'before_balance, after_balance, confirmed',
-	[(10, 10.25, True), (None, 10.25, False), (10, None, False), (10, 10, False)],
+	'before_balance, after_balance',
+	[(10, 10.25), (None, 10.25), (10, None), (10, 10)],
 )
-async def test_xiaobai_balance_notification_keeps_daily_success_skip(
-	monkeypatch, tmp_path, before_balance, after_balance, confirmed
+async def test_xiaobai_confirmed_success_keeps_optional_balances_and_full_runs(
+	monkeypatch, before_balance, after_balance
 ):
 	client = FakeClient(
 		profiles=[profile_ok(balance=before_balance), profile_ok(balance=after_balance)],
@@ -216,7 +216,7 @@ async def test_xiaobai_balance_notification_keeps_daily_success_skip(
 		checkins=[FakeResponse(200, {'ok': True, 'data': {'record': {'reward_amount': 0.25}}})],
 	)
 	install(monkeypatch, client)
-	monkeypatch.setenv('CHECKIN_DAILY_STATE_FILE', str(tmp_path / 'daily.json'))
+	monkeypatch.setenv('CHECKIN_DAILY_STATE_FILE', '')
 	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
 	monkeypatch.delenv('CHECKIN_STATE_GITHUB_TOKEN', raising=False)
 	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
@@ -231,29 +231,29 @@ async def test_xiaobai_balance_notification_keeps_daily_success_skip(
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
 	with pytest.raises(SystemExit) as first:
 		await checkin.main()
-	assert first.value.code == (0 if confirmed else 1)
+	assert first.value.code == 0
 	sender.assert_called_once()
 	message = sender.call_args.args[1]
-	assert message.count('小白Code') == 1 and f'{int(confirmed)}/1 成功' in message
-	assert (f'余额 ${after_balance:.2f}' if after_balance is not None else '余额暂不可用') in message
+	assert message.count('小白Code') == 1 and '1/1 成功' in message
+	if after_balance is not None and before_balance is not None:
+		assert f'余额 ${after_balance:.2f}' in message
+	assert '未确认到账' not in message
 	assert '余额 $0.00' not in message
 	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'POST', 'GET']
-	if not confirmed:
-		from utils.daily_success import DailySuccessState
-
-		state = DailySuccessState('2026-11-13', str(tmp_path / 'daily.json'))
-		assert not state.contains(account(), 0)
-		state.close()
-		return
-
 	runner.reset_mock()
 	sender.reset_mock()
+	# A later full round still visits the account but honors server already-signed
+	# status without another POST or another credited-reward claim.
+	client.profiles = iter([profile_ok(balance=after_balance)])
+	client.statuses = iter([signed(True)])
 	with pytest.raises(SystemExit) as second:
 		await checkin.main()
 	assert second.value.code == 0
-	runner.assert_not_awaited()
-	sender.assert_not_called()
-	assert len(client.calls) == 4
+	runner.assert_awaited_once()
+	sender.assert_called_once()
+	assert '1/1 成功' in sender.call_args.args[1]
+	assert '签到 +$' not in sender.call_args.args[1]
+	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'POST', 'GET', 'GET', 'GET']
 
 
 def test_expired_session_refreshes_correct_path_and_persists_before_status(monkeypatch):

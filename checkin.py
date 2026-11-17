@@ -1931,18 +1931,19 @@ def format_check_in_notification(detail: dict) -> str:
 	"""格式化带余额与变化的单个账号通知。"""
 	name = detail['name']
 	quota = detail['after_quota']
-	reward = detail['check_in_reward']
 	usage = detail['usage_increase']
+	# Snapshot differences do not establish a new check-in award.
+	balance_change = detail.get('balance_change', detail['check_in_reward'] - usage)
 	success = detail.get('success', True)
 	icon = '✅' if success else '❌'
 	parts = [f'{icon} {name}｜余额 ${quota:.2f}']
 
 	if not success:
 		parts.append('签到失败')
-	elif reward > 0:
-		parts.append(f'签到 +${reward:.2f}')
+	elif balance_change != 0:
+		parts.append(f'本轮余额变化 {"+" if balance_change > 0 else "-"}${abs(balance_change):.2f}')
 	else:
-		parts.append('签到无变化')
+		parts.append('本轮余额无变化')
 	if usage > 0:
 		parts.append(f'消耗 ${usage:.2f}')
 
@@ -2977,11 +2978,9 @@ async def main():
 						if user_info_after and user_info_after.get('login_verified') is True
 						else '未确认登录：缺少账号身份验证结果'
 					)
-				elif before_balance is None or after_balance is None:
-					error = '未确认到账：未能读取有效的签到前后余额'
-				elif after_balance <= before_balance:
-					error = '未确认到账：本轮余额没有增加（含今日已签到）'
 				else:
+					# Restore provider-confirmed success, including already-checked
+					# responses. Balance reads remain optional report data.
 					error = None
 				if error:
 					success = False
