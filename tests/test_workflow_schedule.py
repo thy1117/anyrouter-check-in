@@ -1,6 +1,16 @@
+import re
 from pathlib import Path
 
+import pytest
+
 WORKFLOW = Path(__file__).parent.parent / '.github' / 'workflows' / 'checkin.yml'
+
+
+@pytest.mark.parametrize('removed_slot', range(132, 139))
+def test_retired_newcodex_secrets_are_absent_from_every_workflow(removed_slot):
+	for workflow in WORKFLOW.parent.glob('*.yml'):
+		identifiers = set(re.findall(r'\bEXTRA_ACCOUNTS_\d+\b', workflow.read_text(encoding='utf-8')))
+		assert f'EXTRA_ACCOUNTS_{removed_slot}' not in identifiers
 
 
 def test_checkin_workflow_is_dispatch_only_for_external_scheduler():

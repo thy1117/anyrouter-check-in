@@ -420,7 +420,7 @@ ChuanAPI（`https://chuanapi.com/profile`）使用 NewAPI 的个人访问令牌�
 
 ### NewCodex
 
-NewCodex（`https://newcodex.cn/profile`）使用 NewAPI 的个人访问令牌（`access_token`）和用户 ID（`api_user`），配置 `provider: "newcodex"`。`NewCodex-1117`、`NewCodex-1118`、`NewCodex-1119`、`NewCodex-1120`、`NewCodex-1121`、`NewCodex-1122` 和 `NewCodex-1123` 分别保存在仓库级 Secret `EXTRA_ACCOUNTS_132`、`EXTRA_ACCOUNTS_133`、`EXTRA_ACCOUNTS_134`、`EXTRA_ACCOUNTS_135`、`EXTRA_ACCOUNTS_136`、`EXTRA_ACCOUNTS_137` 和 `EXTRA_ACCOUNTS_138`，随普通签到任务调用 `/api/user/checkin`；今日已签到也视为成功，无需浏览器或 Turnstile。
+站点已关闭签到。原有 7 个 NewCodex 账号已按用户要求从自动签到凭据和工作流加载中移除，不再查询余额、提交签到或产生相关失败通知。网站账号未删除；通用 Provider 实现和协议测试保留，不代表仍有活跃账号。
 
 ### Lunora 每日签到
 
