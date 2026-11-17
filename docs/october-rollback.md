@@ -47,14 +47,21 @@ the report describes that round. This rollback does not establish that a site's
 
 ## Backup and recovery
 
-Before activation, preserve both current Secrets and encrypted runtime tokens.
-The one-time `credential-backup.yml` workflow encrypts repository and production
-Secret snapshots in memory using AES-256-GCM, with the data key sealed using
-RSA-OAEP/SHA-256. Only ciphertext becomes a short-lived Actions artifact. The
-private decryption key is stored outside the repository, protected by the local
-Windows user via DPAPI; that key file alone is not portable to another login.
-Download and decrypt-verify both scopes before removing this one-time workflow.
-Never commit the private key, decrypted payload, or Secret values.
+Before activation, both current Secret scopes and encrypted runtime tokens were
+backed up and decrypt-verified. The one-time workflow was approved and completed
+in Actions run `44065881858` on November 17, 2026, and was removed after verification.
+It encrypted the snapshots in memory using AES-256-GCM, with the data key sealed
+using RSA-OAEP/SHA-256. Only ciphertext was uploaded as a short-lived artifact.
+The downloaded snapshots, verification reports, repository bundle and private
+key are stored outside the repository in the local audit folder. The private
+key is protected by the local Windows user via DPAPI; that key file alone is not
+portable to another login. Never commit the private key, decrypted payload, or
+Secret values.
+
+Verification resolved all 88 active production accounts across 21 providers and
+decoded all 46 runtime token files. Six GuysCode files already had a pending
+refresh marker; these were preserved. A script rollback cannot recover tokens
+whose server-side refresh outcome was interrupted.
 
 The pre-change deployment was `5e524e60f26cf68eb120e855ab1024989797e8e8`.
 To restore its runner behavior, change the regular workflow command from
