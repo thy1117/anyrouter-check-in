@@ -276,7 +276,7 @@ jobs:
         BARK_KEY: ${{ secrets.BARK_KEY }}
         BARK_SERVER: ${{ secrets.BARK_SERVER }}
       run: |
-        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
+        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin_october.py
 
     - name: 保存当日成功记录检查点
       if: ${{ always() && env.CHECKIN_DAILY_STATE_FILE != '' }}
