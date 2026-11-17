@@ -36,6 +36,9 @@ The wrapper makes the exceptions below explicit; it does not change Secrets.
   daily check-in still prevents another submission through the October engine.
 - Multipart notifications and current cache expression repairs. Manual targeted
   runs do not send external notifications or overwrite the full-run balance hash.
+- Notifications group multi-account providers first, followed by all sites with
+  one configured account in a compact block at the end of the balance details.
+  Counts use the configured accounts, including accounts with unavailable balances.
 - The existing external scheduler, runner, proxy pool and dependency lockfile.
   Do not reintroduce October's native cron alongside the external scheduler.
 

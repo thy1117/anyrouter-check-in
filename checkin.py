@@ -48,6 +48,7 @@ from utils.browser import (
 from utils.config import AccountConfig, AppConfig, load_accounts_config
 from utils.daily_success import DailyStateError, create_daily_success_state
 from utils.debug import debug_print, is_debug_enabled
+from utils.notification_layout import group_account_report
 from utils.notify import notify
 from utils.proxy import (
 	ProxyNodeAllocator,
@@ -3169,30 +3170,9 @@ async def main():
 		]
 		if balance_keys:
 			summary.extend(['', '💰 余额明细'])
-			_provider_counts = {}
-			for _balance_key in balance_keys:
-				_count_p = account_check_in_details[_balance_key].get('provider', '')
-				_provider_counts[_count_p] = _provider_counts.get(_count_p, 0) + 1
-			_multi_keys = [
-				k for k in balance_keys if _provider_counts[account_check_in_details[k].get('provider', '')] > 1
-			]
-			_single_keys = [
-				k for k in balance_keys if _provider_counts[account_check_in_details[k].get('provider', '')] <= 1
-			]
-			last_balance_provider = None
-			for _balance_key in _multi_keys:
-				_balance_provider = account_check_in_details[_balance_key].get('provider', '')
-				if last_balance_provider is not None and _balance_provider != last_balance_provider:
-					summary.append('')
-				summary.append(format_check_in_notification(account_check_in_details[_balance_key]))
-				last_balance_provider = _balance_provider
-			if _single_keys:
-				if _multi_keys:
-					summary.append('')
-				for _balance_key in _single_keys:
-					summary.append(format_check_in_notification(account_check_in_details[_balance_key]))
+			summary.extend(format_check_in_notification(account_check_in_details[key]) for key in balance_keys)
 
-		notify_content = '\n'.join(summary)
+		notify_content = group_account_report('\n'.join(summary), accounts)
 		screenshot_paths = take_pending_screenshots() if is_debug_enabled() else []
 		if screenshot_paths:
 			github_run_id = os.getenv('GITHUB_RUN_ID', '').strip()
