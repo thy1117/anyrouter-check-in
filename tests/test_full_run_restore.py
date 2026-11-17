@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize('legacy_input', [None, False, True])
-def test_full_dispatch_uses_normal_entrypoint_with_legacy_muse_input(legacy_input):
+def test_full_dispatch_uses_october_entrypoint_with_legacy_muse_input(legacy_input):
 	import os
 	import shutil
 	import subprocess
@@ -59,7 +59,7 @@ def test_full_dispatch_uses_normal_entrypoint_with_legacy_muse_input(legacy_inpu
 			timeout=10,
 		)
 		assert result.returncode == 0, result.stderr
-		assert (root / 'observed.txt').read_text(encoding='utf-8').strip() == 'run checkin.py'
+		assert (root / 'observed.txt').read_text(encoding='utf-8').strip() == 'run checkin_october.py'
 
 
 @pytest.mark.asyncio
