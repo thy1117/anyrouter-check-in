@@ -7,7 +7,7 @@ on:
         type: string
         default: ''
       manual_no_challenges:
-        description: 'Manual full run without CAPTCHA/OCR/Turnstile/WAF-solving; required human challenges stay not submitted'
+        description: 'Legacy trigger compatibility only; ignored. Full runs always use the normal check-in flow'
         type: boolean
         default: false
       gorouter_status_only:
@@ -153,7 +153,6 @@ jobs:
 
     - name: 执行签到
       env:
-        CHECKIN_MANUAL_NO_CHALLENGES: ${{ inputs.manual_no_challenges }}
         DEBUG_MODE: ${{ env.DEBUG_MODE }}
         CHECKIN_HEADLESS: false
         CHECKIN_HUMANIZE: true
@@ -277,11 +276,7 @@ jobs:
         BARK_KEY: ${{ secrets.BARK_KEY }}
         BARK_SERVER: ${{ secrets.BARK_SERVER }}
       run: |
-        if [ "$CHECKIN_MANUAL_NO_CHALLENGES" = "true" ]; then
-          uv run python scripts/run_checkin_no_challenges.py
-        else
-          xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
-        fi
+        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
 
     - name: 保存当日成功记录检查点
       if: ${{ always() && env.CHECKIN_DAILY_STATE_FILE != '' }}
