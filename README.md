@@ -293,6 +293,8 @@ LiveLove 已内置，`LiveLove-112581647` 使用仓库级 Secret `EXTRA_ACCOUNTS
 
 小白 Code 使用独立签到页 `https://token.dialoguedui.com/checkin/`，不是 NewAPI 的通用签到接口。内置 `xiaobai` Provider 会先读取签到状态，未签到时再提交签到；access token 失效后会使用 refresh token 自动刷新。余额取自 `/api/v1/auth/me` 的 `balance`：复用身份验证时的签到前余额，提交后只读查询一次最新余额，并在通知中显示。该余额查询不会触发额外签到或令牌轮换；缺少有效的前后余额时不确认到账。
 
+签到页启用 Cloudflare Turnstile 后，脚本从当前账号的 `/checkin/api/status` 读取动态 `verification.siteKey`、`verification.action` 和 `verification.cData`，在签到域名的浏览器页面中完成验证，再以 JSON `{"turnstileToken": "验证结果"}` 提交 `/checkin/api/checkin`。验证、提交和状态回读使用同一浏览器会话；每轮仅提交一次，随后通过 GET 状态的 `signedToday` 确认结果。验证未完成时不提交签到，并报告需要网页确认。生产使用的 October 入口也会将小白账号路由到这一专用适配器。
+
 ```json
 {
   "name": "小白Code-112581647",
@@ -303,6 +305,8 @@ LiveLove 已内置，`LiveLove-112581647` 使用仓库级 Secret `EXTRA_ACCOUNTS
 ```
 
 该站的账号密码登录带 Turnstile 校验，GitHub Actions 不使用账号密码登录。请把上述 JSON 保存到 production Environment Secret `EXTRA_ACCOUNTS_13`，不要把 token 提交到仓库。
+
+`xiaobai-test` 默认只验证身份和签到状态，不启动浏览器；仅配置查询也不安装浏览器。关闭 `xiaobai_status_only` 并执行实际签到时，工作流才安装浏览器与系统依赖，并通过 Xvfb 运行验证。
 
 新增账号 `小白Code-wechat` 保存在仓库级 Secret `EXTRA_ACCOUNTS_122`（`production` Environment Secret 已达到 GitHub 的 100 个上限），随普通签到任务运行；不加入 `xiaobai-test` 专用入口。
 

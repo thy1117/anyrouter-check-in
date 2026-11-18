@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import threading
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -51,7 +53,7 @@ def test_historical_engine_is_an_unchanged_snapshot():
 	assert 'uv run checkin_october.py' in (ROOT / '.github/workflows/checkin.yml').read_text(encoding='utf-8')
 
 
-@pytest.mark.parametrize('provider', ['anyrouter', 'guyscode', 'xiaobai', 'yuecheng', '42w'])
+@pytest.mark.parametrize('provider', ['anyrouter', 'guyscode', 'yuecheng', '42w'])
 async def test_original_sites_use_the_october_dispatch(monkeypatch, configured, provider):
 	config = AppConfig.load_from_env().providers[provider]
 	old = AsyncMock(return_value=(True, None, None))
@@ -65,7 +67,8 @@ async def test_original_sites_use_the_october_dispatch(monkeypatch, configured, 
 
 
 @pytest.mark.parametrize(
-	'provider', ['91token', 'lunora', 'sidrune', 'mtnapi', 'livelove', 'kapibala', 'twinkle', 'nianhua', 'ciyuan']
+	'provider',
+	['91token', 'lunora', 'sidrune', 'mtnapi', 'livelove', 'kapibala', 'twinkle', 'nianhua', 'ciyuan', 'xiaobai'],
 )
 async def test_current_api_contracts_are_retained(monkeypatch, configured, provider):
 	config = AppConfig.load_from_env().providers[provider]
@@ -77,6 +80,33 @@ async def test_current_api_contracts_are_retained(monkeypatch, configured, provi
 	assert (await rollback.dispatch_account(account, 'account', config))[0]
 	new.assert_awaited_once_with(account, 'account', config)
 	old.assert_not_awaited()
+
+
+@pytest.mark.parametrize('turnstile', [False, True])
+async def test_production_xiaobai_dispatch_runs_its_current_adapter_outside_the_event_loop(
+	monkeypatch, configured, turnstile
+):
+	account = AccountConfig(cookies=None, provider='xiaobai', name='account', access_token='test-access')
+	provider = replace(AppConfig.load_from_env().providers['xiaobai'], checkin_turnstile=turnstile)
+	info = {'success': True, 'quota': 3.5, 'used_quota': 0}
+	caller_thread = threading.get_ident()
+	worker_threads = []
+
+	def run_xiaobai(*args):
+		worker_threads.append(threading.get_ident())
+		return True, info, info
+
+	runner = Mock(side_effect=run_xiaobai)
+	legacy = Mock(side_effect=AssertionError('Xiaobai cannot use the frozen empty-JSON check-in'))
+	generic = AsyncMock(side_effect=AssertionError('Xiaobai requires its own Turnstile payload and status contract'))
+	monkeypatch.setattr(checkin, 'run_xiaobai_check_in', runner)
+	monkeypatch.setattr(configured, 'run_xiaobai_check_in', legacy)
+	monkeypatch.setattr(checkin, 'run_gorouter_check_in_in_page', generic)
+	assert await configured._run_account_checkin(account, 'account', provider) == (True, info, info)
+	runner.assert_called_once_with(account, 'account', provider)
+	assert len(worker_threads) == 1 and worker_threads[0] != caller_thread
+	legacy.assert_not_called()
+	generic.assert_not_awaited()
 
 
 async def test_anyrouter_restores_browser_preparation_and_checkin(monkeypatch, configured):

@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from utils.browser import reset_turnstile_in_page, solve_turnstile_in_page
 
 CHALLENGE_URL = 'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/flow/ov1/x'
@@ -51,6 +53,7 @@ class FakePage:
 		self.frames = list(frames)
 		self.mouse = FakeMouse()
 		self.evaluated = []
+		self.render_options = None
 		self.waits = []
 		self._poll_results = list(poll_results)
 		self._frames_after_render = frames_after_render
@@ -59,6 +62,7 @@ class FakePage:
 	async def evaluate(self, script, arg=None):
 		self.evaluated.append(script)
 		if 'window.turnstile.render' in script:
+			self.render_options = arg
 			if self._render_error:
 				raise RuntimeError(self._render_error)
 			if self._frames_after_render is not None:
@@ -77,6 +81,27 @@ def test_returns_token_without_clicking_when_callback_fires_early():
 
 	assert asyncio.run(solve_turnstile_in_page(page, '0xKEY')) == ('tok-managed', None)
 	assert page.mouse.events == []
+	assert page.render_options == {'sitekey': '0xKEY'}
+
+
+@pytest.mark.parametrize(
+	'context, expected_options',
+	[
+		(
+			{'action': 'daily-checkin', 'c_data': 'account_ABC-123'},
+			{'action': 'daily-checkin', 'cData': 'account_ABC-123'},
+		),
+		({'action': '  original-action  '}, {'action': '  original-action  '}),
+		({'c_data': '  original-context  '}, {'cData': '  original-context  '}),
+		({'action': '', 'c_data': ''}, {'action': '', 'cData': ''}),
+		({'action': None, 'c_data': None}, {}),
+	],
+)
+def test_render_preserves_optional_verification_context(context, expected_options):
+	page = FakePage([{'token': 'tok-context', 'error': ''}])
+
+	assert asyncio.run(solve_turnstile_in_page(page, '0xKEY', **context)) == ('tok-context', None)
+	assert page.render_options == {'sitekey': '0xKEY', **expected_options}
 
 
 def test_clicks_checkbox_then_returns_token():

@@ -127,13 +127,38 @@ def test_single_account_test_cannot_run_production_job():
 		"github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && inputs.sidrune_exchange_only"
 		in text
 	)
-	test_job = text.split('\n  xiaobai-test:')[1]
-	assert 'run: uv run python -m scripts.check_xiaobai' in test_job
+	test_job = text.split('\n  xiaobai-test:', 1)[1].split('\n  sheapi-proxy-test:', 1)[0]
+	runner = test_job.split('    - name: 只验证指定的小白账号\n', 1)[1].split('\n    - ', 1)[0]
+	script = runner.split('      run: |\n', 1)[1]
+	assert [line.strip() for line in script.splitlines() if line.strip()] == [
+		'if [ "$XIAOBAI_CONFIG_ONLY" = "true" ] || [ "$XIAOBAI_STATUS_ONLY" != "false" ]; then',
+		'uv run python -m scripts.check_xiaobai',
+		'else',
+		'xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run python -m scripts.check_xiaobai',
+		'fi',
+	]
 	assert 'run checkin.py' not in test_job
 	assert 'TELEGRAM_BOT_TOKEN' not in test_job
 	assert 'ANYROUTER_ACCOUNTS' not in test_job
 	assert 'PROXY_NODE_NAME: Oracle-SG' in test_job
+	assert 'XIAOBAI_CONFIG_ONLY: ${{ inputs.xiaobai_config_only }}' in runner
 	assert 'XIAOBAI_STATUS_ONLY: ${{ inputs.xiaobai_status_only }}' in test_job
+
+
+def test_xiaobai_browser_installation_is_limited_to_actual_checkin():
+	text = WORKFLOW.read_text(encoding='utf-8')
+	test_job = text.split('\n  xiaobai-test:', 1)[1].split('\n  sheapi-proxy-test:', 1)[0]
+	steps = test_job.split('\n    - ')
+	browser_steps = [step for step in steps if 'path: ~/.cloakbrowser' in step or 'cloakbrowser install' in step]
+	assert len(browser_steps) == 2
+	for step in browser_steps:
+		assert '\n      if: ${{ !inputs.xiaobai_config_only && !inputs.xiaobai_status_only }}\n' in step
+	installation = next(step for step in browser_steps if 'cloakbrowser install' in step)
+	assert 'uv run python -m playwright install-deps chromium' in installation
+	assert 'command -v xvfb-run' in installation
+	assert 'sudo apt-get install -y xvfb' in installation
+	assert 'uv run python -m cloakbrowser install' in installation
+	assert "CHECKIN_HEADLESS: 'false'" in test_job
 
 
 def test_token_state_uses_short_lived_token_and_ciphertext_only():

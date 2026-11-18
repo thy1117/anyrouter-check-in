@@ -71,6 +71,8 @@ GOROUTER_TURNSTILE_ATTEMPTS = 3
 GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS = 8
 XIAOBAI_MAX_REQUEST_ATTEMPTS = 3
 XIAOBAI_RETRY_STATUS_CODES = (502, 503, 504)
+XIAOBAI_BROWSER_REQUEST_TIMEOUT_SECONDS = 30
+XIAOBAI_VERIFICATION_TIMEOUT_SECONDS = 75
 BEARER_LOGIN_MAX_ATTEMPTS = 3
 SIDRUNE_WELFARE_EXCHANGE_PATH = '/api/v1/welfare/exchange/balance'
 CAPTCHA_RETRY_KEYWORDS = ('验证码', 'captcha', '过期', 'expired', 'invalid code')
@@ -1008,6 +1010,211 @@ def _xiaobai_auth_error(response, action: str) -> str:
 	return f'{action} failed - HTTP {response.status_code}{suffix}{hint}'
 
 
+def _xiaobai_page_data(status_code: int, body: str, action: str) -> dict:
+	"""Parse the browser contract without putting server messages or tokens in logs."""
+	if status_code != 200:
+		raise TokenStateError(f'{action} failed - HTTP {status_code}')
+	try:
+		payload = json.loads(body)
+	except ValueError:
+		raise TokenStateError(f'{action} returned non-JSON data') from None
+	if not isinstance(payload, dict) or payload.get('ok') is False or payload.get('code') not in (None, 0):
+		raise TokenStateError(f'{action} rejected by the API')
+	data = payload.get('data')
+	if not isinstance(data, dict):
+		raise TokenStateError(f'{action} returned invalid response data')
+	return data
+
+
+async def _run_xiaobai_check_in_in_page(
+	account_name: str,
+	provider_config,
+	access_token: str,
+	*,
+	expected_user_id: str,
+	user_info_before: dict | None = None,
+) -> tuple[bool, dict | None, dict | None]:
+	"""Keep the account-bound challenge, one submission and confirmation in one browser."""
+	context = page = None
+	submitted = False
+	phase = 'not_submitted'
+	headers = {
+		'Accept': 'application/json',
+		'Content-Type': 'application/json',
+		'Authorization': f'Bearer {access_token}',
+	}
+
+	async def request(path, **kwargs):
+		# In-page fetch otherwise has no independent deadline.
+		if page is None:
+			raise TokenStateError('Browser page is unavailable; no request submitted')
+		return await asyncio.wait_for(
+			request_in_page(page, path, headers=headers, **kwargs),
+			timeout=XIAOBAI_BROWSER_REQUEST_TIMEOUT_SECONDS,
+		)
+
+	async def reset_verification():
+		if page is not None:
+			await asyncio.wait_for(reset_turnstile_in_page(page), timeout=5)
+
+	async def read_profile():
+		status_code, body = await request(provider_config.user_info_path)
+		data = _xiaobai_page_data(status_code, body, 'Browser authentication')
+		if not data.get('id') or str(data['id']) != expected_user_id:
+			raise TokenStateError('Browser authentication returned a different user identity')
+		profile = parse_sub2api_profile_response(status_code, body)
+		return profile if get_available_balance(profile) is not None else None
+
+	try:
+		settings = load_browser_login_settings(account_name, provider_config.name, persist_profile=False)
+		context = await launch_login_context(settings, use_proxy=provider_config.use_proxy)
+		page = await context.new_page()
+		await prepare_browser_page(page)
+		await page.goto(
+			f'{provider_config.domain}/checkin/', wait_until='domcontentloaded', timeout=settings.wait_timeout_ms
+		)
+		await wait_for_waf_ready(page, settings.wait_timeout_ms)
+		user_info_before = await read_profile() or user_info_before
+		for attempt in range(1, GOROUTER_TURNSTILE_ATTEMPTS + 1):
+			if attempt > 1:
+				await asyncio.sleep(GOROUTER_TURNSTILE_RETRY_DELAY_SECONDS)
+				await page.reload(wait_until='domcontentloaded', timeout=settings.wait_timeout_ms)
+				await wait_for_waf_ready(page, settings.wait_timeout_ms)
+			# cData belongs to the latest account status; never reuse it across retries.
+			status_code, body = await request(provider_config.check_in_status_path)
+			status = _xiaobai_page_data(status_code, body, 'Check-in status request')
+			if status.get('signedToday') is True:
+				print(f'[SUCCESS] {account_name}: Already checked in today')
+				return (
+					True,
+					user_info_before,
+					{
+						**(user_info_before or {'success': False}),
+						'signedToday': True,
+						'check_in_phase': 'already_confirmed',
+						'check_in_submitted': False,
+					},
+				)
+			if status.get('signedToday') is not False:
+				raise TokenStateError('Daily check-in status is unavailable; no check-in submitted')
+			config = status.get('config')
+			if not isinstance(config, dict) or config.get('enabled') is not True:
+				raise TokenStateError('Daily check-in is disabled or unavailable; no check-in submitted')
+			verification = status.get('verification')
+			if (
+				not isinstance(verification, dict)
+				or verification.get('configured') is not True
+				or any(
+					not isinstance(verification.get(key), str) or not verification[key].strip()
+					for key in ('siteKey', 'cData')
+				)
+				or (verification.get('action') is not None and not isinstance(verification['action'], str))
+			):
+				raise TokenStateError('签到安全验证配置不可用，签到未提交；需网页确认')
+			try:
+				# Include api.js loading in the deadline, not only widget polling.
+				token, verification_error = await asyncio.wait_for(
+					solve_turnstile_in_page(
+						page, verification['siteKey'], action=verification.get('action'), c_data=verification['cData']
+					),
+					timeout=XIAOBAI_VERIFICATION_TIMEOUT_SECONDS,
+				)
+			except TimeoutError:
+				raise TokenStateError('验证码加载超时，签到未提交；需网页确认') from None
+			if isinstance(token, str) and token:
+				mask_tokens(token)
+				break
+			await reset_verification()
+			stalled = verification_error in (
+				'Turnstile widget did not become interactive',
+				'Turnstile challenge stalled after click',
+			)
+			# Only local widget stalls may retry. Do not echo arbitrary render errors.
+			reason = verification_error if stalled else 'Turnstile verification failed'
+			if not stalled or attempt == GOROUTER_TURNSTILE_ATTEMPTS:
+				raise TokenStateError(f'验证码未完成，签到未提交；需网页确认 ({reason})')
+			print(f'[WARN] {account_name}: {reason} ({attempt}/{GOROUTER_TURNSTILE_ATTEMPTS})')
+
+		print(f'[NETWORK] {account_name}: Submitting Xiaobai check-in with browser verification')
+		submitted, phase = True, 'submitted_unconfirmed'
+		try:
+			status_code, body = await request(
+				provider_config.sign_in_path, method='POST', json_body={'turnstileToken': token}
+			)
+		except Exception as exc:
+			status_code, body = 0, ''
+			print(f'[WARN] {account_name}: Check-in submission {type(exc).__name__}; confirming without replay')
+		try:
+			payload = json.loads(body)
+		except ValueError:
+			payload = None
+		if 400 <= status_code < 500 or (
+			status_code == 200 and isinstance(payload, dict) and payload.get('ok') is False
+		):
+			phase = 'submission_rejected'
+			raise TokenStateError(f'签到被站点拒绝，未重复提交 (HTTP {status_code})')
+		# A response/timeout alone cannot prove credit. Confirm only with bounded GETs.
+		last_error = 'Daily check-in has not been confirmed by signedToday'
+		for confirmation in range(XIAOBAI_MAX_REQUEST_ATTEMPTS):
+			if confirmation:
+				await asyncio.sleep(2)
+			status_code = 0
+			try:
+				status_code, body = await request(provider_config.check_in_status_path)
+				status = _xiaobai_page_data(status_code, body, 'Check-in confirmation')
+			except TokenStateError as exc:
+				last_error = str(exc)
+			except Exception as exc:
+				last_error = f'Check-in confirmation failed - {type(exc).__name__}'
+			else:
+				if status.get('signedToday') is True:
+					try:
+						after = await read_profile()
+					except Exception as exc:
+						print(f'[WARN] {account_name}: Post-check-in balance unavailable - {type(exc).__name__}')
+						after = None
+					print(f'[SUCCESS] {account_name}: Xiaobai check-in confirmed by signedToday')
+					return (
+						True,
+						user_info_before,
+						{
+							**(after or {'success': False}),
+							'signedToday': True,
+							'check_in_phase': 'confirmed',
+							'check_in_submitted': True,
+						},
+					)
+			if status_code in (401, 403, 429):
+				break
+		raise TokenStateError(f'签到已提交但结果未确认；未重复提交 ({last_error})')
+	except TokenStateError as exc:
+		error = str(exc)
+	except Exception as exc:
+		error = f'Xiaobai browser check-in failed - {type(exc).__name__}'
+	finally:
+		# Cleanup must not overwrite a confirmed result or lose submission state.
+		if page is not None:
+			try:
+				await reset_verification()
+			except Exception:
+				print(f'[WARN] {account_name}: Browser verification cleanup failed')
+		if context is not None:
+			try:
+				await asyncio.wait_for(context.close(), timeout=5)
+			except Exception:
+				print(f'[WARN] {account_name}: Browser context cleanup failed')
+	print(f'[FAILED] {account_name}: {error}')
+	return (
+		False,
+		user_info_before,
+		{
+			**(attach_check_in_error(user_info_before, error) or {}),
+			'check_in_phase': phase,
+			'check_in_submitted': submitted,
+		},
+	)
+
+
 def run_xiaobai_check_in(
 	account: AccountConfig,
 	account_name: str,
@@ -1043,6 +1250,7 @@ def run_xiaobai_check_in(
 
 		with httpx.Client(headers=headers, **client_kwargs) as client:
 			refresh_attempted = False
+			authenticated_user_id: str | None = None
 
 			def get_with_retry(url: str):
 				# Retry read-only calls, never a check-in or rotating refresh POST.
@@ -1102,6 +1310,7 @@ def run_xiaobai_check_in(
 				print(f'[AUTH] {account_name}: Updated tokens saved encrypted')
 
 			def authenticate(*, allow_refresh: bool = True):
+				nonlocal authenticated_user_id
 				if not access_token:
 					refresh()
 				profile_url = f'{provider_config.domain}{provider_config.user_info_path}'
@@ -1121,25 +1330,22 @@ def run_xiaobai_check_in(
 				data = unwrap_api_data(payload)
 				if not isinstance(data, dict) or not data.get('id'):
 					raise TokenStateError('Authentication validation returned no user identity')
+				if authenticated_user_id is not None and str(data['id']) != authenticated_user_id:
+					raise TokenStateError('Authentication validation returned a different user identity')
+				authenticated_user_id = str(data['id'])
 				print(f'[AUTH] {account_name}: Main API confirmed a valid session')
 				profile = parse_sub2api_profile_response(response.status_code, response.text)
 				return profile if get_available_balance(profile) is not None else None
 
 			user_info_before = authenticate()
 
-			def request(method: str, url: str):
+			def request_status(url: str):
 				for attempt in range(1, XIAOBAI_MAX_REQUEST_ATTEMPTS + 1):
-					if method == 'GET':
-						response = get_with_retry(url)
-					else:
-						response = client.post(url, headers=headers, json={}, timeout=30)
+					response = get_with_retry(url)
 					if response.status_code == 401 and not refresh_attempted and refresh_token:
 						refresh()
 						authenticate()
-						if method == 'GET':
-							response = get_with_retry(url)
-						else:
-							response = client.post(url, headers=headers, json={}, timeout=30)
+						response = get_with_retry(url)
 					# A check-in 502 with a verified session is a service error,
 					# not justification for repeatedly rotating refresh tokens.
 					if (
@@ -1147,13 +1353,11 @@ def run_xiaobai_check_in(
 						or attempt == XIAOBAI_MAX_REQUEST_ATTEMPTS
 					):
 						return response
-					print(
-						f'[WARN] {account_name}: {method} check-in API returned HTTP {response.status_code}; retrying'
-					)
+					print(f'[WARN] {account_name}: GET check-in API returned HTTP {response.status_code}; retrying')
 					time.sleep(attempt)
 				raise RuntimeError('Xiaobai request retry loop ended unexpectedly')
 
-			status_response = request('GET', f'{provider_config.domain}{provider_config.check_in_status_path}')
+			status_response = request_status(f'{provider_config.domain}{provider_config.check_in_status_path}')
 			status, status_error = _xiaobai_response_data(status_response, account_name, 'Check-in status request')
 			if status is None:
 				# The actual frontend disables its button on status failure too.
@@ -1178,31 +1382,15 @@ def run_xiaobai_check_in(
 			if isinstance(config, dict) and config.get('enabled') is False:
 				raise TokenStateError('Daily check-in is currently disabled')
 
-			print(f'[NETWORK] {account_name}: Executing Xiaobai daily check-in')
-			check_response = request('POST', f'{provider_config.domain}{provider_config.sign_in_path}')
-			result, error = _xiaobai_response_data(check_response, account_name, 'Daily check-in')
-			if result is None:
-				raise TokenStateError(error or 'Daily check-in failed')
-			record = result.get('record')
-			result_status = result.get('status')
-			success = bool(
-				result.get('alreadyChecked') is True
-				or isinstance(record, dict)
-				or result.get('success') is True
-				or (isinstance(result_status, dict) and result_status.get('signedToday') is True)
+			return asyncio.run(
+				_run_xiaobai_check_in_in_page(
+					account_name,
+					provider_config,
+					access_token,
+					expected_user_id=str(authenticated_user_id),
+					user_info_before=user_info_before,
+				)
 			)
-			if not success:
-				raise TokenStateError('Daily check-in returned an unexpected response')
-			print(f'[SUCCESS] {account_name}: Check-in successful or already checked in')
-			try:
-				# Balance reads must not trigger token rotation or replay a check-in.
-				user_info_after = authenticate(allow_refresh=False)
-			except Exception as exc:
-				print(f'[WARN] {account_name}: Post-check-in balance unavailable - {type(exc).__name__}')
-				user_info_after = None
-			if user_info_after is None:
-				print(f'[WARN] {account_name}: Post-check-in balance unavailable; credit is not confirmed')
-			return True, user_info_before, user_info_after
 	except TokenStateError as exc:
 		error = str(exc)
 	except Exception as exc:
@@ -2502,11 +2690,12 @@ async def _run_account_checkin(account: AccountConfig, account_name: str, provid
 	if provider_config.login_in_page and account.has_login_credentials():
 		return await run_newapi_login_check_in_in_page(account, account_name, provider_config)
 
+	if provider_config.api_style == 'xiaobai':
+		# The sync API also serves the standalone diagnostic entrypoint. A worker
+		# gives its browser coroutine an event loop without nesting the main loop.
+		return await asyncio.to_thread(run_xiaobai_check_in, account, account_name, provider_config)
 	if provider_config.checkin_turnstile:
 		return await run_gorouter_check_in_in_page(account, account_name, provider_config)
-
-	if provider_config.api_style == 'xiaobai':
-		return run_xiaobai_check_in(account, account_name, provider_config)
 	if provider_config.api_style in ('sub2api', 'tokenrouter'):
 		return run_bearer_check_in(account, account_name, provider_config)
 	if provider_config.login_api_path and account.has_login_credentials():

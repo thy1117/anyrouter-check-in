@@ -687,7 +687,7 @@ async def request_in_page(
 
 
 _TURNSTILE_RENDER_JS = """
-async (siteKey) => {
+async (options) => {
 	if (!window.turnstile) {
 		await new Promise((resolve, reject) => {
 			const existing = document.getElementById('checkin-turnstile-api');
@@ -712,7 +712,7 @@ async (siteKey) => {
 	document.body.appendChild(host);
 	window.__checkinTurnstile = {token: '', error: ''};
 	const widgetId = window.turnstile.render(host, {
-		sitekey: siteKey,
+		...options,
 		callback: (token) => { window.__checkinTurnstile.token = token; },
 		'error-callback': (err) => { window.__checkinTurnstile.error = String(err); },
 		'timeout-callback': () => { window.__checkinTurnstile.error = 'timeout'; },
@@ -782,6 +782,8 @@ async def solve_turnstile_in_page(
 	page: Page,
 	site_key: str,
 	*,
+	action: str | None = None,
+	c_data: str | None = None,
 	timeout_ms: int = TURNSTILE_TIMEOUT_MS,
 	post_click_timeout_ms: int = TURNSTILE_POST_CLICK_TIMEOUT_MS,
 ) -> tuple[str | None, str | None]:
@@ -790,6 +792,7 @@ async def solve_turnstile_in_page(
 	不能复用站点自己的 widget：签到卡片只在通过 ``/console/personal`` 打开的
 	Profile 页里挂载，而且它只在收到"Turnstile token 为空"后才弹窗。自渲染同
 	一个 sitekey 拿到的 token 服务端 siteverify 一样接受（已实测）。
+	站点提供 action/cData 时原样传给 widget；省略时保持默认验证上下文。
 
 	勾选框必须用真实鼠标事件点，``locator.click()`` 进不去 closed shadow root。
 
@@ -799,9 +802,14 @@ async def solve_turnstile_in_page(
 	if not site_key:
 		return None, 'Turnstile site key is empty'
 
+	render_options = {'sitekey': site_key}
+	if action is not None:
+		render_options['action'] = action
+	if c_data is not None:
+		render_options['cData'] = c_data
 	known_frame_urls = {frame.url for frame in page.frames if 'challenges.cloudflare.com' in frame.url}
 	try:
-		await page.evaluate(_TURNSTILE_RENDER_JS, site_key)
+		await page.evaluate(_TURNSTILE_RENDER_JS, render_options)
 	except Exception as exc:
 		return None, f'Turnstile render failed - {str(exc)[:80]}'
 

@@ -29,6 +29,7 @@ class FakeState:
 		self.fail_pending = fail_pending
 		self.fail_saved = fail_saved
 		self.saved = []
+		self.closed = False
 
 	def load(self):
 		return self.access, self.refresh
@@ -40,14 +41,13 @@ class FakeState:
 		self.access, self.refresh = access, refresh
 
 	def close(self):
-		pass
+		self.closed = True
 
 
 class FakeClient:
-	def __init__(self, *, profiles=None, statuses=(), checkins=(), refreshes=(), on_refresh=None):
+	def __init__(self, *, profiles=None, statuses=(), refreshes=(), on_refresh=None):
 		self.profiles = iter(profiles) if profiles is not None else None
 		self.statuses = iter(statuses)
-		self.checkins = iter(checkins)
 		self.refreshes = iter(refreshes)
 		self.calls = []
 		self.on_refresh = on_refresh
@@ -79,7 +79,7 @@ class FakeClient:
 			if isinstance(response, Exception):
 				raise response
 			return response
-		return next(self.checkins)
+		pytest.fail('HTTP must not submit Xiaobai check-in without its browser verification')
 
 
 def account(access='access-secret', refresh=''):
@@ -109,6 +109,11 @@ def install(monkeypatch, client, state=None):
 	monkeypatch.setattr('checkin.time.sleep', lambda *_: None)
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+	monkeypatch.setattr(
+		checkin,
+		'_run_xiaobai_check_in_in_page',
+		AsyncMock(side_effect=AssertionError('Browser handoff was not expected')),
+	)
 	return kwargs_seen
 
 
@@ -124,15 +129,16 @@ def test_signed_today_skips_duplicate_check_in(monkeypatch):
 	assert kwargs[0]['trust_env'] is False
 
 
-def test_unsigned_account_posts_empty_json(monkeypatch):
-	client = FakeClient(
-		statuses=[signed(False)],
-		checkins=[FakeResponse(200, {'ok': True, 'data': {'record': {'reward_amount': 0.25}}})],
-	)
+def test_unsigned_account_hands_off_authenticated_identity_without_http_post(monkeypatch):
+	client = FakeClient(statuses=[signed(False)])
 	install(monkeypatch, client)
-	assert run() == (True, None, None)
-	assert client.calls[2]['url'].endswith('/checkin/api/checkin')
-	assert client.calls[2]['json'] == {}
+	provider = AppConfig.load_from_env().providers['xiaobai']
+	result = (True, None, {'signedToday': True, 'check_in_phase': 'confirmed'})
+	browser = AsyncMock(return_value=result)
+	monkeypatch.setattr(checkin, '_run_xiaobai_check_in_in_page', browser)
+	assert run() == result
+	browser.assert_awaited_once_with('小白Code', provider, 'access-secret', expected_user_id='1', user_info_before=None)
+	assert [call['method'] for call in client.calls] == ['GET', 'GET']
 
 
 @pytest.mark.parametrize('balance', [12.34, '12.34', 0, -0.5])
@@ -145,52 +151,35 @@ def test_signed_today_reports_balance_without_an_extra_request(monkeypatch, bala
 	assert [call['method'] for call in client.calls] == ['GET', 'GET']
 
 
-def test_unsigned_account_reads_updated_balance(monkeypatch):
-	client = FakeClient(
-		profiles=[profile_ok(balance=10, used_balance=2), profile_ok(balance=10.25, used_balance=2)],
-		statuses=[signed(False)],
-		checkins=[FakeResponse(200, {'ok': True, 'data': {'record': {'reward_amount': 0.25}}})],
-	)
+def test_unsigned_account_preserves_browser_balance_result(monkeypatch):
+	client = FakeClient(profiles=[profile_ok(balance=10, used_balance=2)], statuses=[signed(False)])
 	install(monkeypatch, client)
+	before_info = checkin.parse_sub2api_profile_response(200, profile_ok(balance=10, used_balance=2).text)
+	after_info = checkin.parse_sub2api_profile_response(200, profile_ok(balance=10.25, used_balance=2).text)
+	browser = AsyncMock(return_value=(True, before_info, after_info))
+	monkeypatch.setattr(checkin, '_run_xiaobai_check_in_in_page', browser)
 	success, before, after = run()
 	assert success
 	assert before['quota'] == 10 and after['quota'] == 10.25
 	assert before['used_quota'] == after['used_quota'] == 2
-	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'POST', 'GET']
-	assert client.calls[-1]['url'].endswith('/api/v1/auth/me')
+	assert browser.await_args.kwargs['user_info_before'] == before_info
+	assert [call['method'] for call in client.calls] == ['GET', 'GET']
 
 
-@pytest.mark.parametrize(
-	'failure',
-	[
-		FakeResponse(503, {}),
-		expired(),
-		FakeResponse(200, None, content_type='text/html'),
-		profile_ok(),
-		profile_ok(balance=None),
-		profile_ok(balance=True),
-		profile_ok(balance='private-token'),
-		profile_ok(balance='NaN'),
-		profile_ok(balance='Infinity'),
-		FakeResponse(200, {'code': 0, 'data': {'balance': 10}}),
-		httpx.ReadTimeout('private-token'),
-	],
-)
-def test_optional_balance_failure_does_not_undo_checkin_or_rotate_tokens(monkeypatch, capsys, failure):
+@pytest.mark.parametrize('after', [None, {'success': False, 'balance_read_error': 'ReadTimeout', 'signedToday': True}])
+def test_optional_browser_balance_failure_does_not_undo_checkin_or_rotate_tokens(monkeypatch, after):
 	state = FakeState('access-secret', 'refresh-secret')
-	client = FakeClient(
-		profiles=[profile_ok(balance=10), failure, failure, failure],
-		statuses=[signed(False)],
-		checkins=[FakeResponse(200, {'ok': True, 'data': {'record': {'reward_amount': 0.25}}})],
-	)
+	client = FakeClient(profiles=[profile_ok(balance=10)], statuses=[signed(False)])
 	install(monkeypatch, client, state)
-	success, before, after = run()
-	assert success and before['quota'] == 10 and after is None
-	assert sum(call['method'] == 'POST' for call in client.calls) == 1
+	before_info = checkin.parse_sub2api_profile_response(200, profile_ok(balance=10).text)
+	browser = AsyncMock(return_value=(True, before_info, after))
+	monkeypatch.setattr(checkin, '_run_xiaobai_check_in_in_page', browser)
+	success, before, returned_after = run()
+	assert success and before['quota'] == 10 and returned_after is after
+	browser.assert_awaited_once()
+	assert [call['method'] for call in client.calls] == ['GET', 'GET']
 	assert state.saved == []
-	output = capsys.readouterr().out
-	assert 'balance unavailable' in output
-	assert 'private-token' not in output
+	assert state.closed
 
 
 def test_status_only_includes_balance_without_checkin(monkeypatch):
@@ -210,12 +199,20 @@ def test_status_only_includes_balance_without_checkin(monkeypatch):
 async def test_xiaobai_confirmed_success_keeps_optional_balances_and_full_runs(
 	monkeypatch, before_balance, after_balance
 ):
-	client = FakeClient(
-		profiles=[profile_ok(balance=before_balance), profile_ok(balance=after_balance)],
-		statuses=[signed(False)],
-		checkins=[FakeResponse(200, {'ok': True, 'data': {'record': {'reward_amount': 0.25}}})],
-	)
+	client = FakeClient(profiles=[profile_ok(balance=before_balance)], statuses=[signed(False)])
 	install(monkeypatch, client)
+	before_info = (
+		checkin.parse_sub2api_profile_response(200, profile_ok(balance=before_balance).text)
+		if before_balance is not None
+		else None
+	)
+	after_info = (
+		checkin.parse_sub2api_profile_response(200, profile_ok(balance=after_balance).text)
+		if after_balance is not None
+		else {'success': False, 'signedToday': True}
+	)
+	browser = AsyncMock(return_value=(True, before_info, after_info))
+	monkeypatch.setattr(checkin, '_run_xiaobai_check_in_in_page', browser)
 	monkeypatch.setenv('CHECKIN_DAILY_STATE_FILE', '')
 	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
 	monkeypatch.delenv('CHECKIN_STATE_GITHUB_TOKEN', raising=False)
@@ -225,8 +222,9 @@ async def test_xiaobai_confirmed_success_keeps_optional_balances_and_full_runs(
 	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
 	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
 	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
-	runner = AsyncMock(side_effect=lambda acct, *args, **kwargs: run(acct))
-	monkeypatch.setattr(checkin, 'check_in_account', runner)
+	# Exercise the real async dispatch and worker-thread handoff from the full main.
+	runner = AsyncMock(wraps=checkin._run_account_checkin)
+	monkeypatch.setattr(checkin, '_run_account_checkin', runner)
 	sender = Mock(return_value={'Telegram': True})
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
 	with pytest.raises(SystemExit) as first:
@@ -239,9 +237,12 @@ async def test_xiaobai_confirmed_success_keeps_optional_balances_and_full_runs(
 		assert f'余额 ${after_balance:.2f}' in message
 	assert '未确认到账' not in message
 	assert '余额 $0.00' not in message
-	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'POST', 'GET']
+	assert [call['method'] for call in client.calls] == ['GET', 'GET']
+	browser.assert_awaited_once()
+	assert browser.await_args.kwargs['user_info_before'] == before_info
 	runner.reset_mock()
 	sender.reset_mock()
+	browser.reset_mock()
 	# A later full round still visits the account but honors server already-signed
 	# status without another POST or another credited-reward claim.
 	client.profiles = iter([profile_ok(balance=after_balance)])
@@ -253,7 +254,8 @@ async def test_xiaobai_confirmed_success_keeps_optional_balances_and_full_runs(
 	sender.assert_called_once()
 	assert '1/1 成功' in sender.call_args.args[1]
 	assert '签到 +$' not in sender.call_args.args[1]
-	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'POST', 'GET', 'GET', 'GET']
+	browser.assert_not_awaited()
+	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'GET', 'GET']
 
 
 def test_expired_session_refreshes_correct_path_and_persists_before_status(monkeypatch):
@@ -266,6 +268,75 @@ def test_expired_session_refreshes_correct_path_and_persists_before_status(monke
 	assert client.calls[1]['headers'] == {}  # Do not send the expired access token to refresh.
 	assert state.saved == [('old-access', 'old-refresh', True), ('new-access', 'new-refresh', False)]
 	assert client.calls[-1]['headers']['Authorization'] == 'Bearer new-access'
+
+
+@pytest.mark.parametrize('expires_at', ['profile', 'status'])
+def test_browser_receives_persisted_refreshed_access_and_authenticated_identity(monkeypatch, expires_at):
+	state = FakeState('old-access', 'old-refresh')
+	client = FakeClient(
+		profiles=[expired(), profile_ok(id=73, balance=4.5)]
+		if expires_at == 'profile'
+		else [profile_ok(id=73, balance=4.5), profile_ok(id=73, balance=4.5)],
+		statuses=[signed(False)] if expires_at == 'profile' else [expired(), signed(False)],
+		refreshes=[refreshed()],
+	)
+	client.on_refresh = lambda: state.saved[-1][2] or pytest.fail('Refresh needs a persisted pending marker')
+	install(monkeypatch, client, state)
+	provider = AppConfig.load_from_env().providers['xiaobai']
+	before_info = checkin.parse_sub2api_profile_response(200, profile_ok(id=73, balance=4.5).text)
+	after_info = {**before_info, 'quota': 4.75, 'signedToday': True}
+	result = (True, before_info, after_info)
+
+	async def verified_browser(name, passed_provider, access, *, expected_user_id, user_info_before):
+		assert state.saved == [('old-access', 'old-refresh', True), ('new-access', 'new-refresh', False)]
+		assert not state.closed
+		assert name == '小白Code' and passed_provider == provider
+		assert access == 'new-access'
+		assert expected_user_id == '73'
+		assert user_info_before == before_info
+		assert client.calls[-1]['url'].endswith('/checkin/api/status')
+		assert client.calls[-1]['headers']['Authorization'] == 'Bearer new-access'
+		return result
+
+	browser = AsyncMock(side_effect=verified_browser)
+	monkeypatch.setattr(checkin, '_run_xiaobai_check_in_in_page', browser)
+	assert run(account('old-access', 'old-refresh')) == result
+	browser.assert_awaited_once()
+	assert state.closed
+	assert sum(call['method'] == 'POST' for call in client.calls) == 1
+	assert all(call['url'].endswith('/auth/refresh') for call in client.calls if call['method'] == 'POST')
+
+
+def test_browser_restores_latest_state_instead_of_stale_account_tokens(monkeypatch):
+	state = FakeState('latest-access', 'latest-refresh')
+	client = FakeClient(profiles=[profile_ok(id=73)], statuses=[signed(False)])
+	install(monkeypatch, client, state)
+	browser = AsyncMock(return_value=(True, None, {'signedToday': True}))
+	monkeypatch.setattr(checkin, '_run_xiaobai_check_in_in_page', browser)
+	assert run(account('stale-access', 'stale-refresh'))[0] is True
+	browser.assert_awaited_once_with(
+		'小白Code',
+		AppConfig.load_from_env().providers['xiaobai'],
+		'latest-access',
+		expected_user_id='73',
+		user_info_before=None,
+	)
+	assert all(call['headers']['Authorization'] == 'Bearer latest-access' for call in client.calls)
+	assert state.saved == []
+	assert state.closed
+
+
+def test_status_refresh_identity_change_stops_before_browser(monkeypatch):
+	state = FakeState('old-access', 'old-refresh')
+	client = FakeClient(profiles=[profile_ok(id=73), profile_ok(id=74)], statuses=[expired()], refreshes=[refreshed()])
+	install(monkeypatch, client, state)
+	result = run(account('old-access', 'old-refresh'))
+	assert result[0] is False
+	assert 'different user identity' in result[2]['check_in_error']
+	checkin._run_xiaobai_check_in_in_page.assert_not_called()
+	assert state.saved == [('old-access', 'old-refresh', True), ('new-access', 'new-refresh', False)]
+	assert [call['method'] for call in client.calls] == ['GET', 'GET', 'POST', 'GET']
+	assert state.closed
 
 
 def test_next_run_restores_rotated_tokens_without_using_stale_secret(monkeypatch):
@@ -311,6 +382,7 @@ def test_pending_write_failure_prevents_rotation(monkeypatch):
 	install(monkeypatch, client, state)
 	assert run(account('old-access', 'old-refresh'))[0] is False
 	assert [x['method'] for x in client.calls] == ['GET']
+	checkin._run_xiaobai_check_in_in_page.assert_not_called()
 
 
 def test_new_token_write_failure_stops_before_checkin(monkeypatch):
@@ -319,6 +391,7 @@ def test_new_token_write_failure_stops_before_checkin(monkeypatch):
 	install(monkeypatch, client, state)
 	assert run(account('old-access', 'old-refresh'))[0] is False
 	assert [x['method'] for x in client.calls] == ['GET', 'POST']
+	checkin._run_xiaobai_check_in_in_page.assert_not_called()
 
 
 def test_refresh_timeout_is_not_retried_and_remains_pending(monkeypatch):
@@ -388,6 +461,19 @@ def test_status_only_never_submits_checkin(monkeypatch):
 	result = run(status_only=True)
 	assert result == (True, None, {'success': True, 'status_only': True, 'signedToday': False})
 	assert all(x['method'] == 'GET' for x in client.calls)
+	checkin._run_xiaobai_check_in_in_page.assert_not_called()
+
+
+@pytest.mark.parametrize('status_only, already_signed', [(True, False), (False, True)])
+def test_refresh_then_status_only_or_already_signed_never_opens_browser(monkeypatch, status_only, already_signed):
+	state = FakeState('old-access', 'old-refresh')
+	client = FakeClient(profiles=[expired(), profile_ok()], statuses=[signed(already_signed)], refreshes=[refreshed()])
+	install(monkeypatch, client, state)
+	assert run(account('old-access', 'old-refresh'), status_only=status_only)[0] is True
+	checkin._run_xiaobai_check_in_in_page.assert_not_called()
+	assert state.saved == [('old-access', 'old-refresh', True), ('new-access', 'new-refresh', False)]
+	assert all(call['url'].endswith('/auth/refresh') for call in client.calls if call['method'] == 'POST')
+	assert state.closed
 
 
 def test_missing_tokens_fails_without_network(monkeypatch):

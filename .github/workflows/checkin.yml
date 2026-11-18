@@ -477,7 +477,7 @@ jobs:
   xiaobai-test:
     if: ${{ github.event_name == 'workflow_dispatch' && !inputs.sidrune_checkin_only && !inputs.gorouter_status_only && !inputs.sidrune_exchange_only && !inputs.sheapi_proxy_only && (inputs.xiaobai_test || inputs.xiaobai_config_only) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 12
     environment: production
     permissions:
       contents: write
@@ -494,8 +494,25 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: 安装依赖（不启动浏览器）
+    - name: 安装 Python 依赖
       run: uv sync --frozen --no-dev
+
+    - name: 缓存小白签到浏览器
+      if: ${{ !inputs.xiaobai_config_only && !inputs.xiaobai_status_only }}
+      uses: actions/cache@v5
+      with:
+        path: ~/.cloakbrowser
+        key: ${{ runner.os }}-cloakbrowser-v1
+
+    - name: 安装小白签到浏览器与系统依赖
+      if: ${{ !inputs.xiaobai_config_only && !inputs.xiaobai_status_only }}
+      run: |
+        uv run python -m playwright install-deps chromium
+        if ! command -v xvfb-run >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+        fi
+        uv run python -m cloakbrowser install
 
     - name: 配置单账号 Oracle SG 测试代理
       if: ${{ !inputs.xiaobai_config_only }}
@@ -510,9 +527,13 @@ jobs:
       run: bash scripts/setup_mihomo_proxy.sh
 
     - name: 只验证指定的小白账号
-      timeout-minutes: 3
+      timeout-minutes: 7
       env:
         PYTHONUNBUFFERED: '1'
+        CHECKIN_TIMEZONE: Asia/Shanghai
+        CHECKIN_HEADLESS: 'false'
+        CHECKIN_HUMANIZE: 'true'
+        CHECKIN_WAIT_TIMEOUT_MS: '120000'
         XIAOBAI_TEST_ACCOUNT: ${{ inputs.xiaobai_account }}
         XIAOBAI_CONFIG_ONLY: ${{ inputs.xiaobai_config_only }}
         XIAOBAI_STATUS_ONLY: ${{ inputs.xiaobai_status_only }}
@@ -524,7 +545,12 @@ jobs:
         EXTRA_ACCOUNTS_43: ${{ secrets.EXTRA_ACCOUNTS_43 }}
         EXTRA_ACCOUNTS_44: ${{ secrets.EXTRA_ACCOUNTS_44 }}
         EXTRA_ACCOUNTS_45: ${{ secrets.EXTRA_ACCOUNTS_45 }}
-      run: uv run python -m scripts.check_xiaobai
+      run: |
+        if [ "$XIAOBAI_CONFIG_ONLY" = "true" ] || [ "$XIAOBAI_STATUS_ONLY" != "false" ]; then
+          uv run python -m scripts.check_xiaobai
+        else
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run python -m scripts.check_xiaobai
+        fi
 
     - name: 保存加密 Token 恢复检查点
       if: always()
