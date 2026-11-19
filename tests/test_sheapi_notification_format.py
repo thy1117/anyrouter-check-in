@@ -51,7 +51,7 @@ def test_independent_list_grouping_and_ordering_with_balance():
 		'✅ 独立签到成功',
 		'✅ 小白Code-1125 · 今日已签到',
 		'',
-		'✅ SheApi-thy1117｜余额 $8.63｜本轮余额无变化',
-		'✅ SheApi-thy1118｜余额 $1.34｜本轮余额变化 +$0.50',
+		'✅ SheApi-thy1117｜余额 $8.63',
+		'✅ SheApi-thy1118｜余额 $1.34｜+$0.50',
 	]
 	assert summary == expected

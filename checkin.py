@@ -2129,10 +2129,8 @@ def format_check_in_notification(detail: dict) -> str:
 
 	if not success:
 		parts.append('签到失败')
-	elif balance_change != 0:
-		parts.append(f'本轮余额变化 {"+" if balance_change > 0 else "-"}${abs(balance_change):.2f}')
-	else:
-		parts.append('本轮余额无变化')
+	elif balance_change > 0:
+		parts.append(f'+${balance_change:.2f}')
 	if usage > 0:
 		parts.append(f'消耗 ${usage:.2f}')
 

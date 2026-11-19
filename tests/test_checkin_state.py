@@ -269,7 +269,7 @@ def test_balance_lines_grouped_by_provider():
 		}
 	)
 
-	assert message == '✅ Demo｜余额 $10.00｜本轮余额无变化'
+	assert message == '✅ Demo｜余额 $10.00'
 	assert '签到前' not in message
 
 
@@ -289,7 +289,7 @@ def test_format_check_in_notification_shows_reward_and_usage():
 		}
 	)
 
-	assert message == '✅ Demo｜余额 $12.50｜本轮余额变化 +$2.50｜消耗 $0.50'
+	assert message == '✅ Demo｜余额 $12.50｜+$2.50｜消耗 $0.50'
 
 
 def test_format_check_in_notification_marks_failed_account():
