@@ -14,11 +14,11 @@ from utils.config import AccountConfig
 @pytest.mark.parametrize(
 	'after_quota, after_used, expected_change',
 	[
-		pytest.param(9.0, 5.0, '本轮余额变化 -$1.00', id='decreased-balance-with-gross-increase'),
-		pytest.param(9.0, 0.0, '本轮余额变化 -$1.00', id='decreased-balance'),
-		pytest.param(10.0, 0.0, '本轮余额无变化', id='unchanged-balance'),
-		pytest.param(10.0, 5.0, '本轮余额无变化', id='gross-increase-from-usage-only'),
-		pytest.param(11.0, 0.0, '本轮余额变化 +$1.00', id='balance-increase-without-reward-receipt'),
+		pytest.param(9.0, 5.0, None, id='decreased-balance-with-gross-increase'),
+		pytest.param(9.0, 0.0, None, id='decreased-balance'),
+		pytest.param(10.0, 0.0, None, id='unchanged-balance'),
+		pytest.param(10.0, 5.0, None, id='gross-increase-from-usage-only'),
+		pytest.param(11.0, 0.0, '+$1.00', id='balance-increase-without-reward-receipt'),
 	],
 )
 async def test_snapshot_changes_do_not_claim_a_new_check_in_reward(
@@ -67,6 +67,13 @@ async def test_snapshot_changes_do_not_claim_a_new_check_in_reward(
 	message = sender.call_args.args[1]
 	assert '签到结果：1/1 成功' in message
 	assert '签到 +$' not in message
-	assert expected_change in message
+	assert '本轮余额' not in message
+	account_line = next(line for line in message.splitlines() if line.startswith('✅ confirmed-account｜余额'))
+	expected_line = f'✅ confirmed-account｜余额 ${after_quota:.2f}'
+	if expected_change:
+		expected_line += f'｜{expected_change}'
+	if after_used:
+		expected_line += f'｜消耗 ${after_used:.2f}'
+	assert account_line == expected_line
 	if after_used:
 		assert f'消耗 ${after_used:.2f}' in message

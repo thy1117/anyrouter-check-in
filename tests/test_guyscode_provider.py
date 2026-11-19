@@ -47,4 +47,4 @@ def test_guyscode_notification_format():
 		'success': True,
 	}
 	line = format_check_in_notification(detail)
-	assert line == '✅ GuysCode-5237｜余额 $2.10｜本轮余额变化 +$0.10'
+	assert line == '✅ GuysCode-5237｜余额 $2.10｜+$0.10'
