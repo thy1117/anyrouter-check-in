@@ -200,7 +200,6 @@ jobs:
         EXTRA_ACCOUNTS_59: ${{ secrets.EXTRA_ACCOUNTS_59 }}
         EXTRA_ACCOUNTS_60: ${{ secrets.EXTRA_ACCOUNTS_60 }}
         EXTRA_ACCOUNTS_61: ${{ secrets.EXTRA_ACCOUNTS_61 }}
-        EXTRA_ACCOUNTS_62: ${{ secrets.EXTRA_ACCOUNTS_62 }}
         EXTRA_ACCOUNTS_63: ${{ secrets.EXTRA_ACCOUNTS_63 }}
         EXTRA_ACCOUNTS_66: ${{ secrets.EXTRA_ACCOUNTS_66 }}
         EXTRA_ACCOUNTS_67: ${{ secrets.EXTRA_ACCOUNTS_67 }}

@@ -185,8 +185,13 @@ def test_superapi_secret_60_is_wired_into_workflow():
 	assert 'EXTRA_ACCOUNTS_52: ${{ secrets.EXTRA_ACCOUNTS_52 }}' in text
 	assert 'EXTRA_ACCOUNTS_60: ${{ secrets.EXTRA_ACCOUNTS_60 }}' in text
 	assert 'EXTRA_ACCOUNTS_61: ${{ secrets.EXTRA_ACCOUNTS_61 }}' in text
-	assert 'EXTRA_ACCOUNTS_62: ${{ secrets.EXTRA_ACCOUNTS_62 }}' in text
 	assert 'EXTRA_ACCOUNTS_63: ${{ secrets.EXTRA_ACCOUNTS_63 }}' in text
+
+
+def test_retired_kapibala_secret_is_absent_from_every_workflow():
+	for workflow in WORKFLOW.parent.iterdir():
+		if workflow.suffix in {'.yml', '.yaml'}:
+			assert not re.search(r'\bEXTRA_ACCOUNTS_62\b', workflow.read_text(encoding='utf-8'))
 
 
 def test_sheapi_proxy_test_only_loads_subscription_and_requires_seven_ips():
