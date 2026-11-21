@@ -414,8 +414,9 @@ Zero.cat（`https://zero.cat/profile`）使用 NewAPI 的个人访问令牌（`a
 | 91Token-1123 | 2117 | `EXTRA_ACCOUNTS_145` |
 | 91Token-1125 | 2120 | `EXTRA_ACCOUNTS_146` |
 | 91Token-1126 | 见 Secret | `CHECKIN_ACCOUNT_1126`（载入分片 147） |
+| 91Token-1127 | 见 Secret | `CHECKIN_ACCOUNT_1127`（载入分片 148） |
 
-`91Token-1126` 只通过 91Token 的普通 HTTP 接口签到。若站点要求人工验证，任务会停止，不会切换到浏览器或重复提交。
+`91Token-1126` 和 `91Token-1127` 只通过 91Token 的普通 HTTP 接口签到。若站点要求人工验证，任务会停止，不会切换到浏览器或重复提交。
 
 站点启用 Turnstile，复用现有浏览器签到流程：先读取今日状态，已经签到则跳过；未签到时提交一次，并由服务端的 `checked_in_today` 确认结果。验证码通过当前官网要求的 `X-Turnstile-Token` 请求头提交；个人访问令牌仍仅保存在 GitHub Secret 中。
 

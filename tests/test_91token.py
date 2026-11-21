@@ -62,20 +62,22 @@ CHECKIN_PATH = '/api/user/checkin'
 CHECKIN_STATUS_PATH = f'{CHECKIN_PATH}?month=2026-11'
 
 
-def test_91token_http_only_account_is_wired_into_workflow(monkeypatch):
+@pytest.mark.parametrize(('slot', 'suffix'), [(147, '1126'), (148, '1127')])
+def test_91token_http_only_account_is_wired_into_workflow(monkeypatch, slot, suffix):
 	for name in tuple(checkin.os.environ):
 		if name in ('ANYROUTER_ACCOUNTS', 'EXTRA_ACCOUNTS', 'CHECKIN_DISABLED_PROVIDERS') or name.startswith(
 			'EXTRA_ACCOUNTS_'
 		):
 			monkeypatch.delenv(name)
-	monkeypatch.setenv('EXTRA_ACCOUNTS_147', json.dumps([HTTP_ONLY_ACCOUNT]))
+	account = {**HTTP_ONLY_ACCOUNT, 'name': f'91Token-{suffix}'}
+	monkeypatch.setenv(f'EXTRA_ACCOUNTS_{slot}', json.dumps([account]))
 
 	workflow = Path('.github/workflows/checkin.yml').read_text(encoding='utf-8')
-	assert 'EXTRA_ACCOUNTS_147: ${{ secrets.CHECKIN_ACCOUNT_1126 }}' in workflow
+	assert f'EXTRA_ACCOUNTS_{slot}: ${{{{ secrets.CHECKIN_ACCOUNT_{suffix} }}}}' in workflow
 	accounts = load_accounts_config()
 	assert accounts is not None
 	assert len(accounts) == 1
-	assert accounts[0].name == HTTP_ONLY_ACCOUNT['name']
+	assert accounts[0].name == account['name']
 	assert accounts[0].provider == '91token'
 	assert accounts[0].api_user == HTTP_ONLY_ACCOUNT['api_user']
 	assert accounts[0].http_only is True
