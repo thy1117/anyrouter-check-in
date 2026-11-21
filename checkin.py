@@ -2643,6 +2643,97 @@ def resolve_account_proxy_node(account: AccountConfig, provider_config, provider
 	)
 
 
+def _parse_91token_http_response(response: httpx.Response) -> dict | None:
+	if response.status_code != 200 or response.headers.get('cf-mitigated', '').strip().lower() == 'challenge':
+		return None
+	try:
+		payload = response.json()
+	except (ValueError, RecursionError):
+		return None
+	if not isinstance(payload, dict) or payload.get('success') is not True:
+		return None
+
+	for fields in (payload, payload.get('data')):
+		if not isinstance(fields, dict):
+			continue
+		if any(
+			fields.get(key) for key in ('challenge', 'challenge_required', 'captcha_required', 'turnstile_required')
+		):
+			return None
+		for key in ('message', 'msg', 'error'):
+			message = fields.get(key)
+			if isinstance(message, str) and any(
+				marker in message.lower() for marker in ('turnstile', 'captcha', 'challenge', '验证码', '人机验证')
+			):
+				return None
+	return payload
+
+
+async def run_91token_http_only(account: AccountConfig) -> tuple[bool, dict | None, dict | None]:
+	before: dict | None = None
+	submitted = False
+
+	def failed(error: str) -> tuple[bool, dict | None, dict | None]:
+		return (
+			False,
+			before,
+			{
+				'success': False,
+				CHECK_IN_ERROR_KEY: error,
+				'check_in_phase': 'submitted_unconfirmed' if submitted else 'not_submitted',
+				'check_in_submitted': submitted,
+			},
+		)
+
+	expected_id = str(account.api_user or '').strip()
+	access_token = account.access_token
+	if (
+		not re.fullmatch(r'[0-9]+', expected_id)
+		or not isinstance(access_token, str)
+		or not re.fullmatch(r'[!-~]+', access_token)
+	):
+		return failed('91Token requires a valid account ID and access token')
+	headers = {'Accept': 'application/json', 'Authorization': f'Bearer {access_token}', 'New-Api-User': expected_id}
+	try:
+		async with httpx.AsyncClient(
+			base_url='https://91token.com', headers=headers, trust_env=False, follow_redirects=False, timeout=30.0
+		) as client:
+			response = await client.get('/api/user/self')
+			payload = _parse_91token_http_response(response)
+			profile = payload.get('data') if payload is not None else None
+			if not isinstance(profile, dict) or str(profile.get('id')) != expected_id:
+				return failed(f'91Token profile could not be verified (HTTP {response.status_code})')
+
+			before = {'success': True}
+			try:
+				quota, used_quota = newapi_quota_pair(profile)
+			except (ValueError, OverflowError):
+				pass
+			else:
+				before.update(quota=quota, used_quota=used_quota)
+
+			month = datetime.now(ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)).strftime('%Y-%m')
+			client.cookies.clear()
+			response = await client.get('/api/user/checkin', params={'month': month})
+			payload = _parse_91token_http_response(response)
+			data = payload.get('data') if payload is not None else None
+			stats = data.get('stats') if isinstance(data, dict) else None
+			checked_today = stats.get('checked_in_today') if isinstance(stats, dict) else None
+			if not isinstance(checked_today, bool):
+				return failed(f'91Token check-in status could not be verified (HTTP {response.status_code})')
+			if checked_today:
+				return True, before, {**before, 'checked_in_today': True, 'check_in_submitted': False}
+
+			client.cookies.clear()
+			submitted = True
+			response = await client.post('/api/user/checkin')
+			if _parse_91token_http_response(response) is None:
+				return failed(f'91Token check-in was not confirmed (HTTP {response.status_code})')
+			return True, before, {'success': True, 'checked_in_today': True, 'check_in_submitted': True}
+	except (httpx.HTTPError, ValueError, ZoneInfoNotFoundError):
+		return failed('91Token HTTP request failed')
+
+
 async def check_in_account(
 	account: AccountConfig,
 	account_index: int,
@@ -2651,6 +2742,9 @@ async def check_in_account(
 	provider_account_index: int = 0,
 ):
 	"""为单个账号执行签到操作"""
+	if account.provider == '91token' and account.http_only is True:
+		return await run_91token_http_only(account)
+
 	account_name = account.get_display_name(account_index)
 	print(f'\n[PROCESSING] Starting to process {account_name}')
 
@@ -2679,6 +2773,9 @@ async def check_in_account(
 
 
 async def _run_account_checkin(account: AccountConfig, account_name: str, provider_config):
+	if account.provider == '91token' and account.http_only is True:
+		return await run_91token_http_only(account)
+
 	if provider_config.name == 'anyrouter':
 		return verify_anyrouter_login(account, account_name, provider_config)
 

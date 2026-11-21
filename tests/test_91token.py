@@ -1,8 +1,11 @@
 import json
+from collections import deque
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 import checkin
@@ -45,6 +48,176 @@ def test_91token_accounts_keep_their_ids_and_are_wired_into_workflow(monkeypatch
 		('91Token-1125', '2120'),
 	]
 	assert checkin.filter_accounts_by_target(accounts, '91token') == accounts
+
+
+HTTP_ONLY_ACCOUNT = {
+	'name': '91Token-1126',
+	'provider': '91token',
+	'api_user': '90001',
+	'access_token': 'test-http-only-pat',
+	'http_only': True,
+}
+PROFILE_PATH = '/api/user/self'
+CHECKIN_PATH = '/api/user/checkin'
+CHECKIN_STATUS_PATH = f'{CHECKIN_PATH}?month=2026-11'
+
+
+def test_91token_http_only_account_is_wired_into_workflow(monkeypatch):
+	for name in tuple(checkin.os.environ):
+		if name in ('ANYROUTER_ACCOUNTS', 'EXTRA_ACCOUNTS', 'CHECKIN_DISABLED_PROVIDERS') or name.startswith(
+			'EXTRA_ACCOUNTS_'
+		):
+			monkeypatch.delenv(name)
+	monkeypatch.setenv('EXTRA_ACCOUNTS_147', json.dumps([HTTP_ONLY_ACCOUNT]))
+
+	workflow = Path('.github/workflows/checkin.yml').read_text(encoding='utf-8')
+	assert 'EXTRA_ACCOUNTS_147: ${{ secrets.CHECKIN_ACCOUNT_1126 }}' in workflow
+	accounts = load_accounts_config()
+	assert accounts is not None
+	assert len(accounts) == 1
+	assert accounts[0].name == HTTP_ONLY_ACCOUNT['name']
+	assert accounts[0].provider == '91token'
+	assert accounts[0].api_user == HTTP_ONLY_ACCOUNT['api_user']
+	assert accounts[0].http_only is True
+
+
+@pytest.mark.parametrize('value', ['true', 'false', 1])
+def test_91token_http_only_requires_a_boolean(value):
+	with pytest.raises(ValueError, match='http_only'):
+		AccountConfig.from_dict({**HTTP_ONLY_ACCOUNT, 'http_only': value}, 0)
+
+
+@pytest.fixture
+def run_91token_http_only(monkeypatch):
+	monkeypatch.delenv('PROVIDERS', raising=False)
+	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
+	app_config = AppConfig.load_from_env()
+	account = AccountConfig.from_dict(HTTP_ONLY_ACCOUNT, 0)
+	assert account.http_only is True
+
+	class FixedDatetime(datetime):
+		@classmethod
+		def now(cls, tz=None):
+			return cls(2026, 10, 31, 16, 15, tzinfo=UTC).astimezone(tz)
+
+	monkeypatch.setattr(checkin, 'datetime', FixedDatetime)
+
+	def forbid_browser_or_proxy(*args, **kwargs):
+		pytest.fail('http_only unexpectedly initiated browser verification or proxy switching')
+
+	for name in (
+		'get_waf_cookies_with_browser',
+		'launch_login_context',
+		'resolve_account_proxy_node',
+		'run_gorouter_check_in_in_page',
+		'solve_turnstile_in_page',
+	):
+		monkeypatch.setattr(checkin, name, forbid_browser_or_proxy)
+
+	client = httpx.AsyncClient
+
+	async def run(*expected_requests, use_account_entrypoint=False):
+		pending = deque(expected_requests)
+		requests = []
+
+		def handle(request):
+			if not pending:
+				pytest.fail(f'Unexpected request: {request.method} {request.url}')
+			requests.append(request)
+			return pending.popleft()[2]
+
+		monkeypatch.setattr(
+			httpx, 'AsyncClient', lambda **kwargs: client(transport=httpx.MockTransport(handle), **kwargs)
+		)
+		if use_account_entrypoint:
+			result = await checkin.check_in_account(account, 0, app_config)
+		else:
+			provider = app_config.providers['91token']
+			result = await checkin._run_account_checkin(account, account.get_display_name(0), provider)
+		assert not pending
+		for request, (method, path, _) in zip(requests, expected_requests, strict=True):
+			assert request.method == method
+			assert str(request.url) == f'https://91token.com{path}'
+			assert request.headers['Authorization'] == 'Bearer test-http-only-pat'
+			assert request.headers['New-Api-User'] == HTTP_ONLY_ACCOUNT['api_user']
+			assert 'X-Turnstile-Token' not in request.headers
+		return result
+
+	return run
+
+
+def _profile_response(user_id=90001):
+	return httpx.Response(200, json={'success': True, 'data': {'id': user_id, 'quota': 500000}})
+
+
+def _status_response(checked):
+	return httpx.Response(200, json={'success': True, 'data': {'stats': {'checked_in_today': checked}}})
+
+
+@pytest.mark.parametrize('user_id', [None, 90002], ids=['missing', 'different'])
+async def test_91token_http_only_requires_matching_profile_id(run_91token_http_only, user_id):
+	success, _before, after = await run_91token_http_only(('GET', PROFILE_PATH, _profile_response(user_id)))
+
+	assert success is False
+	assert after['check_in_error']
+	assert after['check_in_submitted'] is False
+
+
+async def test_91token_http_only_does_not_submit_when_status_is_forbidden(run_91token_http_only):
+	success, before, after = await run_91token_http_only(
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, httpx.Response(403, text='<html>Forbidden</html>')),
+		use_account_entrypoint=True,
+	)
+
+	assert success is False
+	assert before['success'] is True
+	assert after['check_in_error']
+	assert after['check_in_submitted'] is False
+
+
+async def test_91token_http_only_skips_an_already_checked_in_account(run_91token_http_only):
+	success, before, after = await run_91token_http_only(
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, _status_response(True)),
+	)
+
+	assert success is True
+	assert before['success'] is True
+	assert after['checked_in_today'] is True
+
+
+async def test_91token_http_only_submits_once(run_91token_http_only):
+	success, before, after = await run_91token_http_only(
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, _status_response(False)),
+		('POST', CHECKIN_PATH, httpx.Response(200, json={'success': True})),
+	)
+
+	assert success is True
+	assert before['success'] is True
+	assert after['checked_in_today'] is True
+
+
+@pytest.mark.parametrize('failure', ['turnstile', 'verification_page', 'redirect'])
+async def test_91token_http_only_stops_after_a_rejected_submission(run_91token_http_only, failure):
+	if failure == 'turnstile':
+		response = httpx.Response(200, json={'success': False, 'message': 'Turnstile token is empty'})
+	elif failure == 'verification_page':
+		response = httpx.Response(403, text='<html>Website verification required</html>')
+	else:
+		response = httpx.Response(307, headers={'Location': '/profile'})
+
+	success, before, after = await run_91token_http_only(
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, _status_response(False)),
+		('POST', CHECKIN_PATH, response),
+	)
+
+	assert success is False
+	assert before['success'] is True
+	assert after['check_in_error']
+	assert after['check_in_submitted'] is True
 
 
 @pytest.mark.parametrize('checked', [False, True])

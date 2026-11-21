@@ -660,12 +660,16 @@ class AccountConfig:
 	email: str | None = None
 	password: str | None = None
 	proxy_node: str | None = None
+	http_only: bool = False
 
 	@classmethod
 	def from_dict(cls, data: dict, index: int) -> 'AccountConfig':
 		"""从字典创建 AccountConfig"""
 		provider = data.get('provider', 'anyrouter')
 		name = data.get('name', f'Account {index + 1}')
+		http_only = data.get('http_only', False)
+		if not isinstance(http_only, bool):
+			raise ValueError('http_only must be a boolean')
 		proxy_node = data.get('proxy_node') or data.get('proxyNode')
 		if not proxy_node and isinstance(data.get('proxy'), str):
 			raw_proxy = data['proxy'].strip()
@@ -684,6 +688,7 @@ class AccountConfig:
 			email=data.get('email'),
 			password=data.get('password'),
 			proxy_node=proxy_node,
+			http_only=http_only,
 		)
 
 	def has_login_credentials(self) -> bool:
