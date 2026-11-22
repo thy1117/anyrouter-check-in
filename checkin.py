@@ -1498,6 +1498,23 @@ class SafeLineAuth(httpx.Auth):
 		request.headers['Cookie'] = '; '.join(parts)
 
 
+def _require_mtnapi_json(response: httpx.Response) -> None:
+	media_type = response.headers.get('content-type', '').partition(';')[0].strip().lower()
+	if (
+		response.status_code not in (200, 400, 401)
+		or media_type != 'application/json'
+		or response.headers.get('cf-mitigated', '').strip().lower() == 'challenge'
+	):
+		raise TokenStateError(f'MTN API refused the request or returned non-API content (HTTP {response.status_code})')
+	response.read()
+	try:
+		payload = response.json()
+	except ValueError:
+		payload = None
+	if not isinstance(payload, dict) or type(payload.get('code')) is not int:
+		raise TokenStateError('MTN API returned an invalid API response; stopped')
+
+
 def run_bearer_check_in(
 	account: AccountConfig,
 	account_name: str,
@@ -1515,14 +1532,20 @@ def run_bearer_check_in(
 		'http2': provider_config.http2,
 		'timeout': 30.0,
 		'trust_env': False,
-		'auth': SafeLineAuth(),
 	}
-	proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
-	if proxy_url:
-		client_kwargs['proxy'] = proxy_url
-		print(f'[INFO] {account_name}: Bearer HTTP client proxy enabled')
-	elif provider_config.use_proxy:
-		print(f'[WARN] {account_name}: Provider requires proxy but CHECKIN_PROXY_URL is not set')
+	mtn_http_only = account.provider == 'mtnapi' and account.http_only
+	if mtn_http_only:
+		if provider_config.domain != 'https://mtnapi.com' or account.has_login_credentials():
+			return False, None, attach_check_in_error(None, 'MTN HTTP-only mode requires the official API and tokens')
+		client_kwargs.update(follow_redirects=False, event_hooks={'response': [_require_mtnapi_json]})
+	else:
+		client_kwargs['auth'] = SafeLineAuth()
+		proxy_url = get_proxy_server(use_proxy=provider_config.use_proxy)
+		if proxy_url:
+			client_kwargs['proxy'] = proxy_url
+			print(f'[INFO] {account_name}: Bearer HTTP client proxy enabled')
+		elif provider_config.use_proxy:
+			print(f'[WARN] {account_name}: Provider requires proxy but CHECKIN_PROXY_URL is not set')
 
 	headers = {
 		'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
@@ -1533,6 +1556,8 @@ def run_bearer_check_in(
 		'Origin': provider_config.domain,
 	}
 
+	if mtn_http_only:
+		headers = {'Accept': 'application/json'}
 	state = None
 	access_token, refresh_token = account.access_token or '', account.refresh_token or ''
 	mask_tokens(access_token, refresh_token)
@@ -2755,6 +2780,8 @@ async def check_in_account(
 		return False, None, attach_check_in_error(None, error)
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
+	if account.provider == 'mtnapi' and account.http_only:
+		return run_bearer_check_in(account, account_name, provider_config)
 
 	try:
 		target_proxy_node = resolve_account_proxy_node(account, provider_config, provider_account_index)
