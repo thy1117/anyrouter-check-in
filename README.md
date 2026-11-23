@@ -316,7 +316,7 @@ LiveLove 已内置，`LiveLove-112581647` 使用仓库级 Secret `EXTRA_ACCOUNTS
 
 ### Sidrune 福利签到
 
-内置 `sidrune` Provider 使用 `https://sidrune.ai/welfare` 的网页登录令牌。`Sidrune-dodo`、`Sidrune-tthxyc`、`Sidrune-5237`、`Sidrune-8746`、`Sidrune-3069`、`Sidrune-9308` 分别保存在 `production` Environment Secret `EXTRA_ACCOUNTS_67`、`EXTRA_ACCOUNTS_68`、`EXTRA_ACCOUNTS_69`、`EXTRA_ACCOUNTS_70`、`EXTRA_ACCOUNTS_71`、`EXTRA_ACCOUNTS_72`，不会覆盖已有账号：
+内置 `sidrune` Provider 使用 `https://sidrune.ai/welfare` 的网页登录令牌。当前保留 `Sidrune-dodo`、`Sidrune-tthxyc`，分别保存在 `production` Environment Secret `EXTRA_ACCOUNTS_67`、`EXTRA_ACCOUNTS_68`：
 
 ```json
 [
@@ -331,35 +331,7 @@ LiveLove 已内置，`LiveLove-112581647` 使用仓库级 Secret `EXTRA_ACCOUNTS
 
 脚本读取 `/api/v1/welfare/profile`，今日已签到则跳过重复签到，资格不足不提交；符合条件时调用 `/api/v1/welfare/checkin`。签到成功或确认今日已签到后，重新读取福利余额，对已解锁且满足消费门槛的账号调用 `/api/v1/welfare/exchange/balance`，把全部福利余额兑换到钱包。未解锁、未满足门槛或福利余额为零时跳过兑换；不自动抽奖、解锁或兑换套餐。兑换失败会保留错误并通知，本次不重放请求，下次任务会重新查询余额后再尝试。各账号复用自己的登录令牌，无需修改现有 Secret。令牌过期后复用已有的加密 Token 状态存储进行刷新，不把令牌提交到仓库。
 
-`Sidrune-tthx1` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_98`，参与常规签到及福利余额兑换。
-
-`Sidrune-13` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_99`，参与常规签到及福利余额兑换。
-
-`Sidrune-tthx12` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_100`，参与常规签到及福利余额兑换。
-
-`Sidrune-15` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_101`，参与常规签到及福利余额兑换。
-
-`Sidrune-tthxyc2` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_102`，参与常规签到及福利余额兑换。
-
-`Sidrune-26` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_103`，参与常规签到及福利余额兑换。
-
-`Sidrune-27` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_104`，参与常规签到及福利余额兑换。
-
-`Sidrune-28` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_105`，参与常规签到及福利余额兑换。
-
-`Sidrune-31` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_106`，参与常规签到及福利余额兑换。
-
-`Sidrune-37` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_107`，参与常规签到及福利余额兑换。
-
-`Sidrune-38` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_108`，参与常规签到及福利余额兑换。
-
-`Sidrune-hotmail` 保存在 `production` Environment Secret `EXTRA_ACCOUNTS_109`，参与常规签到及福利余额兑换。
-
-`Sidrune-wechat` 保存在仓库级 Secret `EXTRA_ACCOUNTS_120`，随普通签到任务运行；不加入 `sidrune_exchange_only` 专用入口。
-
-`Sidrune-wechat1` 保存在仓库级 Secret `EXTRA_ACCOUNTS_121`，随普通签到任务运行；不加入 `sidrune_exchange_only` 专用入口。
-
-单独验证兑换时，在 Actions 的手动运行选项中勾选 `sidrune_exchange_only`。该入口只加载上述六个账号，不执行任何签到、抽奖或其他站点任务；记录每个账号兑换前后的钱包余额，必要时安全刷新并保存加密令牌状态。
+单独验证兑换时，在 Actions 的手动运行选项中勾选 `sidrune_exchange_only`。该入口只加载上述两个账号，不执行任何签到、抽奖或其他站点任务；记录每个账号兑换前后的钱包余额，必要时安全刷新并保存加密令牌状态。
 
 ### Aotera
 
