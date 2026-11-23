@@ -1,4 +1,4 @@
-"""Exchange only the six Sidrune accounts; never invoke multi-site check-in."""
+"""Exchange only the configured Sidrune accounts; never invoke multi-site check-in."""
 
 import json
 import os
@@ -6,7 +6,7 @@ import os
 from checkin import resolve_check_in_error, run_bearer_check_in
 from utils.config import AccountConfig, AppConfig
 
-SIDRUNE_SLOTS = tuple(f'EXTRA_ACCOUNTS_{number}' for number in range(67, 73))
+SIDRUNE_SLOTS = ('EXTRA_ACCOUNTS_67', 'EXTRA_ACCOUNTS_68')
 
 
 def select_accounts(slots: dict[str, str], slot_names: tuple[str, ...] = SIDRUNE_SLOTS) -> list[AccountConfig]:

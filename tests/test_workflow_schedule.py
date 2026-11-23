@@ -13,6 +13,14 @@ def test_retired_newcodex_secrets_are_absent_from_every_workflow(removed_slot):
 		assert f'EXTRA_ACCOUNTS_{removed_slot}' not in identifiers
 
 
+def test_retired_sidrune_and_42_slots_are_absent_from_every_workflow():
+	retired = {f'EXTRA_ACCOUNTS_{n}' for n in (5, 69, 70, 71, 72, *range(98, 110), 120, 121)}
+	for workflow in WORKFLOW.parent.iterdir():
+		if workflow.suffix in {'.yml', '.yaml'}:
+			identifiers = set(re.findall(r'\bEXTRA_ACCOUNTS_\d+\b', workflow.read_text(encoding='utf-8')))
+			assert not retired & identifiers
+
+
 def test_checkin_workflow_is_dispatch_only_for_external_scheduler():
 	text = WORKFLOW.read_text(encoding='utf-8')
 

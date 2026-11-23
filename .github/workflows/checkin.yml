@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       target_accounts:
-        description: 'Only check in accounts matching these names/providers (comma-separated, e.g. "Lunora,Sidrune-tthx1,Nianhua-1117"); leave empty for all'
+        description: 'Only check in accounts matching these names/providers (comma-separated, e.g. "Lunora,Sidrune-dodo,Nianhua-1117"); leave empty for all'
         type: string
         default: ''
       manual_no_challenges:
@@ -25,7 +25,7 @@ on:
         type: boolean
         default: false
       sidrune_exchange_only:
-        description: 'Only exchange the six Sidrune welfare balances; no check-ins or other sites'
+        description: 'Only exchange the configured Sidrune welfare balances; no check-ins or other sites'
         type: boolean
         default: false
       sheapi_proxy_only:
@@ -163,7 +163,6 @@ jobs:
         EXTRA_ACCOUNTS: ${{ secrets.EXTRA_ACCOUNTS }}
         EXTRA_ACCOUNTS_3: ${{ secrets.EXTRA_ACCOUNTS_3 }}
         EXTRA_ACCOUNTS_4: ${{ secrets.EXTRA_ACCOUNTS_4 }}
-        EXTRA_ACCOUNTS_5: ${{ secrets.EXTRA_ACCOUNTS_5 }}
         EXTRA_ACCOUNTS_6: ${{ secrets.EXTRA_ACCOUNTS_6 }}
         EXTRA_ACCOUNTS_9: ${{ secrets.EXTRA_ACCOUNTS_9 }}
         EXTRA_ACCOUNTS_10: ${{ secrets.EXTRA_ACCOUNTS_10 }}
@@ -204,35 +203,17 @@ jobs:
         EXTRA_ACCOUNTS_66: ${{ secrets.EXTRA_ACCOUNTS_66 }}
         EXTRA_ACCOUNTS_67: ${{ secrets.EXTRA_ACCOUNTS_67 }}
         EXTRA_ACCOUNTS_68: ${{ secrets.EXTRA_ACCOUNTS_68 }}
-        EXTRA_ACCOUNTS_69: ${{ secrets.EXTRA_ACCOUNTS_69 }}
-        EXTRA_ACCOUNTS_70: ${{ secrets.EXTRA_ACCOUNTS_70 }}
-        EXTRA_ACCOUNTS_71: ${{ secrets.EXTRA_ACCOUNTS_71 }}
-        EXTRA_ACCOUNTS_72: ${{ secrets.EXTRA_ACCOUNTS_72 }}
         EXTRA_ACCOUNTS_78: ${{ secrets.EXTRA_ACCOUNTS_78 }}
         EXTRA_ACCOUNTS_79: ${{ secrets.EXTRA_ACCOUNTS_79 }}
         EXTRA_ACCOUNTS_80: ${{ secrets.EXTRA_ACCOUNTS_80 }}
         EXTRA_ACCOUNTS_81: ${{ secrets.EXTRA_ACCOUNTS_81 }}
         EXTRA_ACCOUNTS_82: ${{ secrets.EXTRA_ACCOUNTS_82 }}
         EXTRA_ACCOUNTS_87: ${{ secrets.EXTRA_ACCOUNTS_87 }}
-        EXTRA_ACCOUNTS_98: ${{ secrets.EXTRA_ACCOUNTS_98 }}
-        EXTRA_ACCOUNTS_99: ${{ secrets.EXTRA_ACCOUNTS_99 }}
-        EXTRA_ACCOUNTS_100: ${{ secrets.EXTRA_ACCOUNTS_100 }}
-        EXTRA_ACCOUNTS_101: ${{ secrets.EXTRA_ACCOUNTS_101 }}
-        EXTRA_ACCOUNTS_102: ${{ secrets.EXTRA_ACCOUNTS_102 }}
-        EXTRA_ACCOUNTS_103: ${{ secrets.EXTRA_ACCOUNTS_103 }}
-        EXTRA_ACCOUNTS_104: ${{ secrets.EXTRA_ACCOUNTS_104 }}
-        EXTRA_ACCOUNTS_105: ${{ secrets.EXTRA_ACCOUNTS_105 }}
-        EXTRA_ACCOUNTS_106: ${{ secrets.EXTRA_ACCOUNTS_106 }}
-        EXTRA_ACCOUNTS_107: ${{ secrets.EXTRA_ACCOUNTS_107 }}
-        EXTRA_ACCOUNTS_108: ${{ secrets.EXTRA_ACCOUNTS_108 }}
-        EXTRA_ACCOUNTS_109: ${{ secrets.EXTRA_ACCOUNTS_109 }}
         EXTRA_ACCOUNTS_110: ${{ secrets.EXTRA_ACCOUNTS_110 }}
         EXTRA_ACCOUNTS_114: ${{ secrets.EXTRA_ACCOUNTS_114 }}
         EXTRA_ACCOUNTS_115: ${{ secrets.EXTRA_ACCOUNTS_115 }}
         EXTRA_ACCOUNTS_116: ${{ secrets.EXTRA_ACCOUNTS_116 }}
         EXTRA_ACCOUNTS_117: ${{ secrets.EXTRA_ACCOUNTS_117 }}
-        EXTRA_ACCOUNTS_120: ${{ secrets.EXTRA_ACCOUNTS_120 }}
-        EXTRA_ACCOUNTS_121: ${{ secrets.EXTRA_ACCOUNTS_121 }}
         EXTRA_ACCOUNTS_122: ${{ secrets.EXTRA_ACCOUNTS_122 }}
         EXTRA_ACCOUNTS_123: ${{ secrets.EXTRA_ACCOUNTS_123 }}
         EXTRA_ACCOUNTS_125: ${{ secrets.EXTRA_ACCOUNTS_125 }}
@@ -408,22 +389,6 @@ jobs:
         XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
         EXTRA_ACCOUNTS_67: ${{ secrets.EXTRA_ACCOUNTS_67 }}
         EXTRA_ACCOUNTS_68: ${{ secrets.EXTRA_ACCOUNTS_68 }}
-        EXTRA_ACCOUNTS_69: ${{ secrets.EXTRA_ACCOUNTS_69 }}
-        EXTRA_ACCOUNTS_70: ${{ secrets.EXTRA_ACCOUNTS_70 }}
-        EXTRA_ACCOUNTS_71: ${{ secrets.EXTRA_ACCOUNTS_71 }}
-        EXTRA_ACCOUNTS_72: ${{ secrets.EXTRA_ACCOUNTS_72 }}
-        EXTRA_ACCOUNTS_98: ${{ secrets.EXTRA_ACCOUNTS_98 }}
-        EXTRA_ACCOUNTS_99: ${{ secrets.EXTRA_ACCOUNTS_99 }}
-        EXTRA_ACCOUNTS_100: ${{ secrets.EXTRA_ACCOUNTS_100 }}
-        EXTRA_ACCOUNTS_101: ${{ secrets.EXTRA_ACCOUNTS_101 }}
-        EXTRA_ACCOUNTS_102: ${{ secrets.EXTRA_ACCOUNTS_102 }}
-        EXTRA_ACCOUNTS_103: ${{ secrets.EXTRA_ACCOUNTS_103 }}
-        EXTRA_ACCOUNTS_104: ${{ secrets.EXTRA_ACCOUNTS_104 }}
-        EXTRA_ACCOUNTS_105: ${{ secrets.EXTRA_ACCOUNTS_105 }}
-        EXTRA_ACCOUNTS_106: ${{ secrets.EXTRA_ACCOUNTS_106 }}
-        EXTRA_ACCOUNTS_107: ${{ secrets.EXTRA_ACCOUNTS_107 }}
-        EXTRA_ACCOUNTS_108: ${{ secrets.EXTRA_ACCOUNTS_108 }}
-        EXTRA_ACCOUNTS_109: ${{ secrets.EXTRA_ACCOUNTS_109 }}
       run: uv run --no-dev python -m scripts.check_sidrune
     - name: 保存加密 Token 恢复检查点
       if: always()
@@ -461,10 +426,6 @@ jobs:
         XIAOBAI_STATE_GITHUB_TOKEN: ${{ github.token }}
         EXTRA_ACCOUNTS_67: ${{ secrets.EXTRA_ACCOUNTS_67 }}
         EXTRA_ACCOUNTS_68: ${{ secrets.EXTRA_ACCOUNTS_68 }}
-        EXTRA_ACCOUNTS_69: ${{ secrets.EXTRA_ACCOUNTS_69 }}
-        EXTRA_ACCOUNTS_70: ${{ secrets.EXTRA_ACCOUNTS_70 }}
-        EXTRA_ACCOUNTS_71: ${{ secrets.EXTRA_ACCOUNTS_71 }}
-        EXTRA_ACCOUNTS_72: ${{ secrets.EXTRA_ACCOUNTS_72 }}
       run: uv run python -m scripts.exchange_sidrune
     - name: 保存加密 Token 恢复检查点
       if: always()

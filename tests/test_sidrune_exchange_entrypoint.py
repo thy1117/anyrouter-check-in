@@ -13,13 +13,14 @@ def account_slots():
 	}
 
 
-def test_only_six_sidrune_slots_are_loaded():
+def test_only_two_active_sidrune_slots_are_loaded():
 	slots = account_slots()
 	slots['EXTRA_ACCOUNTS_13'] = json.dumps([{'provider': 'xiaobai', 'name': 'other'}])
 	accounts = select_accounts(slots)
-	assert len(accounts) == 6
+	assert SIDRUNE_SLOTS == ('EXTRA_ACCOUNTS_67', 'EXTRA_ACCOUNTS_68')
+	assert len(accounts) == 2
 	assert all(account.provider == 'sidrune' for account in accounts)
-	assert [account.access_token for account in accounts] == [f'private-{index}' for index in range(6)]
+	assert [account.access_token for account in accounts] == ['private-0', 'private-1']
 
 
 @pytest.mark.parametrize(
@@ -55,10 +56,10 @@ def test_exchange_entrypoint_cannot_run_checkin_or_other_sites(monkeypatch, caps
 
 	monkeypatch.setattr(entrypoint, 'run_bearer_check_in', exchange)
 	assert entrypoint.main() == 0
-	assert requests == [f'test-{index}' for index in range(6)]
+	assert requests == ['test-0', 'test-1']
 	output = capsys.readouterr().out
 	assert 'private-' not in output
-	assert output.count('"wallet_change": 0.5') == 6
+	assert output.count('"wallet_change": 0.5') == 2
 
 
 def test_exchange_workflow_loads_no_other_sites_or_notifications():

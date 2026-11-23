@@ -176,12 +176,6 @@ def test_sidrune_slot_appends_without_overwriting_existing_accounts(monkeypatch)
 	workflow = Path(__file__).resolve().parents[1] / '.github/workflows/checkin.yml'
 	assert 'EXTRA_ACCOUNTS_67: ${{ secrets.EXTRA_ACCOUNTS_67 }}' in workflow.read_text()
 	assert 'EXTRA_ACCOUNTS_68: ${{ secrets.EXTRA_ACCOUNTS_68 }}' in workflow.read_text()
-	assert 'EXTRA_ACCOUNTS_69: ${{ secrets.EXTRA_ACCOUNTS_69 }}' in workflow.read_text()
-	assert 'EXTRA_ACCOUNTS_70: ${{ secrets.EXTRA_ACCOUNTS_70 }}' in workflow.read_text()
-	assert 'EXTRA_ACCOUNTS_71: ${{ secrets.EXTRA_ACCOUNTS_71 }}' in workflow.read_text()
-	assert 'EXTRA_ACCOUNTS_72: ${{ secrets.EXTRA_ACCOUNTS_72 }}' in workflow.read_text()
-	assert 'EXTRA_ACCOUNTS_120: ${{ secrets.EXTRA_ACCOUNTS_120 }}' in workflow.read_text()
-	assert 'EXTRA_ACCOUNTS_121: ${{ secrets.EXTRA_ACCOUNTS_121 }}' in workflow.read_text()
 
 
 @pytest.mark.parametrize(
