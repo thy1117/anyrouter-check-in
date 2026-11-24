@@ -80,6 +80,8 @@ def offline_runner():
 	[
 		(200, {'Content-Type': 'text/html'}, '<html>Verify</html>'),
 		(401, {'Content-Type': 'application/json'}, '<html>Verify</html>'),
+		(401, {'Content-Type': 'application/json'}, '{"code":""}'),
+		(200, {'Content-Type': 'application/json'}, '{"code":"OK"}'),
 		(403, {'Content-Type': 'application/json'}, '{"code":403}'),
 		(429, {'Content-Type': 'application/json'}, '{"code":429}'),
 		(302, {'Location': 'https://example.invalid/verify'}, ''),
@@ -119,3 +121,73 @@ def test_mtnapi_http_only_stops_on_challenge(monkeypatch, offline_runner, phase,
 	success, _, _ = offline_runner.run(check_in_account(account, 0, AppConfig.load_from_env()))
 	assert not success
 	assert requests == expected
+
+
+def test_mtnapi_http_only_refreshes_on_401_string_code(monkeypatch, offline_runner):
+	for env_name in ('PROVIDERS', 'EXTRA_PROVIDERS', 'CHECKIN_DISABLED_PROVIDERS'):
+		monkeypatch.delenv(env_name, raising=False)
+	account = AccountConfig(
+		name='MTNAPI-8746',
+		cookies=None,
+		provider='mtnapi',
+		access_token='expired-access',
+		refresh_token='initial-refresh',
+		http_only=True,
+	)
+	saved = []
+
+	class DummyState:
+		def load(self):
+			return 'expired-access', 'initial-refresh'
+
+		def save(self, access, refresh, *, pending=False):
+			saved.append((access, refresh, pending))
+
+		def close(self):
+			pass
+
+	monkeypatch.setattr('checkin.create_xiaobai_token_state', lambda *args: DummyState())
+	requests = []
+	claimed = False
+
+	def handler(request):
+		nonlocal claimed
+		requests.append((request.method, request.url.path, request.headers.get('Authorization')))
+		if request.url.path == '/api/v1/auth/me':
+			if request.headers.get('Authorization') == 'Bearer expired-access':
+				return httpx.Response(401, json={'code': 'INVALID_TOKEN', 'message': 'Invalid token'})
+			assert request.headers.get('Authorization') == 'Bearer fresh-access'
+			return httpx.Response(200, json={'code': 0, 'data': {'balance': 0.75 if claimed else 0.5}})
+		if request.url.path == '/api/v1/auth/refresh':
+			assert json.loads(request.content) == {'refresh_token': 'initial-refresh'}
+			return httpx.Response(
+				200,
+				json={'code': 0, 'data': {'access_token': 'fresh-access', 'refresh_token': 'fresh-refresh'}},
+			)
+		assert request.url.path == '/api/v1/redeem/checkin'
+		assert request.headers.get('Authorization') == 'Bearer fresh-access'
+		if request.method == 'POST':
+			claimed = True
+		return httpx.Response(200, json={'code': 0, 'data': {'claimed': claimed, 'amount': 0.25}})
+
+	client = httpx.Client
+	monkeypatch.setattr(
+		'checkin.httpx.Client', lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs)
+	)
+	success, before, after = offline_runner.run(check_in_account(account, 0, AppConfig.load_from_env()))
+	assert success is True
+	assert before['quota'] == 0.5
+	assert after['quota'] == 0.75
+	assert saved == [
+		('expired-access', 'initial-refresh', True),
+		('fresh-access', 'fresh-refresh', False),
+	]
+	assert [step[:2] for step in requests] == [
+		('GET', '/api/v1/auth/me'),
+		('POST', '/api/v1/auth/refresh'),
+		('GET', '/api/v1/auth/me'),
+		('GET', '/api/v1/redeem/checkin'),
+		('POST', '/api/v1/redeem/checkin'),
+		('GET', '/api/v1/redeem/checkin'),
+		('GET', '/api/v1/auth/me'),
+	]

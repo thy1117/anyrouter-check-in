@@ -65,7 +65,7 @@ async def dispatch_account(account, account_name, provider):
 	"""Use October for legacy sites; retain required post-October API contracts."""
 	if (
 		provider.name not in OCTOBER_PROVIDERS
-		or provider.name == 'twinkle'
+		or provider.name in ('twinkle', 'ciyuan')
 		or provider.api_style == 'xiaobai'
 		or provider.login_in_page
 		or provider.checkin_turnstile

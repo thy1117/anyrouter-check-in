@@ -1511,7 +1511,11 @@ def _require_mtnapi_json(response: httpx.Response) -> None:
 		payload = response.json()
 	except ValueError:
 		payload = None
-	if not isinstance(payload, dict) or type(payload.get('code')) is not int:
+	code = payload.get('code') if isinstance(payload, dict) else None
+	valid_code = type(code) is int or (
+		response.status_code in (400, 401) and isinstance(code, str) and bool(code.strip())
+	)
+	if not valid_code:
 		raise TokenStateError('MTN API returned an invalid API response; stopped')
 
 
