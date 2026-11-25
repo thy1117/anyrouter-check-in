@@ -390,7 +390,7 @@ Zero.cat（`https://zero.cat/profile`）使用 NewAPI 的个人访问令牌（`a
 | 91Token-1126 | 见 Secret | `CHECKIN_ACCOUNT_1126`（载入分片 147） |
 | 91Token-1127 | 见 Secret | `CHECKIN_ACCOUNT_1127`（载入分片 148） |
 
-签到接口还要求有效的网页登录会话，个人访问令牌不能替代它。`CHECKIN_91TOKEN_LOGINS` Secret 按完整账号名映射 `username` 和 `password`，仅配置九个密码账号（1118～1127，跳过 1124）；1117 使用 LinuxDO OAuth，不能用这些密码登录。脚本先读取公开登录设置，完成 `/api/captcha/login` 拼图验证，再向 `/api/user/login` 登录；核对返回的用户 ID 和用户名后，保留登录 Cookie，使用新签发的 Bearer token 和 `X-Auth-Session` 访问签到接口。临时会话在流程结束后注销，密码和会话令牌不写入文件。
+签到接口还要求有效的网页登录会话，个人访问令牌不能替代它。`CHECKIN_91TOKEN_LOGINS` Secret 按完整账号名映射 `username` 和 `password`，配置十个密码账号（1117～1127，跳过 1124）；1117 原使用 LinuxDO OAuth，设置本站密码后也使用相同登录流程。脚本先读取公开登录设置，完成 `/api/captcha/login` 拼图验证，再向 `/api/user/login` 登录；核对返回的用户 ID 和用户名后，保留登录 Cookie，使用新签发的 Bearer token 和 `X-Auth-Session` 访问签到接口。临时会话在流程结束后注销，密码和会话令牌不写入文件。
 
 登录后读取 `/api/user/daily-reward?month=YYYY-MM`，已签到则跳过；未签到时向 `/api/user/daily-reward/captcha` 获取独立的领奖拼图，用背景和透明拼块匹配横坐标，再提交至 `/api/user/daily-reward/captcha/verify`。验证返回的一次性令牌仅通过 `X-Captcha-Token` 请求头用于本账号的领奖请求，不与登录验证码令牌混用。
 
