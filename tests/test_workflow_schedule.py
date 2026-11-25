@@ -31,6 +31,7 @@ def test_checkin_workflow_is_dispatch_only_for_external_scheduler():
 	assert "CHECKIN_STATE_GITHUB_TOKEN: ''" in text
 	assert "CHECKIN_TARGET_ACCOUNTS: ${{ github.event_name == 'schedule'" not in text
 	assert 'NOTIFY_EVERY_RUN: true' in text
+	assert "CHECKIN_DISABLE_NOTIFICATIONS: 'true'" in text
 
 
 def test_removed_fate_secret_is_not_wired_into_workflow():

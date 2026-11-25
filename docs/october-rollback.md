@@ -36,6 +36,9 @@ The wrapper makes the exceptions below explicit; it does not change Secrets.
   daily check-in still prevents another submission through the October engine.
 - Multipart notifications and current cache expression repairs. Manual targeted
   runs do not send external notifications or overwrite the full-run balance hash.
+  When `CHECKIN_DISABLE_NOTIFICATIONS` is enabled (the production default),
+  full runs still print the report and save the full-run balance hash while
+  skipping external push notifications.
 - Notifications group multi-account providers first, followed by all sites with
   one configured account in a compact block at the end of the balance details.
   Counts use the configured accounts, including accounts with unavailable balances.

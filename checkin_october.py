@@ -110,6 +110,12 @@ class TargetedNotifications:
 		return {}
 
 
+class DisabledNotifications:
+	def push_message(self, *args, **kwargs):
+		print('[INFO] External push notifications disabled by CHECKIN_DISABLE_NOTIFICATIONS')
+		return {}
+
+
 def dispatch_http(
 	all_cookies: dict,
 	account: AccountConfig,
@@ -156,6 +162,9 @@ def configure_engine():
 		# targeted run; it does not instantiate or configure a notification kit.
 		setattr(october, 'notify', TargetedNotifications())
 		october.save_balance_hash = lambda value: None
+	elif current.are_notifications_disabled():
+		setattr(october, 'notify', DisabledNotifications())
+		october.save_balance_hash = current.save_balance_hash
 	else:
 		setattr(october, 'notify', GroupedNotifications(current.notify))
 		october.save_balance_hash = current.save_balance_hash

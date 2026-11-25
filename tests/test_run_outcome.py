@@ -174,3 +174,41 @@ async def test_login_success_rule_is_anyrouter_only(monkeypatch, provider, verif
 		assert '缺少账号身份验证结果' in message
 	else:
 		assert 'Provider did not confirm a check-in' in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('outcomes, expected', [([True], 0), ([], 1)])
+async def test_disabled_notifications_suppresses_push_but_keeps_stdout_and_summary(
+	monkeypatch, tmp_path, capsys, outcomes, expected
+):
+	accounts = [AccountConfig(cookies=None, name=f'test-{i}', provider='test') for i in range(len(outcomes))]
+	monkeypatch.setattr(checkin.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
+	monkeypatch.setattr(checkin, 'load_balance_hash', lambda: None)
+	monkeypatch.setattr(checkin, 'save_balance_hash', Mock())
+	monkeypatch.setattr(checkin, 'create_daily_success_state', lambda day: None)
+	before = {'success': True, 'quota': 10.0, 'used_quota': 0.0}
+	after = {'success': True, 'quota': 10.25, 'used_quota': 0.0}
+	monkeypatch.setattr(checkin, 'check_in_account', AsyncMock(side_effect=[(ok, before, after) for ok in outcomes]))
+	monkeypatch.setattr(checkin, 'is_debug_enabled', lambda: False)
+	sender = Mock(side_effect=AssertionError('Disabled notifications cannot push'))
+	monkeypatch.setattr(checkin.notify, 'push_message', sender)
+	summary = tmp_path / 'summary.md'
+	monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
+	monkeypatch.setenv('CHECKIN_DISABLE_NOTIFICATIONS', 'true')
+	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
+	capsys.readouterr()
+
+	with pytest.raises(SystemExit) as exc:
+		await checkin.main()
+
+	assert exc.value.code == expected
+	sender.assert_not_called()
+	output = capsys.readouterr().out
+	assert 'External push notifications disabled by CHECKIN_DISABLE_NOTIFICATIONS' in output
+	if outcomes:
+		assert f'签到结果：{sum(outcomes)}/{len(outcomes)} 成功' in output
+		assert f'| {len(outcomes)} | {sum(outcomes)} | {len(outcomes) - sum(outcomes)} |' in summary.read_text()
+	else:
+		assert 'Unable to load account configuration' in output

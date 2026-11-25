@@ -10,6 +10,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from checkin import (
+	are_notifications_disabled,
 	attach_check_in_error,
 	format_check_in_time,
 	generate_balance_hash,
@@ -66,6 +67,25 @@ def test_notify_every_run_can_be_explicitly_disabled(monkeypatch):
 	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'false')
 
 	assert should_notify_every_run() is False
+
+
+def test_notifications_disabled_is_false_by_default(monkeypatch):
+	monkeypatch.delenv('CHECKIN_DISABLE_NOTIFICATIONS', raising=False)
+
+	assert are_notifications_disabled() is False
+
+
+@pytest.mark.parametrize('value', ['true', '1'])
+def test_notifications_disabled_can_be_enabled(monkeypatch, value):
+	monkeypatch.setenv('CHECKIN_DISABLE_NOTIFICATIONS', value)
+
+	assert are_notifications_disabled() is True
+
+
+def test_notifications_disabled_respects_false(monkeypatch):
+	monkeypatch.setenv('CHECKIN_DISABLE_NOTIFICATIONS', 'false')
+
+	assert are_notifications_disabled() is False
 
 
 def test_resolve_check_in_error_prefers_explicit_check_in_error():

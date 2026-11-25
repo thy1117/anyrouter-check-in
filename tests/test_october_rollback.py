@@ -36,6 +36,7 @@ def configured(monkeypatch):
 	):
 		monkeypatch.setattr(rollback.october, name, getattr(rollback.october, name))
 	monkeypatch.delenv('CHECKIN_TARGET_ACCOUNTS', raising=False)
+	monkeypatch.delenv('CHECKIN_DISABLE_NOTIFICATIONS', raising=False)
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
 	rollback.configure_engine()
@@ -176,6 +177,34 @@ async def test_targeted_historical_main_filters_accounts_without_sending_or_chan
 	assert runner.await_count == 1 and runner.await_args.args[0].name == 'keep'
 	sender.assert_not_called()
 	saver.assert_not_called()
+
+
+async def test_disabled_notifications_historical_main_skips_push_and_keeps_report_and_hash(
+	monkeypatch, configured, capsys
+):
+	accounts = [AccountConfig(cookies=None, provider='example', name='keep')]
+	monkeypatch.setattr(checkin, 'load_accounts_config', lambda: accounts)
+	monkeypatch.setattr(configured.AppConfig, 'load_from_env', lambda: SimpleNamespace(providers={}))
+	monkeypatch.setenv('CHECKIN_DISABLE_NOTIFICATIONS', 'true')
+	monkeypatch.setenv('NOTIFY_EVERY_RUN', 'true')
+	monkeypatch.setattr(configured, 'load_balance_hash', lambda: None)
+	monkeypatch.setattr(configured, 'is_debug_enabled', lambda: False)
+	sender = Mock(side_effect=AssertionError('Disabled notifications cannot push'))
+	saver = Mock()
+	monkeypatch.setattr(checkin.notify, 'push_message', sender)
+	monkeypatch.setattr(checkin, 'save_balance_hash', saver)
+	runner = AsyncMock(return_value=(True, None, {'success': True, 'quota': 2, 'used_quota': 0}))
+	monkeypatch.setattr(configured, 'check_in_account', runner)
+	rollback.configure_engine()
+	capsys.readouterr()
+	with pytest.raises(SystemExit) as outcome:
+		await configured.main()
+	assert outcome.value.code == 0
+	sender.assert_not_called()
+	saver.assert_called_once()
+	output = capsys.readouterr().out
+	assert '签到结果：1/1 成功' in output
+	assert 'External push notifications disabled by CHECKIN_DISABLE_NOTIFICATIONS' in output
 
 
 def test_october_bearer_keeps_latest_tokens_and_never_replays_ambiguous_refresh(monkeypatch, configured):

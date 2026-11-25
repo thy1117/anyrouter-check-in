@@ -112,6 +112,12 @@ def should_notify_every_run() -> bool:
 	return value not in {'0', 'false', 'no', 'off'}
 
 
+def are_notifications_disabled() -> bool:
+	"""是否禁用外部推送通知（仍保留标准输出与作业摘要）。"""
+	value = os.getenv('CHECKIN_DISABLE_NOTIFICATIONS', 'false').strip().lower()
+	return value in {'1', 'true', 'yes', 'on'}
+
+
 def attach_check_in_error(user_info: dict | None, error: str | None) -> dict | None:
 	"""把签到接口错误附到用户信息上，避免查询余额成功后覆盖真实失败原因。"""
 	if not error:
@@ -3229,7 +3235,10 @@ async def main():
 	if not accounts:
 		error_msg = '[FAILED] Unable to load account configuration, program exits'
 		print(error_msg)
-		notify.push_message('AnyRouter Check-in Alert', error_msg, msg_type='text')
+		if are_notifications_disabled():
+			print('[INFO] External push notifications disabled by CHECKIN_DISABLE_NOTIFICATIONS')
+		else:
+			notify.push_message('AnyRouter Check-in Alert', error_msg, msg_type='text')
 		sys.exit(1)
 
 	print(f'[INFO] Found {len(accounts)} account configurations')
@@ -3503,6 +3512,8 @@ async def main():
 		print(notify_content)
 		if target_accounts_env:
 			print('[INFO] Manual targeted account run: external push notification skipped')
+		elif are_notifications_disabled():
+			print('[INFO] External push notifications disabled by CHECKIN_DISABLE_NOTIFICATIONS')
 		else:
 			delivery_results = notify.push_message('AnyRouter Check-in Alert', notify_content, msg_type='text')
 			delivered = [name for name, success in delivery_results.items() if success]

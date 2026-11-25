@@ -63,7 +63,7 @@ def test_full_dispatch_uses_october_entrypoint_with_legacy_muse_input(legacy_inp
 
 
 @pytest.mark.asyncio
-async def test_production_full_runs_ignore_prior_success_and_report_every_round(monkeypatch, tmp_path):
+async def test_production_full_runs_ignore_prior_success_and_report_every_round(monkeypatch, tmp_path, capsys):
 	workflow = yaml.safe_load((ROOT / '.github/workflows/checkin.yml').read_text())
 	production_env = workflow['jobs']['checkin']['env']
 	accounts = [AccountConfig(cookies=None, provider='test', name=f'test-{i}') for i in range(2)]
@@ -74,7 +74,9 @@ async def test_production_full_runs_ignore_prior_success_and_report_every_round(
 	old_state.close()
 	before_state = state_file.read_bytes()
 	for key, value in production_env.items():
-		if isinstance(value, str) and not value.startswith('${{'):
+		if isinstance(value, bool):
+			monkeypatch.setenv(key, str(value).lower())
+		elif isinstance(value, str) and not value.startswith('${{'):
 			monkeypatch.setenv(key, value)
 	monkeypatch.setenv('CHECKIN_TARGET_ACCOUNTS', '')
 	monkeypatch.setattr(checkin, 'format_check_in_time', lambda: '2026-11-17 17:58:00')
@@ -97,14 +99,17 @@ async def test_production_full_runs_ignore_prior_success_and_report_every_round(
 	monkeypatch.setattr(checkin, 'check_in_account', runner)
 	sender = Mock(return_value={'Telegram': True})
 	monkeypatch.setattr(checkin.notify, 'push_message', sender)
+	capsys.readouterr()
 	for round_number in range(3):
 		with pytest.raises(SystemExit) as outcome:
 			await checkin.main()
 		assert outcome.value.code == 0
 		assert runner.await_count == (round_number + 1) * 2
-		assert sender.call_count == round_number + 1
-		assert '签到结果：2/2 成功' in sender.call_args.args[1]
-		assert '今日此前已成功' not in sender.call_args.args[1]
+		sender.assert_not_called()
+		output = capsys.readouterr().out
+		assert '签到结果：2/2 成功' in output
+		assert 'External push notifications disabled by CHECKIN_DISABLE_NOTIFICATIONS' in output
+		assert '今日此前已成功' not in output
 	assert state_file.read_bytes() == before_state
 
 

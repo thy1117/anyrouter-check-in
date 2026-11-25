@@ -70,6 +70,7 @@ jobs:
       CHECKIN_DISABLED_PROVIDERS: qingjiu,vsllm,thousandyuan
       DEBUG_MODE: false
       NOTIFY_EVERY_RUN: true
+      CHECKIN_DISABLE_NOTIFICATIONS: 'true'
       CHECKIN_TARGET_ACCOUNTS: ${{ inputs.target_accounts }}
       # Every regular external dispatch processes the full current account set.
       CHECKIN_DAILY_STATE_FILE: ''
