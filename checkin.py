@@ -2746,7 +2746,16 @@ async def run_91token_check_in(account: AccountConfig) -> tuple[bool, dict | Non
 			stats = data.get('stats') if isinstance(data, dict) else None
 			checked_today = stats.get('checked_in_today') if isinstance(stats, dict) else None
 			if not isinstance(checked_today, bool):
-				return failed(f'91Token check-in status could not be verified (HTTP {response.status_code})')
+				reason = ''
+				try:
+					error_payload = response.json()
+				except ValueError:
+					pass
+				else:
+					message = error_payload.get('message') if isinstance(error_payload, dict) else None
+					if isinstance(message, str):
+						reason = ': ' + ' '.join(message.replace(access_token, '[REDACTED]').split())[:180]
+				return failed(f'91Token check-in status could not be verified (HTTP {response.status_code}){reason}')
 			if checked_today:
 				return True, before, {**before, 'checked_in_today': True, 'check_in_submitted': False}
 

@@ -212,6 +212,24 @@ async def test_91token_http_only_does_not_submit_when_status_is_forbidden(run_91
 	assert after['check_in_submitted'] is False
 
 
+async def test_91token_forbidden_status_reports_reason_without_access_token(run_91token_http_only):
+	success, _before, after = await run_91token_http_only(
+		('GET', PROFILE_PATH, _profile_response()),
+		(
+			'GET',
+			CHECKIN_STATUS_PATH,
+			httpx.Response(
+				403, json={'success': False, 'message': 'Access denied\n' + HTTP_ONLY_ACCOUNT['access_token']}
+			),
+		),
+	)
+
+	assert success is False
+	assert after['check_in_error'].endswith(': Access denied [REDACTED]')
+	assert HTTP_ONLY_ACCOUNT['access_token'] not in after['check_in_error']
+	assert after['check_in_submitted'] is False
+
+
 async def test_91token_http_only_skips_an_already_checked_in_account(run_91token_http_only):
 	success, before, after = await run_91token_http_only(
 		('GET', PROFILE_PATH, _profile_response()),
