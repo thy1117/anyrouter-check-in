@@ -253,7 +253,20 @@ jobs:
         BARK_KEY: ${{ secrets.BARK_KEY }}
         BARK_SERVER: ${{ secrets.BARK_SERVER }}
       run: |
-        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin_october.py
+        uv run python - <<'PY'
+        import json
+        from utils.config import load_accounts_config
+
+        for account in load_accounts_config() or []:
+            if account.provider == '91token':
+                print('[91TOKEN_CONFIG] ' + json.dumps({
+                    'account': account.name,
+                    'password_login_configured': account.has_login_credentials(),
+                    'cookies_configured': bool(account.cookies),
+                    'refresh_token_configured': account.has_refresh_token(),
+                    'session_id_configured': bool(account.session_id),
+                }, ensure_ascii=False))
+        PY
 
     - name: 保存当日成功记录检查点
       if: ${{ always() && env.CHECKIN_DAILY_STATE_FILE != '' }}
