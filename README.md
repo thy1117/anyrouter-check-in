@@ -390,9 +390,9 @@ Zero.cat（`https://zero.cat/profile`）使用 NewAPI 的个人访问令牌（`a
 | 91Token-1126 | 见 Secret | `CHECKIN_ACCOUNT_1126`（载入分片 147） |
 | 91Token-1127 | 见 Secret | `CHECKIN_ACCOUNT_1127`（载入分片 148） |
 
-`91Token-1126` 和 `91Token-1127` 只通过 91Token 的普通 HTTP 接口签到。若站点要求人工验证，任务会停止，不会切换到浏览器或重复提交。
+91Token 账号按当前官网的 HTTP 协议签到：核对个人令牌对应的用户 ID，读取 `/api/user/daily-reward?month=YYYY-MM`，已签到则跳过；未签到时向 `/api/user/daily-reward/captcha` 获取拼图，用背景和透明拼块匹配横坐标，再提交至 `/api/user/daily-reward/captcha/verify`。验证返回的一次性令牌仅通过 `X-Captcha-Token` 请求头用于本账号的领奖请求，不复用旧的 Turnstile 协议。
 
-站点启用 Turnstile，复用现有浏览器签到流程：先读取今日状态，已经签到则跳过；未签到时提交一次，并由服务端的 `checked_in_today` 确认结果。验证码通过当前官网要求的 `X-Turnstile-Token` 请求头提交；个人访问令牌仍仅保存在 GitHub Secret 中。
+拼图不明确、响应无效、验证失败或令牌过期时停止，不猜测重试；领奖最多提交一次，随后读取服务端的 `checked_in_today` 确认结果，再读取当前余额。`91Token-1126` 和 `91Token-1127` 仍只使用 HTTP，不启动浏览器或切换代理。个人访问令牌仍仅保存在原有 GitHub Secret 中。
 
 ### Kapibala
 
@@ -664,7 +664,7 @@ MotoMoto（<https://motomoto.lol/console/personal>）使用 NewAPI，签到接�
 - `login_path` (可选)：登录页面路径，默认为 `/login`（仅在 `bypass_method` 为 `"waf_cookies"` 时使用）
 - `sign_in_path` (可选)：签到 API 路径，默认为 `/api/user/sign_in`
 - `login_in_page` (可选)：在同一浏览器中完成 NewAPI 账号密码验证登录与签到，默认关闭；Kapibala 内置开启
-- `turnstile_header` (可选)：签到验证码使用的请求头名称；留空时保留 `turnstile` 查询参数，91Token 内置为 `X-Turnstile-Token`
+- `turnstile_header` (可选)：Turnstile 验证码使用的请求头名称；留空时保留 `turnstile` 查询参数
 - `user_info_path` (可选)：用户信息 API 路径，默认为 `/api/user/self`
 - `api_user_key` (可选)：API 用户标识请求头名称，默认为 `new-api-user`
 - `bypass_method` (可选)：WAF 绕过方法

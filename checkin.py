@@ -2688,25 +2688,15 @@ def _parse_91token_http_response(response: httpx.Response) -> dict | None:
 	if not isinstance(payload, dict) or payload.get('success') is not True:
 		return None
 
-	for fields in (payload, payload.get('data')):
-		if not isinstance(fields, dict):
-			continue
-		if any(
-			fields.get(key) for key in ('challenge', 'challenge_required', 'captcha_required', 'turnstile_required')
-		):
-			return None
-		for key in ('message', 'msg', 'error'):
-			message = fields.get(key)
-			if isinstance(message, str) and any(
-				marker in message.lower() for marker in ('turnstile', 'captcha', 'challenge', '验证码', '人机验证')
-			):
-				return None
 	return payload
 
 
-async def run_91token_http_only(account: AccountConfig) -> tuple[bool, dict | None, dict | None]:
+async def run_91token_check_in(account: AccountConfig) -> tuple[bool, dict | None, dict | None]:
+	from captcha_ocr.slider import solve_challenge
+
 	before: dict | None = None
 	submitted = False
+	phase = 'not_submitted'
 
 	def failed(error: str) -> tuple[bool, dict | None, dict | None]:
 		return (
@@ -2715,7 +2705,7 @@ async def run_91token_http_only(account: AccountConfig) -> tuple[bool, dict | No
 			{
 				'success': False,
 				CHECK_IN_ERROR_KEY: error,
-				'check_in_phase': 'submitted_unconfirmed' if submitted else 'not_submitted',
+				'check_in_phase': phase,
 				'check_in_submitted': submitted,
 			},
 		)
@@ -2748,8 +2738,9 @@ async def run_91token_http_only(account: AccountConfig) -> tuple[bool, dict | No
 				before.update(quota=quota, used_quota=used_quota)
 
 			month = datetime.now(ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)).strftime('%Y-%m')
+			checkin_path = '/api/user/daily-reward'
 			client.cookies.clear()
-			response = await client.get('/api/user/checkin', params={'month': month})
+			response = await client.get(checkin_path, params={'month': month})
 			payload = _parse_91token_http_response(response)
 			data = payload.get('data') if payload is not None else None
 			stats = data.get('stats') if isinstance(data, dict) else None
@@ -2759,12 +2750,82 @@ async def run_91token_http_only(account: AccountConfig) -> tuple[bool, dict | No
 			if checked_today:
 				return True, before, {**before, 'checked_in_today': True, 'check_in_submitted': False}
 
+			captcha_headers = {'X-Captcha-Request': '1'}
+			client.cookies.clear()
+			started = time.monotonic()
+			response = await client.post(f'{checkin_path}/captcha', headers=captcha_headers)
+			payload = _parse_91token_http_response(response)
+			challenge = payload.get('data') if payload is not None else None
+			if not isinstance(challenge, dict):
+				return failed(f'91Token slider challenge unavailable (HTTP {response.status_code})')
+			challenge_id, expires = challenge.get('id'), challenge.get('expires_in')
+			if not isinstance(challenge_id, str) or not challenge_id or type(expires) is not int or expires <= 0:
+				return failed('91Token slider challenge has invalid identity or expiry')
+			try:
+				x = solve_challenge(challenge)
+			except ValueError:
+				return failed('91Token slider match invalid or ambiguous; no verification submitted')
+			if time.monotonic() - started >= expires:
+				return failed('91Token slider challenge expired; no verification submitted')
+			started = time.monotonic()
+			response = await client.post(
+				f'{checkin_path}/captcha/verify', headers=captcha_headers, json={'id': challenge_id, 'x': x}
+			)
+			payload = _parse_91token_http_response(response)
+			verification = payload.get('data') if payload is not None else None
+			if not isinstance(verification, dict):
+				return failed(
+					f'91Token slider verification rejected (HTTP {response.status_code}); no check-in submitted'
+				)
+			token, expires = verification.get('token'), verification.get('expires_in')
+			if (
+				not isinstance(token, str)
+				or not re.fullmatch(r'[!-~]+', token)
+				or type(expires) is not int
+				or expires <= 0
+				or time.monotonic() - started >= expires
+			):
+				return failed('91Token slider verification returned an invalid or expired token; no check-in submitted')
+			mask_tokens(token)
 			client.cookies.clear()
 			submitted = True
-			response = await client.post('/api/user/checkin')
-			if _parse_91token_http_response(response) is None:
-				return failed(f'91Token check-in was not confirmed (HTTP {response.status_code})')
-			return True, before, {'success': True, 'checked_in_today': True, 'check_in_submitted': True}
+			phase = 'submitted_unconfirmed'
+			try:
+				response = await client.post(checkin_path, headers={'X-Captcha-Token': token})
+			except httpx.HTTPError:
+				pass
+			else:
+				if 300 <= response.status_code < 500 or (
+					response.status_code == 200 and _parse_91token_http_response(response) is None
+				):
+					phase = 'submission_rejected'
+					return failed(f'91Token check-in rejected (HTTP {response.status_code}); not resubmitted')
+			response = await client.get(checkin_path, params={'month': month})
+			payload = _parse_91token_http_response(response)
+			data = payload.get('data') if payload is not None else None
+			stats = data.get('stats') if isinstance(data, dict) else None
+			if not isinstance(stats, dict) or stats.get('checked_in_today') is not True:
+				return failed(f'91Token check-in was not confirmed (HTTP {response.status_code}); not resubmitted')
+			after = {'success': False}
+			try:
+				response = await client.get('/api/user/self')
+				payload = _parse_91token_http_response(response)
+				profile = payload.get('data') if payload is not None else None
+				if isinstance(profile, dict) and str(profile.get('id')) == expected_id:
+					quota, used_quota = newapi_quota_pair(profile)
+					after.update(success=True, quota=quota, used_quota=used_quota)
+			except (httpx.HTTPError, ValueError, OverflowError):
+				pass
+			return (
+				True,
+				before,
+				{
+					**after,
+					'checked_in_today': True,
+					'check_in_submitted': True,
+					'check_in_phase': 'confirmed',
+				},
+			)
 	except (httpx.HTTPError, ValueError, ZoneInfoNotFoundError):
 		return failed('91Token HTTP request failed')
 
@@ -2777,8 +2838,8 @@ async def check_in_account(
 	provider_account_index: int = 0,
 ):
 	"""为单个账号执行签到操作"""
-	if account.provider == '91token' and account.http_only is True:
-		return await run_91token_http_only(account)
+	if account.provider == '91token':
+		return await run_91token_check_in(account)
 
 	account_name = account.get_display_name(account_index)
 	print(f'\n[PROCESSING] Starting to process {account_name}')
@@ -2810,8 +2871,8 @@ async def check_in_account(
 
 
 async def _run_account_checkin(account: AccountConfig, account_name: str, provider_config):
-	if account.provider == '91token' and account.http_only is True:
-		return await run_91token_http_only(account)
+	if account.provider == '91token':
+		return await run_91token_check_in(account)
 
 	if provider_config.name == 'anyrouter':
 		return verify_anyrouter_login(account, account_name, provider_config)
