@@ -2731,7 +2731,9 @@ async def _91token_captcha_token(client: httpx.AsyncClient, path: str) -> str:
 
 async def _91token_dashboard_logout(client: httpx.AsyncClient) -> None:
 	try:
-		response = await client.post('/api/user/auth/logout')
+		response = await client.post(
+			'/api/user/auth/logout', headers={'Origin': 'https://91token.com', 'Referer': 'https://91token.com/'}
+		)
 		if _parse_91token_http_response(response) is not None:
 			return
 	except httpx.HTTPError:

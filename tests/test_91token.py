@@ -189,6 +189,9 @@ def run_91token_http_only(monkeypatch):
 				assert request.headers['X-Captcha-Request'] == '1'
 			if request.url.path in (VERIFY_PATH, LOGIN_CAPTCHA_PATH + '/verify'):
 				assert json.loads(request.content) == {'id': 'test-puzzle', 'x': 128}
+			if request.url.path == LOGOUT_PATH:
+				assert request.headers['Origin'] == 'https://91token.com'
+				assert request.headers['Referer'] == 'https://91token.com/'
 		assert account.username is None and account.password is None
 		assert account.access_token == HTTP_ONLY_ACCOUNT['access_token']
 		return result
