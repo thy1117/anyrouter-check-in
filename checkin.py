@@ -2694,6 +2694,8 @@ def _parse_91token_http_response(response: httpx.Response) -> dict | None:
 async def _91token_captcha_token(client: httpx.AsyncClient, path: str) -> str:
 	from captcha_ocr.slider import solve_challenge
 
+	# Pace CAPTCHA requests when processing multiple accounts from one IP.
+	await asyncio.sleep(5)
 	headers = {'X-Captcha-Request': '1'}
 	started = time.monotonic()
 	response = await client.post(path, headers=headers)

@@ -5,7 +5,7 @@ from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import numpy as np
@@ -117,6 +117,8 @@ def run_91token_http_only(monkeypatch):
 
 	monkeypatch.setattr(checkin, 'datetime', FixedDatetime)
 	monkeypatch.setattr('captcha_ocr.slider.solve_challenge', Mock(return_value=128))
+	captcha_delay = AsyncMock()
+	monkeypatch.setattr(checkin.asyncio, 'sleep', captcha_delay)
 
 	def forbid_browser_or_proxy(*args, **kwargs):
 		pytest.fail('http_only unexpectedly initiated browser verification or proxy switching')
@@ -142,6 +144,8 @@ def run_91token_http_only(monkeypatch):
 		def handle(request):
 			if not pending:
 				pytest.fail(f'Unexpected request: {request.method} {request.url}')
+			if request.url.path in (CAPTCHA_PATH, LOGIN_CAPTCHA_PATH):
+				captcha_delay.assert_awaited_with(5)
 			requests.append(request)
 			response = pending.popleft()[2]
 			if isinstance(response, Exception):
@@ -303,6 +307,21 @@ async def test_password_login_logs_out_when_already_checked_in(run_91token_http_
 		logins=LOGIN_SECRET,
 	)
 	assert success is True
+	assert after['check_in_submitted'] is False
+
+
+async def test_password_login_rate_limited_verification_stops_and_logs_out(run_91token_http_only):
+	success, _, after = await run_91token_http_only(
+		*_login_requests(),
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, _status_response(False)),
+		('POST', CAPTCHA_PATH, _captcha_response()),
+		('POST', VERIFY_PATH, httpx.Response(429, headers={'Retry-After': '60'})),
+		_logout_request(),
+		logins=LOGIN_SECRET,
+	)
+	assert success is False
+	assert 'reward verification' in after['check_in_error'] and '429' in after['check_in_error']
 	assert after['check_in_submitted'] is False
 
 

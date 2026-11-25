@@ -394,7 +394,7 @@ Zero.cat（`https://zero.cat/profile`）使用 NewAPI 的个人访问令牌（`a
 
 登录后读取 `/api/user/daily-reward?month=YYYY-MM`，已签到则跳过；未签到时向 `/api/user/daily-reward/captcha` 获取独立的领奖拼图，用背景和透明拼块匹配横坐标，再提交至 `/api/user/daily-reward/captcha/verify`。验证返回的一次性令牌仅通过 `X-Captcha-Token` 请求头用于本账号的领奖请求，不与登录验证码令牌混用。
 
-拼图不明确、响应无效、验证失败或令牌过期时停止，不猜测重试；领奖最多提交一次，随后读取服务端的 `checked_in_today` 确认结果，再读取当前余额。`91Token-1126` 和 `91Token-1127` 仍只使用 HTTP，不启动浏览器或切换代理。个人访问令牌仍仅保存在原有 GitHub Secret 中。
+高光、低纹理拼块在颜色匹配不明确时使用缺口轮廓匹配，仍拒绝重复缺口；每次获取验证码前等待 5 秒，降低批量请求触发限流的概率。拼图不明确、响应无效、验证失败（含 HTTP 429）或令牌过期时停止，不猜测重试；领奖最多提交一次，随后读取服务端的 `checked_in_today` 确认结果，再读取当前余额。`91Token-1126` 和 `91Token-1127` 仍只使用 HTTP，不启动浏览器或切换代理。个人访问令牌仍仅保存在原有 GitHub Secret 中。
 
 ### Kapibala
 
