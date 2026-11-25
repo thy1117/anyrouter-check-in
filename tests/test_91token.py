@@ -10,7 +10,7 @@ from unittest.mock import Mock
 import httpx
 import numpy as np
 import pytest
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 import checkin
 from captcha_ocr.slider import solve_challenge
@@ -159,10 +159,11 @@ def run_91token_http_only(monkeypatch):
 		assert not pending
 		uses_password = logins is not None and account.name in logins
 		login_user_id = None
+		logged_in = False
 		for request, (method, path, response) in zip(requests, expected_requests, strict=True):
 			assert request.method == method
 			assert str(request.url) == f'https://91token.com{path}'
-			if login_user_id is not None:
+			if logged_in:
 				assert request.headers['Authorization'] == 'Bearer test-dashboard-access'
 				assert request.headers['X-Auth-Session'] == 'test-dashboard-sid'
 				assert request.headers['Cookie'] == 'dashboard=test-session-cookie'
@@ -178,8 +179,10 @@ def run_91token_http_only(monkeypatch):
 				assert request.headers.get('X-Captcha-Token') == 'test-login-captcha-token'
 				assert json.loads(request.content) == LOGIN_CREDENTIALS
 				bundle = response.json().get('data', {})
-				if isinstance(bundle, dict) and bundle.get('user'):
-					login_user_id = bundle['user']['id']
+				if isinstance(bundle, dict) and bundle.get('access_token'):
+					logged_in = True
+					if isinstance(bundle.get('user'), dict):
+						login_user_id = bundle['user'].get('id')
 			else:
 				assert 'X-Captcha-Token' not in request.headers
 			if request.url.path in (CAPTCHA_PATH, VERIFY_PATH, LOGIN_CAPTCHA_PATH, LOGIN_CAPTCHA_PATH + '/verify'):
@@ -307,6 +310,20 @@ async def test_password_login_wrong_identity_logs_out_without_checkin(run_91toke
 	)
 	assert success is False
 	assert 'identity does not match' in after['check_in_error']
+	assert after['check_in_submitted'] is False
+
+
+@pytest.mark.parametrize('field', ['user', 'access_expires_at'])
+async def test_password_login_invalid_bundle_still_logs_out_created_session(run_91token_http_only, field):
+	response = _login_response()
+	payload = response.json()
+	payload['data'][field] = None
+	success, _, after = await run_91token_http_only(
+		*_login_requests(httpx.Response(200, json=payload, headers=response.headers)),
+		_logout_request(),
+		logins=LOGIN_SECRET,
+	)
+	assert success is False
 	assert after['check_in_submitted'] is False
 
 
@@ -604,17 +621,28 @@ def _data_url(image, image_format):
 	return f'data:image/{image_format.lower()};base64,' + base64.b64encode(output.getvalue()).decode()
 
 
-def _slider_challenge(*, duplicate=False):
+def _slider_challenge(*, duplicate=False, highlighted=False):
 	rng = np.random.default_rng(91)
 	background = Image.fromarray(rng.integers(0, 256, (40, 80, 3), dtype=np.uint8)).resize((320, 160))
+	if highlighted:
+		yy, xx = np.mgrid[:160, :320]
+		background = Image.fromarray(np.stack((60 + xx * 0.1, 80 + yy * 0.15, 160 + xx * 0.1), axis=2).astype('uint8'))
+		ImageDraw.Draw(background).polygon([(0, 5), (190, 0), (220, 160)], fill=(65, 80, 165))
 	x, y, size = 192, 56, 52
 	mask = Image.new('L', (size, size))
 	draw = ImageDraw.Draw(mask)
 	draw.rectangle((8, 8, 44, 44), fill=255)
 	draw.ellipse((18, 0, 34, 16), fill=255)
 	piece = background.crop((x, y, x + size, y + size)).convert('RGBA')
-	piece.putalpha(mask)
 	shade = Image.fromarray((np.asarray(piece)[:, :, :3] * 0.45).astype(np.uint8))
+	if highlighted:
+		border = Image.fromarray(
+			(np.asarray(mask, dtype=int) - np.asarray(mask.filter(ImageFilter.MinFilter(7)), dtype=int)).astype('uint8')
+		).filter(ImageFilter.GaussianBlur(2))
+		piece.paste((225, 225, 255, 255), (0, 0, size, size), border)
+		piece.putalpha(mask.filter(ImageFilter.GaussianBlur(0.5)))
+	else:
+		piece.putalpha(mask)
 	for offset in (64, x) if duplicate else (x,):
 		background.paste(shade, (offset, y), mask)
 	return {
@@ -631,9 +659,14 @@ def test_slider_matches_a_shaded_jpeg_puzzle():
 	assert solve_challenge(_slider_challenge()) == 192
 
 
-def test_slider_rejects_ambiguous_positions():
+def test_slider_matches_a_highlighted_low_texture_piece():
+	assert solve_challenge(_slider_challenge(highlighted=True)) == 192
+
+
+@pytest.mark.parametrize('highlighted', [False, True])
+def test_slider_rejects_ambiguous_positions(highlighted):
 	with pytest.raises(ValueError, match='ambiguous'):
-		solve_challenge(_slider_challenge(duplicate=True))
+		solve_challenge(_slider_challenge(duplicate=True, highlighted=highlighted))
 
 
 @pytest.mark.parametrize(

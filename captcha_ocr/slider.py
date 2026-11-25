@@ -54,5 +54,16 @@ def solve_challenge(challenge: dict) -> int:
 	best = int(np.argmax(scores))
 	alternatives = [score for x, score in enumerate(scores) if abs(x - best) > 5]
 	if scores[best] < 0.85 or not alternatives or scores[best] - max(alternatives) < 0.04:
-		raise ValueError('Slider match is ambiguous; no verification submitted')
+		# Highlighted, low-texture pieces can lose their original colour correlation.
+		outline = np.stack(np.gradient((piece[:, :, 3] >= 200).astype(np.float64)))
+		gradient = np.stack(np.gradient(background[:, :, :3].mean(axis=2)))
+		outline_norm = np.linalg.norm(outline)
+		scores = []
+		for x in range(width - size + 1):
+			candidate = gradient[:, y : y + size, x : x + size]
+			scores.append(float(-np.sum(outline * candidate) / (outline_norm * np.linalg.norm(candidate) + 1e-9)))
+		best = int(np.argmax(scores))
+		alternatives = [score for x, score in enumerate(scores) if abs(x - best) > 5]
+		if scores[best] < 0.45 or not alternatives or scores[best] - max(alternatives) < 0.1:
+			raise ValueError('Slider match is ambiguous; no verification submitted')
 	return best

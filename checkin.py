@@ -2729,6 +2729,16 @@ async def _91token_captcha_token(client: httpx.AsyncClient, path: str) -> str:
 	return token
 
 
+async def _91token_dashboard_logout(client: httpx.AsyncClient) -> None:
+	try:
+		response = await client.post('/api/user/auth/logout')
+		if _parse_91token_http_response(response) is not None:
+			return
+	except httpx.HTTPError:
+		pass
+	print('WARNING: 91Token temporary dashboard session logout was not confirmed')
+
+
 async def _91token_dashboard_login(client: httpx.AsyncClient, username: str, password: str) -> tuple[str, str, dict]:
 	response = await client.get('/api/status')
 	payload = _parse_91token_http_response(response)
@@ -2755,14 +2765,19 @@ async def _91token_dashboard_login(client: httpx.AsyncClient, username: str, pas
 	if (
 		not isinstance(token, str)
 		or not re.fullmatch(r'[!-~]+', token)
-		or type(expires) not in (int, float)
-		or not math.isfinite(expires)
-		or expires <= time.time()
 		or not isinstance(sid, str)
 		or not re.fullmatch(r'[!-~]+', sid)
+	):
+		raise ValueError('91Token dashboard login requires a valid login session; no check-in submitted')
+	client.headers.update({'Authorization': f'Bearer {token}', 'X-Auth-Session': sid})
+	if (
+		type(expires) not in (int, float)
+		or not math.isfinite(expires)
+		or expires <= time.time()
 		or not isinstance(user, dict)
 		or not re.fullmatch(r'[0-9]+', str(user.get('id', '')))
 	):
+		await _91token_dashboard_logout(client)
 		raise ValueError('91Token dashboard login requires a valid login session; no check-in submitted')
 	return token, sid, user
 
@@ -2826,14 +2841,8 @@ async def run_91token_check_in(account: AccountConfig) -> tuple[bool, dict | Non
 					try:
 						access_token, session_id, user = await _91token_dashboard_login(client, username, password)
 					except ValueError as exc:
-						return failed(str(exc))
-					client.headers.update(
-						{
-							'Authorization': f'Bearer {access_token}',
-							'X-Auth-Session': session_id,
-							'New-Api-User': str(user['id']),
-						}
-					)
+						return failed(f'91Token dashboard login: {exc}')
+					client.headers['New-Api-User'] = str(user['id'])
 					redactions.extend((access_token, session_id))
 					if str(user['id']) != expected_id or user.get('username') != username:
 						return failed('91Token dashboard login identity does not match the configured account')
@@ -2880,7 +2889,7 @@ async def run_91token_check_in(account: AccountConfig) -> tuple[bool, dict | Non
 				try:
 					token = await _91token_captcha_token(client, f'{checkin_path}/captcha')
 				except ValueError as exc:
-					return failed(str(exc))
+					return failed(f'91Token reward verification: {exc}')
 				submitted = True
 				phase = 'submitted_unconfirmed'
 				try:
@@ -2921,12 +2930,7 @@ async def run_91token_check_in(account: AccountConfig) -> tuple[bool, dict | Non
 				)
 			finally:
 				if session_id:
-					try:
-						response = await client.post('/api/user/auth/logout')
-						if _parse_91token_http_response(response) is None:
-							print('WARNING: 91Token temporary dashboard session logout was not confirmed')
-					except httpx.HTTPError:
-						print('WARNING: 91Token temporary dashboard session logout was not confirmed')
+					await _91token_dashboard_logout(client)
 	except (httpx.HTTPError, ValueError, ZoneInfoNotFoundError):
 		return failed('91Token HTTP request failed')
 
