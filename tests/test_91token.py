@@ -67,6 +67,11 @@ CHECKIN_PATH = '/api/user/daily-reward'
 CHECKIN_STATUS_PATH = f'{CHECKIN_PATH}?month=2026-11'
 CAPTCHA_PATH = f'{CHECKIN_PATH}/captcha'
 VERIFY_PATH = f'{CAPTCHA_PATH}/verify'
+LOGIN_PATH = '/api/user/login'
+LOGIN_CAPTCHA_PATH = '/api/captcha/login'
+LOGOUT_PATH = '/api/user/auth/logout'
+LOGIN_CREDENTIALS = {'username': 'thy1126', 'password': 'test-password-91'}
+LOGIN_SECRET = {'91Token-1126': LOGIN_CREDENTIALS}
 
 
 @pytest.mark.parametrize(('slot', 'suffix'), [(147, '1126'), (148, '1127')])
@@ -98,6 +103,7 @@ def test_91token_http_only_requires_a_boolean(value):
 
 @pytest.fixture
 def run_91token_http_only(monkeypatch):
+	monkeypatch.delenv('CHECKIN_91TOKEN_LOGINS', raising=False)
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.delenv('EXTRA_PROVIDERS', raising=False)
 	app_config = AppConfig.load_from_env()
@@ -126,8 +132,10 @@ def run_91token_http_only(monkeypatch):
 
 	client = httpx.AsyncClient
 
-	async def run(*expected_requests, use_account_entrypoint=False, http_only=True):
+	async def run(*expected_requests, use_account_entrypoint=False, http_only=True, logins=None):
 		account.http_only = http_only
+		if logins is not None:
+			monkeypatch.setenv('CHECKIN_91TOKEN_LOGINS', json.dumps(logins))
 		pending = deque(expected_requests)
 		requests = []
 
@@ -149,20 +157,37 @@ def run_91token_http_only(monkeypatch):
 			provider = app_config.providers['91token']
 			result = await checkin._run_account_checkin(account, account.get_display_name(0), provider)
 		assert not pending
-		for request, (method, path, _) in zip(requests, expected_requests, strict=True):
+		uses_password = logins is not None and account.name in logins
+		login_user_id = None
+		for request, (method, path, response) in zip(requests, expected_requests, strict=True):
 			assert request.method == method
 			assert str(request.url) == f'https://91token.com{path}'
-			assert request.headers['Authorization'] == 'Bearer test-http-only-pat'
-			assert request.headers['New-Api-User'] == HTTP_ONLY_ACCOUNT['api_user']
+			if login_user_id is not None:
+				assert request.headers['Authorization'] == 'Bearer test-dashboard-access'
+				assert request.headers['X-Auth-Session'] == 'test-dashboard-sid'
+				assert request.headers['Cookie'] == 'dashboard=test-session-cookie'
+			elif uses_password:
+				assert 'Authorization' not in request.headers
+			else:
+				assert request.headers['Authorization'] == 'Bearer test-http-only-pat'
+			assert request.headers['New-Api-User'] == str(login_user_id or HTTP_ONLY_ACCOUNT['api_user'])
 			assert 'X-Turnstile-Token' not in request.headers
 			if request.method == 'POST' and request.url.path == CHECKIN_PATH:
 				assert request.headers['X-Captcha-Token'] == 'test-slider-token'
+			elif request.url.path == LOGIN_PATH:
+				assert request.headers.get('X-Captcha-Token') == 'test-login-captcha-token'
+				assert json.loads(request.content) == LOGIN_CREDENTIALS
+				bundle = response.json().get('data', {})
+				if isinstance(bundle, dict) and bundle.get('user'):
+					login_user_id = bundle['user']['id']
 			else:
 				assert 'X-Captcha-Token' not in request.headers
-			if request.url.path in (CAPTCHA_PATH, VERIFY_PATH):
+			if request.url.path in (CAPTCHA_PATH, VERIFY_PATH, LOGIN_CAPTCHA_PATH, LOGIN_CAPTCHA_PATH + '/verify'):
 				assert request.headers['X-Captcha-Request'] == '1'
-			if request.url.path == VERIFY_PATH:
+			if request.url.path in (VERIFY_PATH, LOGIN_CAPTCHA_PATH + '/verify'):
 				assert json.loads(request.content) == {'id': 'test-puzzle', 'x': 128}
+		assert account.username is None and account.password is None
+		assert account.access_token == HTTP_ONLY_ACCOUNT['access_token']
 		return result
 
 	return run
@@ -188,6 +213,200 @@ def _verification_response(**overrides):
 		200,
 		json={'success': True, 'data': {'token': 'test-slider-token', 'expires_in': 60, **overrides}},
 	)
+
+
+def _login_settings_response(**overrides):
+	return httpx.Response(
+		200,
+		json={
+			'success': True,
+			'data': {
+				'password_login_enabled': True,
+				'password_login_encryption_enabled': False,
+				'login_captcha_required': True,
+				**overrides,
+			},
+		},
+	)
+
+
+def _login_response(**user_overrides):
+	return httpx.Response(
+		200,
+		headers={'Set-Cookie': 'dashboard=test-session-cookie; Path=/; Secure; HttpOnly'},
+		json={
+			'success': True,
+			'data': {
+				'access_token': 'test-dashboard-access',
+				'access_expires_at': 9_999_999_999,
+				'session': {'sid': 'test-dashboard-sid'},
+				'user': {'id': 90001, 'username': 'thy1126', **user_overrides},
+			},
+		},
+	)
+
+
+def _login_requests(response=None):
+	return [
+		('GET', '/api/status', _login_settings_response()),
+		('POST', LOGIN_CAPTCHA_PATH, _captcha_response()),
+		('POST', LOGIN_CAPTCHA_PATH + '/verify', _verification_response(token='test-login-captcha-token')),
+		('POST', LOGIN_PATH, response if response is not None else _login_response()),
+	]
+
+
+def _logout_request(response=None):
+	return ('POST', LOGOUT_PATH, response if response is not None else httpx.Response(200, json={'success': True}))
+
+
+@pytest.mark.parametrize('http_only', [False, True])
+@pytest.mark.parametrize('use_account_entrypoint', [False, True])
+async def test_password_login_preserves_session_and_confirms_reward(
+	run_91token_http_only, capsys, http_only, use_account_entrypoint
+):
+	success, before, after = await run_91token_http_only(
+		*_login_requests(),
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, _status_response(False)),
+		('POST', CAPTCHA_PATH, _captcha_response()),
+		('POST', VERIFY_PATH, _verification_response()),
+		('POST', CHECKIN_PATH, httpx.Response(200, json={'success': True})),
+		('GET', CHECKIN_STATUS_PATH, _status_response(True)),
+		('GET', PROFILE_PATH, _profile_response()),
+		_logout_request(),
+		logins=LOGIN_SECRET,
+		http_only=http_only,
+		use_account_entrypoint=use_account_entrypoint,
+	)
+	assert success is True
+	assert before['success'] is True
+	assert after['check_in_phase'] == 'confirmed'
+	assert after['checked_in_today'] is True
+	assert after['check_in_submitted'] is True
+	output = capsys.readouterr().out + str(after)
+	for secret in ('test-password-91', 'test-dashboard-access', 'test-dashboard-sid', 'test-login-captcha-token'):
+		assert secret not in output
+
+
+async def test_password_login_logs_out_when_already_checked_in(run_91token_http_only):
+	success, _, after = await run_91token_http_only(
+		*_login_requests(),
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, _status_response(True)),
+		_logout_request(),
+		logins=LOGIN_SECRET,
+	)
+	assert success is True
+	assert after['check_in_submitted'] is False
+
+
+@pytest.mark.parametrize('user', [{'id': 90002}, {'username': 'another-user'}])
+async def test_password_login_wrong_identity_logs_out_without_checkin(run_91token_http_only, user):
+	success, _, after = await run_91token_http_only(
+		*_login_requests(_login_response(**user)), _logout_request(), logins=LOGIN_SECRET
+	)
+	assert success is False
+	assert 'identity does not match' in after['check_in_error']
+	assert after['check_in_submitted'] is False
+
+
+@pytest.mark.parametrize(
+	'settings',
+	[
+		{'password_login_enabled': False},
+		{'password_login_encryption_enabled': True},
+		{'password_login_encryption_enabled': None},
+		{'login_captcha_required': 'true'},
+	],
+)
+async def test_password_login_unsupported_settings_never_send_password(run_91token_http_only, settings):
+	success, _, after = await run_91token_http_only(
+		('GET', '/api/status', _login_settings_response(**settings)), logins=LOGIN_SECRET
+	)
+	assert success is False
+	assert after['check_in_submitted'] is False
+
+
+@pytest.mark.parametrize('data', [None, {'two_factor_required': True}])
+async def test_password_login_rejection_is_not_retried_or_leaked(run_91token_http_only, capsys, data):
+	success, _, after = await run_91token_http_only(
+		*_login_requests(httpx.Response(200, json={'success': False, 'data': data, 'message': 'test-password-91'})),
+		logins=LOGIN_SECRET,
+	)
+	assert success is False
+	assert after['check_in_submitted'] is False
+	assert 'test-password-91' not in capsys.readouterr().out + str(after)
+
+
+@pytest.mark.parametrize('logout_response', [httpx.Response(500), httpx.ReadTimeout('test-dashboard-sid')])
+async def test_logout_failure_does_not_undo_confirmed_status(run_91token_http_only, capsys, logout_response):
+	success, _, _ = await run_91token_http_only(
+		*_login_requests(),
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, _status_response(True)),
+		_logout_request(logout_response),
+		logins=LOGIN_SECRET,
+	)
+	assert success is True
+	output = capsys.readouterr().out
+	assert 'logout was not confirmed' in output
+	assert 'test-dashboard-sid' not in output
+
+
+async def test_password_login_status_failure_logs_out_and_redacts_credentials(run_91token_http_only, capsys):
+	secrets = ['test-password-91', 'test-dashboard-access', 'test-dashboard-sid', HTTP_ONLY_ACCOUNT['access_token']]
+	success, _, after = await run_91token_http_only(
+		*_login_requests(),
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, httpx.Response(403, json={'message': ' '.join(secrets)})),
+		_logout_request(),
+		logins=LOGIN_SECRET,
+	)
+	assert success is False
+	assert after['check_in_submitted'] is False
+	for secret in secrets:
+		assert secret not in capsys.readouterr().out + str(after)
+
+
+@pytest.mark.parametrize('confirmed', [True, False])
+async def test_password_login_uncertain_reward_is_never_replayed(run_91token_http_only, confirmed):
+	requests = [
+		*_login_requests(),
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, _status_response(False)),
+		('POST', CAPTCHA_PATH, _captcha_response()),
+		('POST', VERIFY_PATH, _verification_response()),
+		('POST', CHECKIN_PATH, httpx.ReadTimeout('private request')),
+		('GET', CHECKIN_STATUS_PATH, _status_response(confirmed)),
+	]
+	if confirmed:
+		requests.append(('GET', PROFILE_PATH, _profile_response()))
+	success, _, after = await run_91token_http_only(*requests, _logout_request(), logins=LOGIN_SECRET)
+	assert success is confirmed
+	assert after['check_in_submitted'] is True
+
+
+async def test_login_secret_matches_complete_account_name_only(run_91token_http_only):
+	success, _, _ = await run_91token_http_only(
+		('GET', PROFILE_PATH, _profile_response()),
+		('GET', CHECKIN_STATUS_PATH, _status_response(True)),
+		logins={'91Token-112': LOGIN_CREDENTIALS},
+	)
+	assert success is True
+
+
+@pytest.mark.parametrize('raw', ['{invalid', '[]', '{"91Token-1126":null}', '{"91Token-1126":{"password":"secret"}}'])
+async def test_invalid_login_secret_stops_without_requests(monkeypatch, run_91token_http_only, raw):
+	monkeypatch.setenv('CHECKIN_91TOKEN_LOGINS', raw)
+	success, _, after = await run_91token_http_only()
+	assert success is False
+	assert after['check_in_submitted'] is False
+	assert raw not in after['check_in_error']
+
+
+def test_password_login_secret_is_wired_into_workflow():
+	workflow = Path('.github/workflows/checkin.yml').read_text(encoding='utf-8')
+	assert 'CHECKIN_91TOKEN_LOGINS: ${{ secrets.CHECKIN_91TOKEN_LOGINS }}' in workflow
 
 
 @pytest.mark.parametrize('user_id', [None, 90002], ids=['missing', 'different'])

@@ -2691,9 +2691,83 @@ def _parse_91token_http_response(response: httpx.Response) -> dict | None:
 	return payload
 
 
-async def run_91token_check_in(account: AccountConfig) -> tuple[bool, dict | None, dict | None]:
+async def _91token_captcha_token(client: httpx.AsyncClient, path: str) -> str:
 	from captcha_ocr.slider import solve_challenge
 
+	headers = {'X-Captcha-Request': '1'}
+	started = time.monotonic()
+	response = await client.post(path, headers=headers)
+	payload = _parse_91token_http_response(response)
+	challenge = payload.get('data') if payload is not None else None
+	if not isinstance(challenge, dict):
+		raise ValueError(f'91Token slider challenge unavailable (HTTP {response.status_code})')
+	challenge_id, expires = challenge.get('id'), challenge.get('expires_in')
+	if not isinstance(challenge_id, str) or not challenge_id or type(expires) is not int or expires <= 0:
+		raise ValueError('91Token slider challenge has invalid identity or expiry')
+	try:
+		x = solve_challenge(challenge)
+	except ValueError:
+		raise ValueError('91Token slider match invalid or ambiguous; no verification submitted') from None
+	if time.monotonic() - started >= expires:
+		raise ValueError('91Token slider challenge expired; no verification submitted')
+	started = time.monotonic()
+	response = await client.post(f'{path}/verify', headers=headers, json={'id': challenge_id, 'x': x})
+	payload = _parse_91token_http_response(response)
+	verification = payload.get('data') if payload is not None else None
+	if not isinstance(verification, dict):
+		raise ValueError(f'91Token slider verification rejected (HTTP {response.status_code}); no check-in submitted')
+	token, expires = verification.get('token'), verification.get('expires_in')
+	if (
+		not isinstance(token, str)
+		or not re.fullmatch(r'[!-~]+', token)
+		or type(expires) is not int
+		or expires <= 0
+		or time.monotonic() - started >= expires
+	):
+		raise ValueError('91Token slider verification returned an invalid or expired token; no check-in submitted')
+	mask_tokens(token)
+	return token
+
+
+async def _91token_dashboard_login(client: httpx.AsyncClient, username: str, password: str) -> tuple[str, str, dict]:
+	response = await client.get('/api/status')
+	payload = _parse_91token_http_response(response)
+	config = payload.get('data') if payload is not None else None
+	if not isinstance(config, dict) or config.get('password_login_enabled') is not True:
+		raise ValueError('91Token password login settings unavailable or login disabled; no login submitted')
+	if config.get('password_login_encryption_enabled') is not False:
+		raise ValueError('91Token password encryption is required or unknown; use the website to log in')
+	if type(config.get('login_captcha_required')) is not bool:
+		raise ValueError('91Token login verification settings are invalid; no login submitted')
+	headers = {}
+	if config['login_captcha_required']:
+		headers['X-Captcha-Token'] = await _91token_captcha_token(client, '/api/captcha/login')
+	response = await client.post('/api/user/login', headers=headers, json={'username': username, 'password': password})
+	payload = _parse_91token_http_response(response)
+	bundle = payload.get('data') if payload is not None else None
+	if not isinstance(bundle, dict):
+		raise ValueError(f'91Token dashboard login rejected (HTTP {response.status_code}); login not repeated')
+	token, expires, session, user = (
+		bundle.get(key) for key in ('access_token', 'access_expires_at', 'session', 'user')
+	)
+	sid = session.get('sid') if isinstance(session, dict) else None
+	mask_tokens(token if isinstance(token, str) else None, sid if isinstance(sid, str) else None)
+	if (
+		not isinstance(token, str)
+		or not re.fullmatch(r'[!-~]+', token)
+		or type(expires) not in (int, float)
+		or not math.isfinite(expires)
+		or expires <= time.time()
+		or not isinstance(sid, str)
+		or not re.fullmatch(r'[!-~]+', sid)
+		or not isinstance(user, dict)
+		or not re.fullmatch(r'[0-9]+', str(user.get('id', '')))
+	):
+		raise ValueError('91Token dashboard login requires a valid login session; no check-in submitted')
+	return token, sid, user
+
+
+async def run_91token_check_in(account: AccountConfig) -> tuple[bool, dict | None, dict | None]:
 	before: dict | None = None
 	submitted = False
 	phase = 'not_submitted'
@@ -2712,129 +2786,147 @@ async def run_91token_check_in(account: AccountConfig) -> tuple[bool, dict | Non
 
 	expected_id = str(account.api_user or '').strip()
 	access_token = account.access_token
+	username, password = account.get_login_identifier(), account.password
+	try:
+		logins = json.loads(os.getenv('CHECKIN_91TOKEN_LOGINS') or '{}')
+	except (ValueError, RecursionError):
+		return failed('91Token login Secret is not valid JSON')
+	if not isinstance(logins, dict):
+		return failed('91Token login Secret must map account names to login credentials')
+	if account.name in logins:
+		login = logins[account.name]
+		if not isinstance(login, dict):
+			return failed('91Token login Secret has invalid account credentials')
+		username, password = login.get('username'), login.get('password')
+		if not isinstance(username, str) or not username.strip() or not isinstance(password, str) or not password:
+			return failed('91Token login Secret requires a username and password')
+	password_login = (
+		isinstance(username, str) and bool(username.strip()) and isinstance(password, str) and bool(password)
+	)
+	if (username or password) and not password_login:
+		return failed('91Token password login requires complete credentials')
 	if (
 		not re.fullmatch(r'[0-9]+', expected_id)
-		or not isinstance(access_token, str)
-		or not re.fullmatch(r'[!-~]+', access_token)
+		or not password_login
+		and (not isinstance(access_token, str) or not re.fullmatch(r'[!-~]+', access_token))
 	):
 		return failed('91Token requires a valid account ID and access token')
-	headers = {'Accept': 'application/json', 'Authorization': f'Bearer {access_token}', 'New-Api-User': expected_id}
+	mask_tokens(password, access_token)
+	redactions = [password, access_token]
+	headers = {'Accept': 'application/json', 'New-Api-User': expected_id}
+	if not password_login:
+		headers['Authorization'] = f'Bearer {access_token}'
 	try:
 		async with httpx.AsyncClient(
 			base_url='https://91token.com', headers=headers, trust_env=False, follow_redirects=False, timeout=30.0
 		) as client:
-			response = await client.get('/api/user/self')
-			payload = _parse_91token_http_response(response)
-			profile = payload.get('data') if payload is not None else None
-			if not isinstance(profile, dict) or str(profile.get('id')) != expected_id:
-				return failed(f'91Token profile could not be verified (HTTP {response.status_code})')
-
-			before = {'success': True}
+			session_id = None
 			try:
-				quota, used_quota = newapi_quota_pair(profile)
-			except (ValueError, OverflowError):
-				pass
-			else:
-				before.update(quota=quota, used_quota=used_quota)
-
-			month = datetime.now(ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)).strftime('%Y-%m')
-			checkin_path = '/api/user/daily-reward'
-			client.cookies.clear()
-			response = await client.get(checkin_path, params={'month': month})
-			payload = _parse_91token_http_response(response)
-			data = payload.get('data') if payload is not None else None
-			stats = data.get('stats') if isinstance(data, dict) else None
-			checked_today = stats.get('checked_in_today') if isinstance(stats, dict) else None
-			if not isinstance(checked_today, bool):
-				reason = ''
-				try:
-					error_payload = response.json()
-				except ValueError:
-					pass
-				else:
-					message = error_payload.get('message') if isinstance(error_payload, dict) else None
-					if isinstance(message, str):
-						reason = ': ' + ' '.join(message.replace(access_token, '[REDACTED]').split())[:180]
-				return failed(f'91Token check-in status could not be verified (HTTP {response.status_code}){reason}')
-			if checked_today:
-				return True, before, {**before, 'checked_in_today': True, 'check_in_submitted': False}
-
-			captcha_headers = {'X-Captcha-Request': '1'}
-			client.cookies.clear()
-			started = time.monotonic()
-			response = await client.post(f'{checkin_path}/captcha', headers=captcha_headers)
-			payload = _parse_91token_http_response(response)
-			challenge = payload.get('data') if payload is not None else None
-			if not isinstance(challenge, dict):
-				return failed(f'91Token slider challenge unavailable (HTTP {response.status_code})')
-			challenge_id, expires = challenge.get('id'), challenge.get('expires_in')
-			if not isinstance(challenge_id, str) or not challenge_id or type(expires) is not int or expires <= 0:
-				return failed('91Token slider challenge has invalid identity or expiry')
-			try:
-				x = solve_challenge(challenge)
-			except ValueError:
-				return failed('91Token slider match invalid or ambiguous; no verification submitted')
-			if time.monotonic() - started >= expires:
-				return failed('91Token slider challenge expired; no verification submitted')
-			started = time.monotonic()
-			response = await client.post(
-				f'{checkin_path}/captcha/verify', headers=captcha_headers, json={'id': challenge_id, 'x': x}
-			)
-			payload = _parse_91token_http_response(response)
-			verification = payload.get('data') if payload is not None else None
-			if not isinstance(verification, dict):
-				return failed(
-					f'91Token slider verification rejected (HTTP {response.status_code}); no check-in submitted'
-				)
-			token, expires = verification.get('token'), verification.get('expires_in')
-			if (
-				not isinstance(token, str)
-				or not re.fullmatch(r'[!-~]+', token)
-				or type(expires) is not int
-				or expires <= 0
-				or time.monotonic() - started >= expires
-			):
-				return failed('91Token slider verification returned an invalid or expired token; no check-in submitted')
-			mask_tokens(token)
-			client.cookies.clear()
-			submitted = True
-			phase = 'submitted_unconfirmed'
-			try:
-				response = await client.post(checkin_path, headers={'X-Captcha-Token': token})
-			except httpx.HTTPError:
-				pass
-			else:
-				if 300 <= response.status_code < 500 or (
-					response.status_code == 200 and _parse_91token_http_response(response) is None
-				):
-					phase = 'submission_rejected'
-					return failed(f'91Token check-in rejected (HTTP {response.status_code}); not resubmitted')
-			response = await client.get(checkin_path, params={'month': month})
-			payload = _parse_91token_http_response(response)
-			data = payload.get('data') if payload is not None else None
-			stats = data.get('stats') if isinstance(data, dict) else None
-			if not isinstance(stats, dict) or stats.get('checked_in_today') is not True:
-				return failed(f'91Token check-in was not confirmed (HTTP {response.status_code}); not resubmitted')
-			after = {'success': False}
-			try:
+				if password_login:
+					try:
+						access_token, session_id, user = await _91token_dashboard_login(client, username, password)
+					except ValueError as exc:
+						return failed(str(exc))
+					client.headers.update(
+						{
+							'Authorization': f'Bearer {access_token}',
+							'X-Auth-Session': session_id,
+							'New-Api-User': str(user['id']),
+						}
+					)
+					redactions.extend((access_token, session_id))
+					if str(user['id']) != expected_id or user.get('username') != username:
+						return failed('91Token dashboard login identity does not match the configured account')
 				response = await client.get('/api/user/self')
 				payload = _parse_91token_http_response(response)
 				profile = payload.get('data') if payload is not None else None
-				if isinstance(profile, dict) and str(profile.get('id')) == expected_id:
+				if not isinstance(profile, dict) or str(profile.get('id')) != expected_id:
+					return failed(f'91Token profile could not be verified (HTTP {response.status_code})')
+
+				before = {'success': True}
+				try:
 					quota, used_quota = newapi_quota_pair(profile)
-					after.update(success=True, quota=quota, used_quota=used_quota)
-			except (httpx.HTTPError, ValueError, OverflowError):
-				pass
-			return (
-				True,
-				before,
-				{
-					**after,
-					'checked_in_today': True,
-					'check_in_submitted': True,
-					'check_in_phase': 'confirmed',
-				},
-			)
+				except (ValueError, OverflowError):
+					pass
+				else:
+					before.update(quota=quota, used_quota=used_quota)
+
+				month = datetime.now(ZoneInfo(DEFAULT_CHECK_IN_TIMEZONE)).strftime('%Y-%m')
+				checkin_path = '/api/user/daily-reward'
+				response = await client.get(checkin_path, params={'month': month})
+				payload = _parse_91token_http_response(response)
+				data = payload.get('data') if payload is not None else None
+				stats = data.get('stats') if isinstance(data, dict) else None
+				checked_today = stats.get('checked_in_today') if isinstance(stats, dict) else None
+				if not isinstance(checked_today, bool):
+					reason = ''
+					try:
+						error_payload = response.json()
+					except ValueError:
+						pass
+					else:
+						message = error_payload.get('message') if isinstance(error_payload, dict) else None
+						if isinstance(message, str):
+							for secret in redactions:
+								if secret:
+									message = message.replace(secret, '[REDACTED]')
+							reason = ': ' + ' '.join(message.split())[:180]
+					return failed(
+						f'91Token check-in status could not be verified (HTTP {response.status_code}){reason}'
+					)
+				if checked_today:
+					return True, before, {**before, 'checked_in_today': True, 'check_in_submitted': False}
+
+				try:
+					token = await _91token_captcha_token(client, f'{checkin_path}/captcha')
+				except ValueError as exc:
+					return failed(str(exc))
+				submitted = True
+				phase = 'submitted_unconfirmed'
+				try:
+					response = await client.post(checkin_path, headers={'X-Captcha-Token': token})
+				except httpx.HTTPError:
+					pass
+				else:
+					if 300 <= response.status_code < 500 or (
+						response.status_code == 200 and _parse_91token_http_response(response) is None
+					):
+						phase = 'submission_rejected'
+						return failed(f'91Token check-in rejected (HTTP {response.status_code}); not resubmitted')
+				response = await client.get(checkin_path, params={'month': month})
+				payload = _parse_91token_http_response(response)
+				data = payload.get('data') if payload is not None else None
+				stats = data.get('stats') if isinstance(data, dict) else None
+				if not isinstance(stats, dict) or stats.get('checked_in_today') is not True:
+					return failed(f'91Token check-in was not confirmed (HTTP {response.status_code}); not resubmitted')
+				after = {'success': False}
+				try:
+					response = await client.get('/api/user/self')
+					payload = _parse_91token_http_response(response)
+					profile = payload.get('data') if payload is not None else None
+					if isinstance(profile, dict) and str(profile.get('id')) == expected_id:
+						quota, used_quota = newapi_quota_pair(profile)
+						after.update(success=True, quota=quota, used_quota=used_quota)
+				except (httpx.HTTPError, ValueError, OverflowError):
+					pass
+				return (
+					True,
+					before,
+					{
+						**after,
+						'checked_in_today': True,
+						'check_in_submitted': True,
+						'check_in_phase': 'confirmed',
+					},
+				)
+			finally:
+				if session_id:
+					try:
+						response = await client.post('/api/user/auth/logout')
+						if _parse_91token_http_response(response) is None:
+							print('WARNING: 91Token temporary dashboard session logout was not confirmed')
+					except httpx.HTTPError:
+						print('WARNING: 91Token temporary dashboard session logout was not confirmed')
 	except (httpx.HTTPError, ValueError, ZoneInfoNotFoundError):
 		return failed('91Token HTTP request failed')
 
