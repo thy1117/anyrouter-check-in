@@ -33,11 +33,14 @@ def test_turnstile_header_explicit_override_takes_precedence(override):
 	assert provider.turnstile_header == override
 
 
-def test_91token_partial_provider_override_preserves_header_transport(monkeypatch):
+def test_91token_partial_provider_override_preserves_slider_endpoints(monkeypatch):
 	monkeypatch.delenv('PROVIDERS', raising=False)
 	monkeypatch.setenv('EXTRA_PROVIDERS', '{"91token":{"domain":"https://91token.com"}}')
 
-	assert AppConfig.load_from_env().providers['91token'].turnstile_header == 'X-Turnstile-Token'
+	provider = AppConfig.load_from_env().providers['91token']
+	assert provider.sign_in_path == provider.check_in_status_path == '/api/user/daily-reward'
+	assert provider.captcha_path == '/api/user/daily-reward/captcha'
+	assert provider.checkin_turnstile is False
 
 
 async def test_other_turnstile_providers_keep_query_transport(monkeypatch):
