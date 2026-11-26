@@ -13,7 +13,7 @@ import re
 import sys
 import time
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -2939,6 +2939,306 @@ async def run_91token_check_in(account: AccountConfig) -> tuple[bool, dict | Non
 		return failed('91Token HTTP request failed')
 
 
+class _RuachatError(ValueError):
+	pass
+
+
+def _ruachat_response(response: httpx.Response, operation: str) -> dict:
+	try:
+		payload = response.json()
+	except (ValueError, RecursionError):
+		payload = None
+	if (
+		response.status_code != 200
+		or not isinstance(payload, dict)
+		or payload.get('success') is not True
+		or not isinstance(payload.get('data'), dict)
+	):
+		raise _RuachatError(f'rua.chat {operation} failed (HTTP {response.status_code})')
+	return payload['data']
+
+
+async def _ruachat_follow_redirects(client: httpx.AsyncClient, response: httpx.Response) -> httpx.Response:
+	for _ in range(12):
+		if not response.is_redirect:
+			if response.status_code != 200:
+				raise _RuachatError(f'rua.chat SSO navigation failed (HTTP {response.status_code})')
+			return response
+		url = response.url.join(response.headers.get('location', ''))
+		if (
+			url.scheme != 'https'
+			or url.host not in ('api.rua.chat', 'auth.rua.chat')
+			or url.port not in (None, 443)
+			or url.userinfo
+		):
+			raise _RuachatError('rua.chat SSO returned an untrusted redirect')
+		response = await client.get(url)
+	raise _RuachatError('rua.chat SSO redirect limit reached')
+
+
+async def _ruachat_sso_login(client: httpx.AsyncClient, identifier: str, password: str) -> dict:
+	response = await _ruachat_follow_redirects(
+		client, await client.get('/api/sso/start', params={'redirect': '/rewards/checkin'})
+	)
+	if response.url.host != 'auth.rua.chat' or response.url.path != '/account/':
+		raise _RuachatError('rua.chat SSO did not reach the account login page')
+	query_items = parse_qsl(response.url.query.decode('ascii'), keep_blank_values=True)
+	flow = 'rua-chat-authentication-flow'
+	if dict(query_items).get('flow') != flow:
+		raise _RuachatError('rua.chat SSO returned an unsupported login flow')
+	query = urlencode([(key, value) for key, value in query_items if key != 'flow'])
+	auth_origin = 'https://auth.rua.chat'
+	if not any(cookie.name == 'authentik_csrf' for cookie in client.cookies.jar):
+		await _ruachat_follow_redirects(client, await client.get(f'{auth_origin}/if/flow/{flow}/?{query}&ak_native=1'))
+	executor = f'{auth_origin}/api/v3/flows/executor/{flow}/'
+	response = await client.get(executor, params={'query': query})
+	stages = set()
+	for _ in range(6):
+		if response.is_redirect:
+			response = await client.get(executor, params={'query': query})
+			continue
+		try:
+			challenge = response.json()
+		except (ValueError, RecursionError):
+			challenge = None
+		if response.status_code != 200 or not isinstance(challenge, dict) or challenge.get('response_errors'):
+			raise _RuachatError('rua.chat SSO login rejected; verify the configured email and password')
+		component = challenge.get('component')
+		if component == 'xak-flow-redirect':
+			destination = challenge.get('to')
+			if not isinstance(destination, str) or not destination:
+				raise _RuachatError('rua.chat SSO returned no authorization destination')
+			redirect = httpx.Response(302, headers={'Location': destination}, request=response.request)
+			landing = await _ruachat_follow_redirects(client, redirect)
+			if landing.url.host != 'api.rua.chat':
+				raise _RuachatError('rua.chat SSO authorization did not return to the application')
+			return _ruachat_response(
+				await client.post(
+					'/api/sso/exchange',
+					headers={'Origin': 'https://api.rua.chat', 'Referer': 'https://api.rua.chat/rewards/'},
+				),
+				'SSO exchange',
+			)
+		if (
+			component not in ('ak-stage-identification', 'ak-stage-password')
+			or component in stages
+			or challenge.get('captcha_stage') is not None
+		):
+			raise _RuachatError('rua.chat SSO requires an unsupported login challenge; no rewards submitted')
+		stages.add(component)
+		fields = {'component': component}
+		if component == 'ak-stage-password' or challenge.get('password_fields') is True:
+			fields['password'] = password
+		if component == 'ak-stage-identification':
+			if challenge.get('user_fields') == ['email'] and '@' not in identifier:
+				raise _RuachatError('rua.chat SSO requires the registration email in the account Secret')
+			fields['uid_field'] = identifier
+		csrf = next((c.value for c in client.cookies.jar if c.name == 'authentik_csrf'), None)
+		response = await client.post(
+			executor,
+			params={'query': query},
+			json=fields,
+			headers={
+				'Origin': auth_origin,
+				'Referer': str(response.url),
+				**({'X-authentik-CSRF': csrf} if csrf else {}),
+			},
+		)
+	raise _RuachatError('rua.chat SSO login stage limit reached')
+
+
+def _ruachat_points(value: object) -> str:
+	if (
+		not isinstance(value, (str, int))
+		or isinstance(value, bool)
+		or not re.fullmatch(r'[0-9]+(?:\.[0-9]+)?', str(value))
+	):
+		raise _RuachatError('rua.chat points amount is missing or invalid')
+	return str(value)
+
+
+async def run_ruachat_check_in(account: AccountConfig) -> tuple[bool, dict | None, dict | None]:
+	before = None
+	submitted = False
+	expected_id = str(account.api_user or '').strip()
+	password_login = account.has_login_credentials()
+	mask_tokens(account.password, account.access_token, account.session_id)
+	try:
+		if expected_id and not re.fullmatch(r'[1-9][0-9]*', expected_id):
+			raise _RuachatError('rua.chat account ID is invalid')
+		if not password_login and not account.has_access_token():
+			raise _RuachatError('rua.chat requires an email and password or an access token')
+		async with httpx.AsyncClient(
+			base_url='https://api.rua.chat',
+			headers={'Accept': 'application/json'},
+			trust_env=False,
+			follow_redirects=False,
+			timeout=30.0,
+		) as client:
+			temporary_session = False
+			try:
+				settings = _ruachat_response(await client.get('/api/status'), 'site status')
+				if settings.get('turnstile_check') is not False or settings.get('checkin_enabled') is not True:
+					raise _RuachatError('rua.chat check-in is disabled or requires a new verification challenge')
+				if password_login:
+					bundle = await _ruachat_sso_login(
+						client, account.email or account.get_login_identifier(), account.password
+					)
+					temporary_session = True
+					token = bundle.get('access_token')
+					session = bundle.get('session')
+					sid = session.get('sid') if isinstance(session, dict) else None
+					mask_tokens(token if isinstance(token, str) else None, sid if isinstance(sid, str) else None)
+					if isinstance(token, str) and re.fullmatch(r'[!-~]+', token):
+						client.headers['Authorization'] = f'Bearer {token}'
+					else:
+						raise _RuachatError('rua.chat SSO exchange returned an invalid access token')
+					if isinstance(sid, str) and re.fullmatch(r'[!-~]+', sid):
+						client.headers['X-Auth-Session'] = sid
+					else:
+						raise _RuachatError('rua.chat SSO exchange returned an invalid session')
+					user = bundle.get('user')
+					if not isinstance(user, dict) or type(user.get('id')) is not int or user['id'] <= 0:
+						raise _RuachatError('rua.chat SSO exchange returned an invalid user')
+					if expected_id and str(user['id']) != expected_id:
+						raise _RuachatError('rua.chat SSO user does not match the configured account ID')
+					expected_id = str(user['id'])
+				else:
+					if not re.fullmatch(r'[!-~]+', account.access_token):
+						raise _RuachatError('rua.chat access token is invalid')
+					client.headers['Authorization'] = f'Bearer {account.access_token}'
+					if account.session_id:
+						if not re.fullmatch(r'[!-~]+', account.session_id):
+							raise _RuachatError('rua.chat session ID is invalid')
+						client.headers['X-Auth-Session'] = account.session_id
+				client.headers.update({'Origin': 'https://api.rua.chat', 'Referer': 'https://api.rua.chat/rewards/'})
+				if expected_id:
+					client.headers['New-Api-User'] = expected_id
+				profile = _ruachat_response(await client.get('/api/user/self'), 'profile')
+				if (
+					type(profile.get('id')) is not int
+					or profile['id'] <= 0
+					or expected_id
+					and str(profile['id']) != expected_id
+				):
+					raise _RuachatError('rua.chat profile does not match the authenticated account')
+				expected_id = str(profile['id'])
+				client.headers['New-Api-User'] = expected_id
+				quota, used = newapi_quota_pair(profile)
+				before = {'success': True, 'quota': quota, 'used_quota': used}
+				month = format_check_in_time()[:7]
+
+				async def status_for_month():
+					return _ruachat_response(
+						await client.get('/api/user/checkin', params={'month': month}), 'check-in status'
+					)
+
+				status = await status_for_month()
+				business_date = status.get('business_date')
+				if not isinstance(business_date, str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', business_date):
+					raise _RuachatError('rua.chat check-in status has no valid business date')
+				if business_date[:7] != month:
+					month = business_date[:7]
+					status = await status_for_month()
+					if status.get('business_date') != business_date:
+						raise _RuachatError('rua.chat business date changed; no rewards submitted')
+
+				def checked(data):
+					stats = data.get('stats')
+					value = data.get('checked_today')
+					if value is None and isinstance(stats, dict):
+						value = stats.get('checked_in_today')
+					if type(value) is not bool:
+						raise _RuachatError('rua.chat check-in status is missing the daily result')
+					return value
+
+				already_checked = checked(status)
+				if not already_checked:
+					if status.get('configured') is False:
+						raise _RuachatError('rua.chat daily rewards are not configured; no rewards submitted')
+					access = status.get('access')
+					if isinstance(access, dict) and access.get('allowed') is False:
+						reason = access.get('reason')
+						reason = (
+							reason
+							if isinstance(reason, str) and re.fullmatch(r'[a-z_]{1,64}', reason)
+							else 'not_eligible'
+						)
+						raise _RuachatError(f'rua.chat check-in is not eligible: {reason}')
+					submitted = True
+					try:
+						await client.post('/api/user/checkin')
+					except httpx.HTTPError:
+						pass
+					status = await status_for_month()
+					if status.get('business_date') != business_date or not checked(status):
+						raise _RuachatError('rua.chat check-in was not confirmed; the reward request was not repeated')
+				records = status.get('records')
+				record = next(
+					(
+						row
+						for row in (records if isinstance(records, list) else [])
+						if isinstance(row, dict) and row.get('checkin_date') == business_date
+					),
+					None,
+				)
+				earnings = record.get('earnings') if record else None
+				if not isinstance(earnings, dict):
+					raise _RuachatError('rua.chat checked in, but the daily points receipt is missing')
+				points = _ruachat_points(earnings.get('points'))
+				points_balance = _ruachat_points(
+					_ruachat_response(await client.get('/api/rewards/self/points'), 'points balance').get('balance')
+				)
+				profile = _ruachat_response(await client.get('/api/user/self'), 'final profile')
+				if str(profile.get('id')) != expected_id:
+					raise _RuachatError('rua.chat final profile does not match the authenticated account')
+				quota, used = newapi_quota_pair(profile)
+				detail = {
+					'business_date': business_date,
+					'points_awarded': points,
+					'already_checked_in': already_checked,
+				}
+				for key in ('grant_quota', 'recharge_quota', 'cards'):
+					value = earnings.get(key)
+					if type(value) is not int or value < 0:
+						raise _RuachatError('rua.chat daily reward receipt is incomplete')
+					detail[key] = value
+				print(
+					f'[SUCCESS] rua.chat: {business_date} check-in and daily points confirmed; points {points}, balance {points_balance}'
+				)
+				print(f'[INFO] rua.chat: reward receipt {json.dumps(detail, ensure_ascii=False)}')
+				return (
+					True,
+					before,
+					{
+						'success': True,
+						'quota': quota,
+						'used_quota': used,
+						'checked_in_today': True,
+						'check_in_submitted': submitted,
+						'ruachat_checkin': detail,
+						'points_balance': points_balance,
+					},
+				)
+			finally:
+				if temporary_session:
+					try:
+						response = await client.post(
+							'/api/user/auth/logout',
+							headers={
+								'Origin': 'https://api.rua.chat',
+								'Referer': 'https://api.rua.chat/rewards/',
+							},
+						)
+						if response.status_code != 200 or response.json().get('success') is not True:
+							print('[WARN] rua.chat temporary session logout was not confirmed')
+					except (httpx.HTTPError, ValueError, AttributeError):
+						print('[WARN] rua.chat temporary session logout was not confirmed')
+	except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+		error = str(exc) if isinstance(exc, _RuachatError) else 'rua.chat HTTP request or response is invalid'
+		return False, before, attach_check_in_error({'success': False, 'check_in_submitted': submitted}, error)
+
+
 async def check_in_account(
 	account: AccountConfig,
 	account_index: int,
@@ -2982,6 +3282,8 @@ async def check_in_account(
 async def _run_account_checkin(account: AccountConfig, account_name: str, provider_config):
 	if account.provider == '91token':
 		return await run_91token_check_in(account)
+	if account.provider == 'ruachat':
+		return await run_ruachat_check_in(account)
 
 	if provider_config.name == 'anyrouter':
 		return verify_anyrouter_login(account, account_name, provider_config)

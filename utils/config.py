@@ -588,15 +588,13 @@ class AppConfig:
 			'ruachat': ProviderConfig(
 				name='ruachat',
 				domain='https://api.rua.chat',
-				login_path='/sign-in',
+				login_path='/rewards/',
 				sign_in_path='/api/user/checkin',
 				check_in_status_path='/api/user/checkin',
 				user_info_path='/api/user/self',
 				auth_refresh_path='/api/user/auth/refresh',
 				api_user_key='New-Api-User',
 				use_proxy=False,
-				# Reuse the Authentik login across runs; a fresh login each run exhausts AUTH_SESSION_LIMIT.
-				persist_profile=True,
 			),
 		}
 

@@ -518,7 +518,7 @@ def test_ruachat_provider_uses_newapi_checkin_without_turnstile(monkeypatch):
 
 	assert provider.domain == 'https://api.rua.chat'
 	assert provider.api_style == 'newapi'
-	assert provider.login_path == '/sign-in'
+	assert provider.login_path == '/rewards/'
 	assert provider.sign_in_path == '/api/user/checkin'
 	assert provider.check_in_status_path == '/api/user/checkin'
 	assert provider.user_info_path == '/api/user/self'
@@ -530,7 +530,7 @@ def test_ruachat_provider_uses_newapi_checkin_without_turnstile(monkeypatch):
 	assert provider.bypass_method is None
 	assert provider.request_in_page is False
 	assert provider.http2 is True
-	assert provider.persist_profile is True
+	assert provider.persist_profile is False
 
 
 def test_restored_providers_keep_llmpm_and_superapi_login(monkeypatch):

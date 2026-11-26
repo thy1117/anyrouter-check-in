@@ -41,7 +41,6 @@ OCTOBER_PROVIDERS = frozenset(
 		'superapi',
 		'gemai',
 		'motomoto',
-		'ruachat',
 	}
 )
 

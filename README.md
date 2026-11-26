@@ -582,22 +582,24 @@ MotoMoto（<https://motomoto.lol/console/personal>）使用 NewAPI，签到接�
 
 ### rua.chat
 
-`api.rua.chat` 使用新版 NewAPI 接口，并通过 Authentik 进行登录（站内密码登录已关闭）。签到接口为 `POST /api/user/checkin`，用户信息接口为 `GET /api/user/self`，不需要额外的 Turnstile 或 WAF 配置。
+新版入口为 <https://api.rua.chat/rewards/>。运行器通过账号中心的 Authentik SSO 完成 HTTP 登录，使用返回的 Bearer 与会话 Cookie 签到，不再查找旧版登录表单。当前未启用验证码；若站点启用新验证或要求 MFA，会停止领取。
 
-推荐将账号保存到 production Environment Secret `EXTRA_ACCOUNTS_37`。可以使用用户名密码让运行器在浏览器中完成 Authentik 登录：
+账号保存在 production Environment Secret `EXTRA_ACCOUNTS_37`，使用注册邮箱和账号中心密码：
 
 ```json
 [
   {
     "name": "rua-chat-account-1",
     "provider": "ruachat",
-    "username": "你的用户名",
+    "email": "你的注册邮箱",
     "password": "你的密码"
   }
 ]
 ```
 
-如果已经有可用的访问令牌，也可以直接使用令牌（可选填用户 ID）；不过访问令牌通常是短时令牌，长期运行更推荐上面的 Authentik 用户名密码方式：
+`POST /api/user/checkin` 同时发放当天签到奖励和积分，无需再点击刮卡。脚本先查询今日状态，仅在未签到且具备资格时提交一次，再用服务器业务日期对应的签到记录核对 `earnings.points`、额度和卡券，并读取积分余额。奖励预览和余额差额不作为积分到账证据；缺少签到回执会明确报错。每次密码登录产生的临时应用会话会在结束时退出。
+
+已有有效访问令牌时也可直接使用（可选填用户 ID 和 `session_id`）；短时令牌过期后需要更新，长期运行建议配置上面的邮箱密码方式：
 
 ```json
 [
