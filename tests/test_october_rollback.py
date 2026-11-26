@@ -69,7 +69,19 @@ async def test_original_sites_use_the_october_dispatch(monkeypatch, configured, 
 
 @pytest.mark.parametrize(
 	'provider',
-	['91token', 'lunora', 'sidrune', 'mtnapi', 'livelove', 'kapibala', 'twinkle', 'nianhua', 'ciyuan', 'xiaobai'],
+	[
+		'91token',
+		'lunora',
+		'sidrune',
+		'mtnapi',
+		'livelove',
+		'kapibala',
+		'twinkle',
+		'nianhua',
+		'ciyuan',
+		'xiaobai',
+		'ruachat',
+	],
 )
 async def test_current_api_contracts_are_retained(monkeypatch, configured, provider):
 	config = AppConfig.load_from_env().providers[provider]
